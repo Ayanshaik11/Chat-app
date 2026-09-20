@@ -19,7 +19,7 @@ jobs:
 
       - name: Extract ZIP
         run: |
-          unzip -o project.zip -d extracted
+          unzip -o ChatApp.zip -d extracted
 
       - name: Commit extracted files
         run: |
