@@ -1,0 +1,66 @@
+rules_version = '2';
+
+// Firebase console -> Firestore Database -> Rules -> paste this -> Publish
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isMe(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // Anyone signed in can find people; you can only edit your own profile.
+    // The "friends" array can also be changed by the other person when a
+    // request is accepted, which is why writes are allowed for signed-in users
+    // on that one field.
+    match /users/{uid} {
+      allow read: if signedIn();
+      allow create: if isMe(uid);
+      allow update: if isMe(uid)
+        || (signedIn() && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['friends']));
+      allow delete: if isMe(uid);
+    }
+
+    // Only the sender and the receiver see a friend request
+    match /friendRequests/{id} {
+      allow read: if signedIn() && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
+      allow create: if signedIn() && request.resource.data.from == request.auth.uid;
+      allow delete: if signedIn() && (resource.data.from == request.auth.uid || resource.data.to == request.auth.uid);
+    }
+
+    match /posts/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      // the author can edit; anyone signed in can like (likes only)
+      allow update: if signedIn() && (resource.data.uid == request.auth.uid
+        || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes']));
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    match /stories/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // Only the two people in a chat can read or write it
+    match /chats/{chatId} {
+      allow read: if signedIn() && request.auth.uid in resource.data.members;
+      allow create: if signedIn() && request.auth.uid in request.resource.data.members;
+      allow update: if signedIn() && request.auth.uid in resource.data.members;
+
+      match /messages/{messageId} {
+        allow read, create: if signedIn()
+          && request.auth.uid in get(/databases/$(database)/documents/chats/$(chatId)).data.members;
+      }
+    }
+
+    match /notifications/{id} {
+      allow read, update, delete: if signedIn() && resource.data.to == request.auth.uid;
+      allow create: if signedIn();
+    }
+  }
+}
