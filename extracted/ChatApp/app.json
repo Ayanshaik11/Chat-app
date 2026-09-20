@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Chat",
+    "slug": "chat",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "backgroundColor": "#0b1416",
+    "plugins": [
+      "expo-font",
+      "expo-video",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Chat needs access to your photos so you can post pictures and stories.",
+          "cameraPermission": "Chat needs the camera so you can take a picture for a post or story."
+        }
+      ]
+    ],
+    "android": {
+      "package": "com.chat.app",
+      "versionCode": 1,
+      "permissions": ["VIBRATE", "INTERNET", "READ_MEDIA_IMAGES", "READ_MEDIA_VIDEO"],
+      "edgeToEdgeEnabled": true,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#0b1416"
+      }
+    }
+  }
+}
