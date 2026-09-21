@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "Chat App",
+    "slug": "chat-app",
+    "scheme": "chatapp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": false,
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B3D3A"
+    },
+    "ios": {
+      "bundleIdentifier": "com.chat.app",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSPhotoLibraryUsageDescription": "Chat App needs your photos so you can share posts, stories and set a profile picture.",
+        "NSCameraUsageDescription": "Chat App needs the camera so you can take photos for posts and stories."
+      }
+    },
+    "android": {
+      "package": "com.chat.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0E7C66"
+      },
+      "permissions": ["VIBRATE", "CAMERA"]
+    },
+    "plugins": [
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.REPLACE_WITH_IOS_CLIENT_ID"
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Chat App needs your photos so you can share posts, stories and set a profile picture.",
+          "cameraPermission": "Chat App needs the camera so you can take photos for posts and stories."
+        }
+      ]
+    ]
+  }
+}

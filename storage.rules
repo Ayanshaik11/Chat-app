@@ -1,0 +1,31 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function signedIn() { return request.auth != null; }
+    function me() { return request.auth.token.firebase.identities['google.com'][0]; }
+
+    match /avatars/{userId}/{file} {
+      allow read: if signedIn();
+      allow write: if signedIn() && userId == me()
+        && request.resource.size < 10 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');
+      allow delete: if signedIn() && userId == me();
+    }
+
+    match /posts/{userId}/{file} {
+      allow read: if signedIn();
+      allow write: if signedIn() && userId == me()
+        && request.resource.size < 15 * 1024 * 1024
+        && request.resource.contentType.matches('image/.*');   // photos only
+      allow delete: if signedIn() && userId == me();
+    }
+
+    match /stories/{userId}/{file} {
+      allow read: if signedIn();
+      allow write: if signedIn() && userId == me()
+        && request.resource.size < 60 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.*') || request.resource.contentType.matches('video/.*'));
+      allow delete: if signedIn() && userId == me();
+    }
+  }
+}

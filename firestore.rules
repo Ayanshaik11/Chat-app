@@ -1,0 +1,57 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    // The Google account ID of the signed-in person = the app's user id
+    function me() { return request.auth.token.firebase.identities['google.com'][0]; }
+
+    match /users/{userId} {
+      allow read: if signedIn();
+      allow create, update, delete: if signedIn() && userId == me();
+
+      match /notifications/{nid} {
+        allow read, update, delete: if signedIn() && userId == me();
+        allow create: if signedIn();
+      }
+    }
+
+    match /posts/{postId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.authorId == me();
+      allow delete: if signedIn() && resource.data.authorId == me();
+      // anyone can like (only the "likes" field), the author can edit everything
+      allow update: if signedIn() && (
+        resource.data.authorId == me() ||
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes'])
+      );
+    }
+
+    match /stories/{storyId} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.authorId == me();
+      allow delete: if signedIn() && resource.data.authorId == me();
+    }
+
+    match /requests/{requestId} {
+      allow read: if signedIn() && (resource.data.from == me() || resource.data.to == me());
+      allow create: if signedIn() && request.resource.data.from == me();
+      allow delete: if signedIn() && (resource.data.from == me() || resource.data.to == me());
+    }
+
+    match /friendships/{pairId} {
+      allow read, delete: if signedIn() && me() in resource.data.members;
+      allow create: if signedIn() && me() in request.resource.data.members;
+    }
+
+    match /chats/{chatId} {
+      allow read: if signedIn() && me() in resource.data.members;
+      allow create, update: if signedIn() && me() in request.resource.data.members;
+
+      // chat id = "<googleIdA>_<googleIdB>"
+      match /messages/{messageId} {
+        allow read, create: if signedIn() && me() in chatId.split('_');
+      }
+    }
+  }
+}
