@@ -1,4 +1,5 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
+import { ScrollView, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
@@ -12,6 +13,27 @@ import RootNavigator from './src/navigation/RootNavigator';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
+// Shows the error on screen instead of a blank / stuck app
+class ErrorBoundary extends React.Component {
+  state = { error: null };
+  static getDerivedStateFromError(error) {
+    return { error };
+  }
+  render() {
+    if (!this.state.error) return this.props.children;
+    const e = this.state.error;
+    return (
+      <View style={{ flex: 1, backgroundColor: '#0B3D3A', paddingTop: 60, paddingHorizontal: 16, paddingBottom: 20 }}>
+        <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>Something went wrong</Text>
+        <Text style={{ color: '#9FE8D3', marginTop: 6 }}>Send a screenshot of this screen to fix it.</Text>
+        <ScrollView style={{ marginTop: 14 }}>
+          <Text selectable style={{ color: '#fff', fontSize: 12 }}>{String((e && e.stack) || e)}</Text>
+        </ScrollView>
+      </View>
+    );
+  }
+}
+
 function Root() {
   const { isDark } = useTheme();
   return (
@@ -23,29 +45,40 @@ function Root() {
 }
 
 export default function App() {
-  const [fontsLoaded] = useFonts({
+  const [fontsLoaded, fontError] = useFonts({
     Poppins_400Regular,
     Poppins_500Medium,
     Poppins_600SemiBold,
     Poppins_700Bold,
     Pacifico_400Regular,
   });
+  const [timedOut, setTimedOut] = useState(false);
+
+  // never wait forever for fonts
+  useEffect(() => {
+    const t = setTimeout(() => setTimedOut(true), 4000);
+    return () => clearTimeout(t);
+  }, []);
+
+  const ready = fontsLoaded || !!fontError || timedOut;
 
   useEffect(() => {
-    if (fontsLoaded) SplashScreen.hideAsync().catch(() => {});
-  }, [fontsLoaded]);
+    if (ready) SplashScreen.hideAsync().catch(() => {});
+  }, [ready]);
 
-  if (!fontsLoaded) return null;
+  if (!ready) return null;
 
   return (
-    <SafeAreaProvider>
-      <SettingsProvider>
-        <AuthProvider>
-          <AppDataProvider>
-            <Root />
-          </AppDataProvider>
-        </AuthProvider>
-      </SettingsProvider>
-    </SafeAreaProvider>
+    <ErrorBoundary>
+      <SafeAreaProvider>
+        <SettingsProvider>
+          <AuthProvider>
+            <AppDataProvider>
+              <Root />
+            </AppDataProvider>
+          </AuthProvider>
+        </SettingsProvider>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }
