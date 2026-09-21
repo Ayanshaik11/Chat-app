@@ -17,7 +17,8 @@ export default function ProfileScreen({ navigation }) {
         <Pressable onPress={() => navigation.navigate('Create', { mode: 'post' })} hitSlop={10} style={{ marginRight: 18 }}>
           <Ionicons name="add-circle-outline" size={28} color={colors.text} />
         </Pressable>
-        <Pressable onPress={() => navigation.navigate('Settings')} hitSlop={10}>
+        <Pressable onPress={() => navigation.navigate('Settings')} hitSlop={10} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <T weight="medium" size={14} color="primary">Settings</T>
           <Ionicons name="settings-outline" size={25} color={colors.text} />
         </Pressable>
       </View>
