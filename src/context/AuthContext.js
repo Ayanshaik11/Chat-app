@@ -90,16 +90,24 @@ export function AuthProvider({ children }) {
     };
   }, [fbUser?.uid, googleId]);
 
-  // online / last seen
+  // online / last seen — updates on foreground/background, and a heartbeat
+  // every 25s while active so "Online" never gets stuck after the app closes
   useEffect(() => {
     if (!googleId) return undefined;
-    const sub = AppState.addEventListener('change', (state) => {
+    const ping = () =>
       updateDoc(doc(db, 'users', googleId), {
-        online: state === 'active' && showOnlineRef.current,
+        online: AppState.currentState === 'active' && showOnlineRef.current,
         lastSeen: serverTimestamp(),
       }).catch(() => {});
-    });
-    return () => sub.remove();
+    const sub = AppState.addEventListener('change', ping);
+    ping();
+    const heartbeat = setInterval(() => {
+      if (AppState.currentState === 'active') ping();
+    }, 25000);
+    return () => {
+      sub.remove();
+      clearInterval(heartbeat);
+    };
   }, [googleId]);
 
   const signInWithGoogle = useCallback(async () => {
