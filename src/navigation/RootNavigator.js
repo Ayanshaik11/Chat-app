@@ -16,6 +16,7 @@ import MessagesScreen from '../screens/MessagesScreen';
 import NotificationsScreen from '../screens/NotificationsScreen';
 import ProfileScreen from '../screens/ProfileScreen';
 import UserProfileScreen from '../screens/UserProfileScreen';
+import FriendsListScreen from '../screens/FriendsListScreen';
 import ChatScreen from '../screens/ChatScreen';
 import PostDetailScreen from '../screens/PostDetailScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
@@ -95,6 +96,7 @@ export default function RootNavigator() {
             <Stack.Screen name="Main" component={Tabs} />
             <Stack.Screen name="Chat" component={ChatScreen} />
             <Stack.Screen name="UserProfile" component={UserProfileScreen} />
+            <Stack.Screen name="FriendsList" component={FriendsListScreen} />
             <Stack.Screen name="PostDetail" component={PostDetailScreen} />
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
