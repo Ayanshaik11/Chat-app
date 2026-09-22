@@ -15,12 +15,15 @@ import RelationButton from '../components/RelationButton';
 import EmptyState from '../components/EmptyState';
 import T from '../components/T';
 
-const Stat = ({ n, label }) => (
-  <View style={{ alignItems: 'center' }}>
-    <T weight="bold" size={18}>{n}</T>
-    <T size={12} color="subtext">{label}</T>
-  </View>
-);
+const Stat = ({ n, label, onPress }) => {
+  const content = (
+    <View style={{ alignItems: 'center' }}>
+      <T weight="bold" size={18}>{n}</T>
+      <T size={12} color="subtext">{label}</T>
+    </View>
+  );
+  return onPress ? <Pressable onPress={onPress}>{content}</Pressable> : content;
+};
 
 // Shared by "My profile" and "Other person's profile"
 export default function ProfileView({ userId, navigation }) {
@@ -78,6 +81,7 @@ export default function ProfileView({ userId, navigation }) {
       .map((s) => ({
         id: s.id, authorId: s.authorId, mediaURL: s.mediaURL, mediaType: s.mediaType,
         createdAt: toMillis(s.createdAt), expiresAt: toMillis(s.expiresAt), storagePath: s.storagePath || '',
+        viewedBy: s.viewedBy || [],
       }))
       .sort((a, b) => a.createdAt - b.createdAt);
     navigation.navigate('StoryViewer', {
@@ -97,7 +101,11 @@ export default function ProfileView({ userId, navigation }) {
         </Pressable>
         <View style={{ flex: 1, flexDirection: 'row', justifyContent: 'space-around' }}>
           <Stat n={posts.length} label="Posts" />
-          {isSelf ? <Stat n={friends.length} label="Friends" /> : <Stat n={stories.length} label="Stories" />}
+          {isSelf ? (
+            <Stat n={friends.length} label="Friends" onPress={() => navigation.navigate('FriendsList')} />
+          ) : (
+            <Stat n={stories.length} label="Stories" />
+          )}
         </View>
       </View>
 
