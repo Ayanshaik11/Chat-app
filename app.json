@@ -27,7 +27,11 @@
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0E7C66"
       },
-      "permissions": ["VIBRATE", "CAMERA"]
+      "permissions": [
+        "VIBRATE",
+        "CAMERA",
+        "REQUEST_INSTALL_PACKAGES"
+      ]
     },
     "plugins": [
       [
