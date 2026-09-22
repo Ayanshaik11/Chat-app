@@ -30,8 +30,16 @@ export function timeAgo(ts) {
 export const clock = (ts) =>
   new Date(toMillis(ts)).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
+// A user is only really "online" if their heartbeat (lastSeen) is recent —
+// this avoids showing "Online" forever after someone closes/kills the app.
+export const PRESENCE_WINDOW_MS = 70 * 1000;
+export function isOnline(u) {
+  if (!u?.online) return false;
+  return Date.now() - toMillis(u.lastSeen) < PRESENCE_WINDOW_MS;
+}
+
 export function lastSeenText(u) {
-  if (u?.online) return 'Online';
+  if (isOnline(u)) return 'Online';
   if (!u?.lastSeen) return 'Offline';
   const t = timeAgo(u.lastSeen);
   return t === 'now' ? 'Last seen just now' : `Last seen ${t} ago`;
