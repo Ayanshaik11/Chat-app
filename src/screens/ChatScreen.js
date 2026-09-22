@@ -8,7 +8,7 @@ import { useAuth } from '../context/AuthContext';
 import { useAppData } from '../context/AppDataContext';
 import { useTheme } from '../context/SettingsContext';
 import { chatIdFor, markChatRead, sendMessage } from '../services/chat';
-import { clock, lastSeenText } from '../utils/helpers';
+import { clock, isOnline, lastSeenText } from '../utils/helpers';
 import { gradientProps } from '../theme';
 import Screen from '../components/Screen';
 import ScreenHeader from '../components/ScreenHeader';
@@ -80,30 +80,33 @@ export default function ChatScreen({ route, navigation }) {
           onPress={() => navigation.navigate('UserProfile', { userId: user.id })}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}
         >
-          <Avatar uri={live.photoURL} name={live.name} size={38} online={live.online} />
+          <Avatar uri={live.photoURL} name={live.name} size={38} online={isOnline(live)} />
           <View style={{ flex: 1 }}>
             <T weight="semibold" size={16} numberOfLines={1}>{live.name}</T>
-            <T size={11} color={live.online ? 'primary' : 'subtext'}>{lastSeenText(live)}</T>
+            <T size={11} color={isOnline(live) ? 'primary' : 'subtext'}>{lastSeenText(live)}</T>
           </View>
         </Pressable>
       </ScreenHeader>
 
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
-        <FlatList
-          inverted
-          data={messages}
-          keyExtractor={(m) => m.id}
-          renderItem={renderItem}
-          contentContainerStyle={{ padding: 12 }}
-          keyboardShouldPersistTaps="handled"
-          ListFooterComponent={
-            !messages.length ? (
-              <T color="subtext" style={{ textAlign: 'center', marginVertical: 30, transform: [{ scaleY: -1 }] }}>
-                Say hello to {live.name}! 👋
-              </T>
-            ) : null
-          }
-        />
+        <View style={{ flex: 1 }}>
+          <FlatList
+            inverted
+            data={messages}
+            keyExtractor={(m) => m.id}
+            renderItem={renderItem}
+            contentContainerStyle={{ padding: 12, flexGrow: 1 }}
+            keyboardShouldPersistTaps="handled"
+          />
+          {!messages.length ? (
+            <View
+              pointerEvents="none"
+              style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, alignItems: 'center', justifyContent: 'center', padding: 30 }}
+            >
+              <T color="subtext" style={{ textAlign: 'center' }}>Say hello to {live.name}! 👋</T>
+            </View>
+          ) : null}
+        </View>
         <View style={{ flexDirection: 'row', alignItems: 'flex-end', padding: 10, gap: 8, borderTopWidth: 1, borderTopColor: colors.border }}>
           <TextInput
             value={text} onChangeText={setText} placeholder="Message…" placeholderTextColor={colors.subtext} multiline
