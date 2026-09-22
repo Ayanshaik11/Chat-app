@@ -90,6 +90,7 @@ export default function HomeScreen({ navigation }) {
       (byUser[s.authorId] = byUser[s.authorId] || []).push({
         id: s.id, authorId: s.authorId, mediaURL: s.mediaURL, mediaType: s.mediaType,
         createdAt: toMillis(s.createdAt), expiresAt: toMillis(s.expiresAt), storagePath: s.storagePath || '',
+        viewedBy: s.viewedBy || [],
       });
     });
     const groups = Object.entries(byUser)
