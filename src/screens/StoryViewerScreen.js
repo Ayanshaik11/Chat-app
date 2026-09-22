@@ -5,7 +5,8 @@ import { StatusBar } from 'expo-status-bar';
 import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
-import { deleteStory } from '../services/stories';
+import { useAppData } from '../context/AppDataContext';
+import { deleteStory, markStoryViewed } from '../services/stories';
 import { timeAgo } from '../utils/helpers';
 import { markSeen } from '../utils/seen';
 import Avatar from '../components/Avatar';
@@ -16,6 +17,7 @@ const IMAGE_DURATION = 5000;
 export default function StoryViewerScreen({ route, navigation }) {
   const { groups, groupIndex = 0 } = route.params;
   const { me } = useAuth();
+  const { friendProfiles } = useAppData();
   const { width, height } = useWindowDimensions();
   const [gi, setGi] = useState(Math.max(0, groupIndex));
   const [si, setSi] = useState(0);
@@ -69,6 +71,7 @@ export default function StoryViewerScreen({ route, navigation }) {
   useEffect(() => {
     if (!story) return undefined;
     markSeen([story.id]);
+    if (group.user.id !== me.id) markStoryViewed(story.id, me.id);
     progress.setValue(0);
     valueRef.current = 0;
     setPaused(false);
@@ -102,6 +105,17 @@ export default function StoryViewerScreen({ route, navigation }) {
 
   if (!story) return null;
   const mine = group.user.id === me.id;
+  const viewerIds = (story.viewedBy || []).filter((id) => id !== me.id);
+
+  const showViewers = () => {
+    pause();
+    const names = viewerIds.map((id) => friendProfiles[id]?.name || 'Someone');
+    Alert.alert(
+      `Seen by ${viewerIds.length}`,
+      names.join('\n') || 'No one yet',
+      [{ text: 'OK', onPress: resume }]
+    );
+  };
 
   return (
     <View style={{ flex: 1, backgroundColor: '#000' }}>
@@ -158,6 +172,18 @@ export default function StoryViewerScreen({ route, navigation }) {
           </Pressable>
         </View>
       </SafeAreaView>
+
+      {mine ? (
+        <SafeAreaView edges={['bottom']} pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}>
+          <Pressable
+            onPress={showViewers}
+            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingHorizontal: 16, paddingVertical: 14 }}
+          >
+            <Ionicons name="eye-outline" size={18} color="#fff" />
+            <T size={13} weight="medium" color="#fff">{viewerIds.length} {viewerIds.length === 1 ? 'view' : 'views'}</T>
+          </Pressable>
+        </SafeAreaView>
+      ) : null}
     </View>
   );
 }
