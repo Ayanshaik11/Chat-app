@@ -10,6 +10,8 @@ import { SettingsProvider, useTheme } from './src/context/SettingsContext';
 import { AuthProvider } from './src/context/AuthContext';
 import { AppDataProvider } from './src/context/AppDataContext';
 import RootNavigator from './src/navigation/RootNavigator';
+import useUpdateCheck from './src/hooks/useUpdateCheck';
+import UpdateCard from './src/components/UpdateCard';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -36,11 +38,13 @@ class ErrorBoundary extends React.Component {
 
 function Root() {
   const { isDark } = useTheme();
+  const updateState = useUpdateCheck();
   return (
-    <>
+    <View style={{ flex: 1 }}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
       <RootNavigator />
-    </>
+      <UpdateCard state={updateState} />
+    </View>
   );
 }
 
