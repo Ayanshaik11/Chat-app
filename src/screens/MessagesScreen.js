@@ -5,7 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { useAppData } from '../context/AppDataContext';
 import { useTheme } from '../context/SettingsContext';
 import { chatIdFor } from '../services/chat';
-import { timeAgo, toMillis } from '../utils/helpers';
+import { isOnline, timeAgo, toMillis } from '../utils/helpers';
 import Screen from '../components/Screen';
 import Avatar from '../components/Avatar';
 import EmptyState from '../components/EmptyState';
@@ -38,7 +38,7 @@ export default function MessagesScreen({ navigation }) {
           backgroundColor: pressed ? colors.inputBg : 'transparent',
         })}
       >
-        <Avatar uri={friend.photoURL} name={friend.name} size={54} online={friend.online} />
+        <Avatar uri={friend.photoURL} name={friend.name} size={54} online={isOnline(friend)} />
         <View style={{ flex: 1 }}>
           <T weight={unread ? 'bold' : 'semibold'} numberOfLines={1}>{friend.name}</T>
           <T size={13} color={unread ? 'text' : 'subtext'} weight={unread ? 'medium' : 'regular'} numberOfLines={1}>{preview}</T>
