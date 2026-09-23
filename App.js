@@ -56,6 +56,7 @@ export default function App() {
     Poppins_600SemiBold,
     Poppins_700Bold,
     Pacifico_400Regular,
+    BebasNeue_400Regular
   });
   const [timedOut, setTimedOut] = useState(false);
 
