@@ -4,14 +4,13 @@
   "main": "index.js",
   "private": true,
   "scripts": {
-    "start": "expo start --dev-client",
+    "start": "expo start",
     "android": "expo run:android",
     "ios": "expo run:ios",
     "prebuild": "expo prebuild --clean",
     "build:apk": "eas build -p android --profile preview"
   },
   "dependencies": {
-    "@expo-google-fonts/pacifico": "^0.2.3",
     "@expo-google-fonts/poppins": "^0.2.3",
     "@expo-google-fonts/bebas-neue": "^0.2.3",
     "@expo/vector-icons": "^14.0.4",
@@ -24,7 +23,6 @@
     "expo-asset": "~11.0.5",
     "expo-av": "~15.0.2",
     "expo-constants": "~17.0.8",
-    "expo-dev-client": "~5.0.20",
     "expo-file-system": "~18.0.12",
     "expo-font": "~13.0.4",
     "expo-image-picker": "~16.0.6",
