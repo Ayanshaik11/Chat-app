@@ -170,7 +170,7 @@ export default function HomeScreen({ navigation }) {
   return (
     <Screen>
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, height: 56 }}>
-        <Text style={{ flex: 1, fontFamily: fonts.logo, fontSize: 30, color: colors.primary, lineHeight: 50 }}>Chat App</Text>
+        <Text style={{ flex: 1, fontFamily: fonts.logo, fontSize: 30, color: colors.primary, lineHeight: 50 }}>King X</Text>
         <Pressable onPress={newMenu} hitSlop={10} style={{ marginRight: 18 }}>
           <Ionicons name="add-circle-outline" size={28} color={colors.text} />
         </Pressable>
