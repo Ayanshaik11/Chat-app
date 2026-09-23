@@ -31,7 +31,7 @@ export default function LoginScreen() {
           >
             <Ionicons name="chatbubbles" size={46} color="#fff" />
           </View>
-          <Text style={{ fontFamily: fonts.logo, fontSize: 46, color: '#fff', lineHeight: 70 }}>Chat App</Text>
+          <Text style={{ fontFamily: fonts.logo, fontSize: 46, color: '#fff', lineHeight: 70 }}>King X</Text>
           <T color="rgba(255,255,255,0.85)" size={15} style={{ textAlign: 'center', marginTop: 6 }}>
             Share moments, follow your friends{'\n'}and chat in real time.
           </T>
