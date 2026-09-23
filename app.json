@@ -34,19 +34,26 @@
       ]
     },
     "plugins": [
-      [
-        "@react-native-google-signin/google-signin",
-        {
-          "iosUrlScheme": "com.googleusercontent.apps.REPLACE_WITH_IOS_CLIENT_ID"
-        }
-      ],
-      [
-        "expo-image-picker",
-        {
-          "photosPermission": "Chat App needs your photos so you can share posts, stories and set a profile picture.",
-          "cameraPermission": "Chat App needs the camera so you can take photos for posts and stories."
-        }
-      ]
-    ]
-  }
-}
+  [
+    "@react-native-google-signin/google-signin",
+    {
+      "iosUrlScheme": "com.googleusercontent.apps.REPLACE_WITH_IOS_CLIENT_ID"
+    }
+  ],
+  [
+    "expo-image-picker",
+    {
+      "photosPermission": "Chat App needs your photos so you can share posts, stories and set a profile picture.",
+      "cameraPermission": "Chat App needs the camera so you can take photos for posts and stories."
+    }
+  ],
+  [
+    "expo-build-properties",
+    {
+      "android": {
+        "enableProguardInReleaseBuilds": true,
+        "enableShrinkResourcesInReleaseBuilds": true
+      }
+    }
+  ]
+]
