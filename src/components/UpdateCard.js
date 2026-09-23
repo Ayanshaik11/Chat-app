@@ -1,5 +1,5 @@
 import React from 'react';
-import { Platform, Pressable, View } from 'react-native';
+import { Linking, Platform, Pressable, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/SettingsContext';
@@ -29,14 +29,21 @@ export default function UpdateCard({ state }) {
             <T weight="semibold" size={14}>New version {info.latestVersion}</T>
             <T size={12} color="subtext" numberOfLines={2}>{info.notes || 'A new version of Chat App is ready.'}</T>
           </View>
-          {!info.forced && !downloading ? (
+          {!info.forced ? (
             <Pressable onPress={dismiss} hitSlop={10}>
               <Ionicons name="close" size={18} color={colors.subtext} />
             </Pressable>
           ) : null}
         </View>
 
-        {error ? <T size={12} color="danger" style={{ marginTop: 8 }}>{error}</T> : null}
+        {error ? (
+          <View style={{ marginTop: 8 }}>
+            <T size={12} color="danger">{error}</T>
+            <Pressable onPress={() => Linking.openURL(info.url).catch(() => {})} style={{ marginTop: 4 }}>
+              <T size={12} color="primary" weight="medium">Or open the download link in your browser</T>
+            </Pressable>
+          </View>
+        ) : null}
 
         <View style={{ marginTop: 12 }}>
           {downloading ? (
@@ -48,7 +55,7 @@ export default function UpdateCard({ state }) {
             <Pressable onPress={install}>
               <LinearGradient colors={gradient} {...gradientProps} style={{ height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' }}>
                 <T weight="semibold" size={14} color="#fff">
-                  {Platform.OS === 'android' ? 'Update now' : 'Download update'}
+                  {error ? 'Try again' : Platform.OS === 'android' ? 'Update now' : 'Download update'}
                 </T>
               </LinearGradient>
             </Pressable>
