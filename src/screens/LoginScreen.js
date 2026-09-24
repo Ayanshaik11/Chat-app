@@ -20,7 +20,7 @@ export default function LoginScreen() {
   };
 
   return (
-    <LinearGradient colors={['#050505', '#1a1600', '#F5B700']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1 }}>
+    <LinearGradient colors={['#050505', '#1a0505', '#E11D2A']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1 }}>
       <SafeAreaView style={{ flex: 1, padding: 24, justifyContent: 'space-between' }}>
         <View style={{ alignItems: 'center', marginTop: 90 }}>
           <View
@@ -29,9 +29,9 @@ export default function LoginScreen() {
               alignItems: 'center', justifyContent: 'center', marginBottom: 18,
             }}
           >
-            <MaterialCommunityIcons name="crown" size={46} color="#F5B700" />
+            <MaterialCommunityIcons name="crown" size={46} color="#E11D2A" />
           </View>
-          <Text style={{ fontFamily: fonts.logo, fontSize: 46, color: '#F5B700', lineHeight: 56 }}>KING X</Text>
+          <Text style={{ fontFamily: fonts.logo, fontSize: 46, color: '#E11D2A', lineHeight: 56 }}>KING X</Text>
           <T color="rgba(255,255,255,0.85)" size={15} style={{ textAlign: 'center', marginTop: 6 }}>
             Share moments, follow your friends{'\n'}and chat in real time.
           </T>
