@@ -1,18 +1,18 @@
-// Green + blue theme, light and dark
-export const gradient = ['#12C48B', '#0EA5E9']; // green -> blue
+// King X theme — black + gold, light and dark
+export const gradient = ['#F5B700', '#1a1a1a']; // gold -> near-black
 export const gradientProps = { start: { x: 0, y: 0 }, end: { x: 1, y: 1 } };
 
 export const lightColors = {
-  bg: '#F1FAF8',
+  bg: '#FBF8F0',
   card: '#FFFFFF',
-  text: '#0A2A2E',
-  subtext: '#5F8085',
-  border: '#DCEBE8',
-  primary: '#0FA98A',
-  accent: '#0EA5E9',
-  inputBg: '#E6F4F1',
-  bubbleMine: '#0FA98A',
-  bubbleMineText: '#FFFFFF',
+  text: '#1A1A1A',
+  subtext: '#7A6F55',
+  border: '#EFE3C0',
+  primary: '#B98600',     // readable gold on light backgrounds
+  accent: '#1A1A1A',
+  inputBg: '#F6EBCE',
+  bubbleMine: '#F5C542',  // dark-ish gold
+  bubbleMineText: '#1A1200',
   bubbleOther: '#FFFFFF',
   tabBar: '#FFFFFF',
   danger: '#E5484D',
@@ -21,18 +21,18 @@ export const lightColors = {
 };
 
 export const darkColors = {
-  bg: '#061518',
-  card: '#0C2429',
-  text: '#E8FAF7',
-  subtext: '#8FB3B8',
-  border: '#163A42',
-  primary: '#2DD4A7',
-  accent: '#38BDF8',
-  inputBg: '#0F2C32',
-  bubbleMine: '#0E8F78',
-  bubbleMineText: '#FFFFFF',
-  bubbleOther: '#123138',
-  tabBar: '#081C20',
+  bg: '#0A0A0A',
+  card: '#161616',
+  text: '#F5EFDD',
+  subtext: '#A79B7D',
+  border: '#2A2A2A',
+  primary: '#F5B700',
+  accent: '#F5EFDD',
+  inputBg: '#1E1B0F',
+  bubbleMine: '#C99400',  // dark gold
+  bubbleMineText: '#0A0800',
+  bubbleOther: '#1E1E1E',
+  tabBar: '#0A0A0A',
   danger: '#FF6B6B',
   online: '#34D399',
   overlay: 'rgba(0,0,0,0.65)',
@@ -43,5 +43,5 @@ export const fonts = {
   medium: 'Poppins_500Medium',
   semibold: 'Poppins_600SemiBold',
   bold: 'Poppins_700Bold',
-  logo: 'Pacifico_400Regular',
+  logo: 'BebasNeue_400Regular',
 };
