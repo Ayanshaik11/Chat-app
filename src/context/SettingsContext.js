@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { darkColors, fonts, gradient, lightColors } from '../theme';
 
 const KEY = 'chatapp.settings.v1';
-const defaults = { themeMode: 'system', vibration: true, showOnline: true };
+const defaults = { themeMode: 'dark', vibration: true, showOnline: true }; // King X reads best in dark+gold — light mode is still there in Settings
 
 const SettingsContext = createContext(null);
 
