@@ -2,7 +2,7 @@ import React from 'react';
 import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/SettingsContext';
 import T from '../components/T';
@@ -20,7 +20,7 @@ export default function LoginScreen() {
   };
 
   return (
-    <LinearGradient colors={['#083B36', '#0E7C66', '#0EA5E9']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1 }}>
+    <LinearGradient colors={['#050505', '#1a1600', '#F5B700']} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={{ flex: 1 }}>
       <SafeAreaView style={{ flex: 1, padding: 24, justifyContent: 'space-between' }}>
         <View style={{ alignItems: 'center', marginTop: 90 }}>
           <View
@@ -29,9 +29,9 @@ export default function LoginScreen() {
               alignItems: 'center', justifyContent: 'center', marginBottom: 18,
             }}
           >
-            <Ionicons name="chatbubbles" size={46} color="#fff" />
+            <MaterialCommunityIcons name="crown" size={46} color="#F5B700" />
           </View>
-          <Text style={{ fontFamily: fonts.logo, fontSize: 46, color: '#fff', lineHeight: 70 }}>King X</Text>
+          <Text style={{ fontFamily: fonts.logo, fontSize: 46, color: '#F5B700', lineHeight: 56 }}>KING X</Text>
           <T color="rgba(255,255,255,0.85)" size={15} style={{ textAlign: 'center', marginTop: 6 }}>
             Share moments, follow your friends{'\n'}and chat in real time.
           </T>
@@ -47,11 +47,11 @@ export default function LoginScreen() {
             })}
           >
             {busy ? (
-              <ActivityIndicator color="#0E7C66" />
+              <ActivityIndicator color="#1a1a1a" />
             ) : (
               <>
-                <Ionicons name="logo-google" size={20} color="#0E7C66" />
-                <T weight="semibold" size={16} color="#083B36">Continue with Google</T>
+                <Ionicons name="logo-google" size={20} color="#1a1a1a" />
+                <T weight="semibold" size={16} color="#1a1a1a">Continue with Google</T>
               </>
             )}
           </Pressable>
