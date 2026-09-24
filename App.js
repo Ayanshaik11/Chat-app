@@ -4,7 +4,7 @@ import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
 import { useFonts, Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold, Poppins_700Bold } from '@expo-google-fonts/poppins';
-import { BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
+import { Pacifico_400Regular } from '@expo-google-fonts/pacifico';
 
 import { SettingsProvider, useTheme } from './src/context/SettingsContext';
 import { AuthProvider } from './src/context/AuthContext';
@@ -25,9 +25,9 @@ class ErrorBoundary extends React.Component {
     if (!this.state.error) return this.props.children;
     const e = this.state.error;
     return (
-      <View style={{ flex: 1, backgroundColor: '#0B3D3A', paddingTop: 60, paddingHorizontal: 16, paddingBottom: 20 }}>
+      <View style={{ flex: 1, backgroundColor: '#0A0A0A', paddingTop: 60, paddingHorizontal: 16, paddingBottom: 20 }}>
         <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>Something went wrong</Text>
-        <Text style={{ color: '#9FE8D3', marginTop: 6 }}>Send a screenshot of this screen to fix it.</Text>
+        <Text style={{ color: '#F5B700', marginTop: 6 }}>Send a screenshot of this screen to fix it.</Text>
         <ScrollView style={{ marginTop: 14 }}>
           <Text selectable style={{ color: '#fff', fontSize: 12 }}>{String((e && e.stack) || e)}</Text>
         </ScrollView>
@@ -54,7 +54,7 @@ export default function App() {
     Poppins_500Medium,
     Poppins_600SemiBold,
     Poppins_700Bold,
-    BebasNeue_400Regular
+    Pacifico_400Regular,
   });
   const [timedOut, setTimedOut] = useState(false);
 
