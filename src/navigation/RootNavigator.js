@@ -82,7 +82,7 @@ export default function RootNavigator() {
   // wait for auth + my profile document
   if (initializing || (fbUser && !me)) {
     return (
-      <LinearGradient colors={['#083B36', '#0E7C66', '#0EA5E9']} style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+      <LinearGradient colors={['#050505', '#1a1600', '#F5B700']} style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator color="#fff" size="large" />
       </LinearGradient>
     );
