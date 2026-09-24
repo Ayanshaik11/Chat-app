@@ -15,9 +15,9 @@ try {
 function Root() {
   if (loadError) {
     return (
-      <View style={{ flex: 1, backgroundColor: '#0B3D3A', paddingTop: 60, paddingHorizontal: 16, paddingBottom: 20 }}>
+      <View style={{ flex: 1, backgroundColor: '#0A0A0A', paddingTop: 60, paddingHorizontal: 16, paddingBottom: 20 }}>
         <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>Chat App failed to start</Text>
-        <Text style={{ color: '#9FE8D3', marginTop: 6 }}>Send a screenshot of this screen to fix it.</Text>
+        <Text style={{ color: '#F5B700', marginTop: 6 }}>Send a screenshot of this screen to fix it.</Text>
         <ScrollView style={{ marginTop: 14 }}>
           <Text selectable style={{ color: '#fff', fontSize: 12 }}>
             {String((loadError && loadError.stack) || loadError)}
