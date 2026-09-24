@@ -81,7 +81,7 @@ export default function ProfileView({ userId, navigation }) {
       .map((s) => ({
         id: s.id, authorId: s.authorId, mediaURL: s.mediaURL, mediaType: s.mediaType,
         createdAt: toMillis(s.createdAt), expiresAt: toMillis(s.expiresAt), storagePath: s.storagePath || '',
-        viewedBy: s.viewedBy || [],
+        viewedBy: s.viewedBy || [], likedBy: s.likedBy || [],
       }))
       .sort((a, b) => a.createdAt - b.createdAt);
     navigation.navigate('StoryViewer', {
