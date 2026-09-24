@@ -171,8 +171,8 @@ export default function HomeScreen({ navigation }) {
     <Screen>
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, height: 56 }}>
         <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-          <MaterialCommunityIcons name="crown" size={26} color={colors.primary} />
-          <Text style={{ fontFamily: fonts.logo, fontSize: 30, color: colors.primary, lineHeight: 34 }}>KING X</Text>
+          <MaterialCommunityIcons name="crown-outline" size={26} color={colors.primary} />
+          <Text style={{ fontFamily: fonts.logo, fontSize: 30, color: colors.text, lineHeight: 34 }}>KING X</Text>
         </View>
         <Pressable onPress={newMenu} hitSlop={10} style={{ marginRight: 18 }}>
           <Ionicons name="add-circle-outline" size={28} color={colors.text} />
