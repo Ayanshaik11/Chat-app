@@ -172,7 +172,7 @@ export default function StoryViewerScreen({ route, navigation }) {
             <View key={s.id} style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.35)', overflow: 'hidden' }}>
               <Animated.View
                 style={{
-                  height: 3, backgroundColor: '#F5B700',
+                  height: 3, backgroundColor: '#E11D2A',
                   width: i < si ? '100%' : i === si ? progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) : '0%',
                 }}
               />
@@ -204,7 +204,7 @@ export default function StoryViewerScreen({ route, navigation }) {
               <T size={13} weight="medium" color="#fff">{viewerIds.length} {viewerIds.length === 1 ? 'view' : 'views'}</T>
             </Pressable>
             <Pressable onPress={showLikers} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Ionicons name="heart" size={18} color="#F5B700" />
+              <Ionicons name="heart" size={18} color="#E11D2A" />
               <T size={13} weight="medium" color="#fff">{likerIds.length} {likerIds.length === 1 ? 'like' : 'likes'}</T>
             </Pressable>
           </View>
@@ -212,7 +212,7 @@ export default function StoryViewerScreen({ route, navigation }) {
           <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 16, paddingVertical: 14 }}>
             <Pressable onPress={onToggleLike} hitSlop={12}>
               <Animated.View style={{ transform: [{ scale: heartScale }] }}>
-                <Ionicons name={iLiked ? 'heart' : 'heart-outline'} size={30} color={iLiked ? '#F5B700' : '#fff'} />
+                <Ionicons name={iLiked ? 'heart' : 'heart-outline'} size={30} color={iLiked ? '#E11D2A' : '#fff'} />
               </Animated.View>
             </Pressable>
           </View>
