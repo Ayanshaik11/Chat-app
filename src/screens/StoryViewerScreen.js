@@ -6,13 +6,20 @@ import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useAppData } from '../context/AppDataContext';
-import { deleteStory, markStoryViewed } from '../services/stories';
+import { deleteStory, markStoryViewed, toggleStoryLike } from '../services/stories';
 import { timeAgo } from '../utils/helpers';
 import { markSeen } from '../utils/seen';
 import Avatar from '../components/Avatar';
 import T from '../components/T';
 
 const IMAGE_DURATION = 5000;
+
+// alphabetical (ascending) list of names for a set of user ids
+function namesAscending(ids, friendProfiles) {
+  return ids
+    .map((id) => friendProfiles[id]?.name || 'Someone')
+    .sort((a, b) => a.localeCompare(b));
+}
 
 export default function StoryViewerScreen({ route, navigation }) {
   const { groups, groupIndex = 0 } = route.params;
@@ -22,9 +29,11 @@ export default function StoryViewerScreen({ route, navigation }) {
   const [gi, setGi] = useState(Math.max(0, groupIndex));
   const [si, setSi] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [likedByMe, setLikedByMe] = useState({}); // { [storyId]: true } — optimistic local overrides
   const progress = useRef(new Animated.Value(0)).current;
   const valueRef = useRef(0);
   const animRef = useRef(null);
+  const heartScale = useRef(new Animated.Value(1)).current;
 
   const group = groups[gi];
   const story = group?.stories[si];
@@ -106,15 +115,29 @@ export default function StoryViewerScreen({ route, navigation }) {
   if (!story) return null;
   const mine = group.user.id === me.id;
   const viewerIds = (story.viewedBy || []).filter((id) => id !== me.id);
+  const likerIds = story.likedBy || [];
+  const iLiked = likedByMe[story.id] ?? likerIds.includes(me.id);
 
   const showViewers = () => {
     pause();
-    const names = viewerIds.map((id) => friendProfiles[id]?.name || 'Someone');
-    Alert.alert(
-      `Seen by ${viewerIds.length}`,
-      names.join('\n') || 'No one yet',
-      [{ text: 'OK', onPress: resume }]
-    );
+    const names = namesAscending(viewerIds, friendProfiles);
+    Alert.alert(`Seen by ${viewerIds.length}`, names.join('\n') || 'No one yet', [{ text: 'OK', onPress: resume }]);
+  };
+
+  const showLikers = () => {
+    pause();
+    const names = namesAscending(likerIds, friendProfiles);
+    Alert.alert(`Liked by ${likerIds.length}`, names.join('\n') || 'No one yet', [{ text: 'OK', onPress: resume }]);
+  };
+
+  const onToggleLike = () => {
+    const next = !iLiked;
+    setLikedByMe((m) => ({ ...m, [story.id]: next }));
+    Animated.sequence([
+      Animated.timing(heartScale, { toValue: 1.4, duration: 110, useNativeDriver: true }),
+      Animated.timing(heartScale, { toValue: 1, duration: 110, useNativeDriver: true }),
+    ]).start();
+    toggleStoryLike(story.id, me.id, iLiked);
   };
 
   return (
@@ -149,7 +172,7 @@ export default function StoryViewerScreen({ route, navigation }) {
             <View key={s.id} style={{ flex: 1, height: 3, borderRadius: 2, backgroundColor: 'rgba(255,255,255,0.35)', overflow: 'hidden' }}>
               <Animated.View
                 style={{
-                  height: 3, backgroundColor: '#fff',
+                  height: 3, backgroundColor: '#F5B700',
                   width: i < si ? '100%' : i === si ? progress.interpolate({ inputRange: [0, 1], outputRange: ['0%', '100%'] }) : '0%',
                 }}
               />
@@ -173,17 +196,28 @@ export default function StoryViewerScreen({ route, navigation }) {
         </View>
       </SafeAreaView>
 
-      {mine ? (
-        <SafeAreaView edges={['bottom']} pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}>
-          <Pressable
-            onPress={showViewers}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 6, alignSelf: 'flex-start', paddingHorizontal: 16, paddingVertical: 14 }}
-          >
-            <Ionicons name="eye-outline" size={18} color="#fff" />
-            <T size={13} weight="medium" color="#fff">{viewerIds.length} {viewerIds.length === 1 ? 'view' : 'views'}</T>
-          </Pressable>
-        </SafeAreaView>
-      ) : null}
+      <SafeAreaView edges={['bottom']} pointerEvents="box-none" style={{ position: 'absolute', left: 0, right: 0, bottom: 0 }}>
+        {mine ? (
+          <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 14, gap: 22 }}>
+            <Pressable onPress={showViewers} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="eye-outline" size={18} color="#fff" />
+              <T size={13} weight="medium" color="#fff">{viewerIds.length} {viewerIds.length === 1 ? 'view' : 'views'}</T>
+            </Pressable>
+            <Pressable onPress={showLikers} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Ionicons name="heart" size={18} color="#F5B700" />
+              <T size={13} weight="medium" color="#fff">{likerIds.length} {likerIds.length === 1 ? 'like' : 'likes'}</T>
+            </Pressable>
+          </View>
+        ) : (
+          <View style={{ flexDirection: 'row', justifyContent: 'flex-end', paddingHorizontal: 16, paddingVertical: 14 }}>
+            <Pressable onPress={onToggleLike} hitSlop={12}>
+              <Animated.View style={{ transform: [{ scale: heartScale }] }}>
+                <Ionicons name={iLiked ? 'heart' : 'heart-outline'} size={30} color={iLiked ? '#F5B700' : '#fff'} />
+              </Animated.View>
+            </Pressable>
+          </View>
+        )}
+      </SafeAreaView>
     </View>
   );
 }
