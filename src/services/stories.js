@@ -1,4 +1,4 @@
-import { arrayUnion, collection, deleteDoc, doc, getDocs, query, serverTimestamp, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore';
+import { arrayRemove, arrayUnion, collection, deleteDoc, doc, getDocs, query, serverTimestamp, setDoc, Timestamp, updateDoc, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { deleteFile, extOf, isVideo, mimeOf, uploadFile } from './media';
 import { chunk, toMillis } from '../utils/helpers';
@@ -34,6 +34,11 @@ export async function fetchStories(authorIds) {
 
 export const markStoryViewed = (storyId, viewerId) =>
   updateDoc(doc(db, 'stories', storyId), { viewedBy: arrayUnion(viewerId) }).catch(() => {});
+
+export const toggleStoryLike = (storyId, meId, alreadyLiked) =>
+  updateDoc(doc(db, 'stories', storyId), {
+    likedBy: alreadyLiked ? arrayRemove(meId) : arrayUnion(meId),
+  }).catch(() => {});
 
 export async function deleteStory(story) {
   await deleteDoc(doc(db, 'stories', story.id));
