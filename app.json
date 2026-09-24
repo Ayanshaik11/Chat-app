@@ -11,7 +11,7 @@
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0B3D3A"
+      "backgroundColor": "#0D0D0D"
     },
     "ios": {
       "bundleIdentifier": "com.chat.app",
@@ -25,7 +25,7 @@
       "package": "com.chat.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#0E7C66"
+        "backgroundColor": "#0D0D0D"
       },
       "permissions": [
         "VIBRATE",
