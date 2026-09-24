@@ -27,7 +27,7 @@ class ErrorBoundary extends React.Component {
     return (
       <View style={{ flex: 1, backgroundColor: '#0A0A0A', paddingTop: 60, paddingHorizontal: 16, paddingBottom: 20 }}>
         <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>Something went wrong</Text>
-        <Text style={{ color: '#F5B700', marginTop: 6 }}>Send a screenshot of this screen to fix it.</Text>
+        <Text style={{ color: '#E11D2A', marginTop: 6 }}>Send a screenshot of this screen to fix it.</Text>
         <ScrollView style={{ marginTop: 14 }}>
           <Text selectable style={{ color: '#fff', fontSize: 12 }}>{String((e && e.stack) || e)}</Text>
         </ScrollView>
