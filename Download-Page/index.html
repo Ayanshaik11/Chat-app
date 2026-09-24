@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta http-equiv="X-UA-Compatible" content="ie=edge" />
+
+        <title>King X — Download</title>
+
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            body {
+                min-height: 100vh;
+                background: #000;
+                color: #fff;
+                font-family: Arial, sans-serif;
+            }
+
+            /* NAVBAR */
+
+            .top-nav {
+                width: 100%;
+                height: 65px;
+                display: flex;
+                align-items: center;
+                padding: 0 22px;
+                background: rgba(10, 10, 10, 0.95);
+                border-bottom: 1px solid #151515;
+                position: fixed;
+                top: 0;
+                left: 0;
+                z-index: 100;
+            }
+
+            .brand {
+                font-size: 1.5rem;
+                font-weight: 700;
+                letter-spacing: 1px;
+            }
+
+            .brand span {
+                color: #0563ff;
+            }
+
+            .by-king {
+                margin-left: 8px;
+                font-size: 0.8rem;
+                color: #888;
+            }
+
+            /* MAIN */
+
+            .app-container {
+                min-height: 100vh;
+                width: 100%;
+                padding: 100px 20px 40px;
+
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 22px;
+            }
+
+            #icon {
+                width: 180px;
+                height: 180px;
+                object-fit: contain;
+                border-radius: 35px;
+
+                filter: drop-shadow(0 0 25px #0563ff);
+            }
+
+            .title {
+                font-size: 2rem;
+                font-weight: 700;
+            }
+
+            .subtitle {
+                color: #888;
+                font-size: 0.95rem;
+                margin-top: -12px;
+            }
+
+            /* DOWNLOAD BUTTON */
+
+            #btn {
+                min-width: 220px;
+                height: 55px;
+
+                padding: 0 25px;
+
+                border: none;
+                border-radius: 18px;
+
+                display: flex;
+                justify-content: center;
+                align-items: center;
+
+                font-size: 1.1rem;
+                font-weight: 600;
+
+                background: #0563ff;
+                color: #fff;
+                text-decoration: none;
+
+                box-shadow: 0 0 25px rgba(0, 99, 255, 0.7);
+
+                cursor: pointer;
+
+                transition: 0.2s ease;
+            }
+
+            #btn:hover {
+                transform: scale(1.04);
+                box-shadow: 0 0 35px rgba(0, 99, 255, 0.9);
+            }
+
+            #btn:active {
+                transform: scale(0.96);
+            }
+
+            /* NOTES */
+
+            .notes {
+                width: 100%;
+                max-width: 500px;
+
+                padding: 20px;
+
+                background: #0b0b0b;
+                border: 1px solid #222;
+                border-radius: 18px;
+            }
+
+            .notes h2 {
+                font-size: 1.1rem;
+                margin-bottom: 15px;
+            }
+
+            .notes ul {
+                padding-left: 20px;
+            }
+
+            .notes li {
+                margin-bottom: 12px;
+                color: #bbb;
+                line-height: 1.5;
+            }
+
+            .notes strong {
+                color: #fff;
+            }
+
+            .warning {
+                color: #ffcc00;
+            }
+
+            /* MOBILE */
+
+            @media (max-width: 500px) {
+                #icon {
+                    width: 150px;
+                    height: 150px;
+                }
+
+                .title {
+                    font-size: 1.7rem;
+                }
+
+                .notes {
+                    max-width: 100%;
+                }
+            }
+        </style>
+    </head>
+
+    <body>
+        <!-- NAVBAR -->
+
+        <nav class="top-nav">
+            <div class="brand">King <span>X</span></div>
+
+            <div class="by-king">by Aiyan</div>
+        </nav>
+
+        <!-- MAIN -->
+
+        <main class="app-container">
+            <!-- APP ICON -->
+
+            <img id="icon" src="adaptive-icon.png" alt="King X app icon" />
+
+            <!-- APP NAME -->
+
+            <h1 class="title">King X</h1>
+
+            <p class="subtitle">Official APK Download</p>
+
+            <!-- DOWNLOAD BUTTON -->
+
+            <button id="btn">Download APK ↓</button>
+
+            <!-- INSTALLATION NOTES -->
+
+            <div class="notes">
+                <h2>📌 Before installing</h2>
+
+                <ul>
+                    <li>
+                        <strong>Use Chrome</strong> to download the APK for the
+                        best experience.
+                    </li>
+
+                    <li>
+                        If Android blocks the installation, allow
+                        <strong>Install unknown apps</strong>
+                        for Chrome in your phone's settings.
+                    </li>
+
+                    <li>
+                        After downloading, open the APK and use the
+                        <strong>Package Installer</strong>
+                        when Android asks which app should install it.
+                    </li>
+
+                    <li>
+                        If you have an older version installed, open the app and
+                        it will prompt you internally to update automatically.
+                    </li>
+
+                    <li class="warning">
+                        ⚠️ Only install the APK if you trust its source.
+                    </li>
+                </ul>
+            </div>
+        </main>
+
+        <!-- DOWNLOAD SOUND -->
+
+        <audio id="notify" src="notify.mp3" preload="auto"></audio>
+
+        <script>
+            const button = document.getElementById("btn");
+            const sound = document.getElementById("notify");
+            const url = "https://github.com/Ayanshaik11/Chat-app/releases/download/v1.0.4/chat-app-1.0.4.apk";
+
+            button.addEventListener("click", () => {
+                /* Play click sound */
+                sound.currentTime = 0;
+                sound.play().catch(() => {});
+
+                /* Direct location change triggers browser native download seamlessly */
+                setTimeout(() => {
+                    window.location.href = url;
+                }, 150);
+            });
+        </script>
+    </body>
+</html>
