@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
+import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
@@ -90,7 +90,7 @@ export default function HomeScreen({ navigation }) {
       (byUser[s.authorId] = byUser[s.authorId] || []).push({
         id: s.id, authorId: s.authorId, mediaURL: s.mediaURL, mediaType: s.mediaType,
         createdAt: toMillis(s.createdAt), expiresAt: toMillis(s.expiresAt), storagePath: s.storagePath || '',
-        viewedBy: s.viewedBy || [],
+        viewedBy: s.viewedBy || [], likedBy: s.likedBy || [],
       });
     });
     const groups = Object.entries(byUser)
@@ -170,7 +170,10 @@ export default function HomeScreen({ navigation }) {
   return (
     <Screen>
       <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, height: 56 }}>
-        <Text style={{ flex: 1, fontFamily: fonts.logo, fontSize: 30, color: colors.primary, lineHeight: 50 }}>King X</Text>
+        <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+          <MaterialCommunityIcons name="crown" size={26} color={colors.primary} />
+          <Text style={{ fontFamily: fonts.logo, fontSize: 30, color: colors.primary, lineHeight: 34 }}>KING X</Text>
+        </View>
         <Pressable onPress={newMenu} hitSlop={10} style={{ marginRight: 18 }}>
           <Ionicons name="add-circle-outline" size={28} color={colors.text} />
         </Pressable>
