@@ -29,9 +29,9 @@ export default function LoginScreen() {
               alignItems: 'center', justifyContent: 'center', marginBottom: 18,
             }}
           >
-            <MaterialCommunityIcons name="crown" size={46} color="#E11D2A" />
+            <MaterialCommunityIcons name="crown-outline" size={46} color="#E11D2A" />
           </View>
-          <Text style={{ fontFamily: fonts.logo, fontSize: 46, color: '#E11D2A', lineHeight: 56 }}>KING X</Text>
+          <Text style={{ fontFamily: fonts.logo, fontSize: 46, color: '#FFFFFF', lineHeight: 56 }}>KING X</Text>
           <T color="rgba(255,255,255,0.85)" size={15} style={{ textAlign: 'center', marginTop: 6 }}>
             Share moments, follow your friends{'\n'}and chat in real time.
           </T>
