@@ -1,5 +1,5 @@
 const YOUTUBE_FEED_URL =
-  'https://YOUR-VERCEL-DOMAIN.vercel.app/api/youtube-feed';
+  'https://download-kingx.vercel.app/api/youtube-feed';
 
 /**
  * Fetch public YouTube short-form videos
