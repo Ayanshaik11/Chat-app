@@ -4,476 +4,78 @@ import {
   Alert,
   Animated,
   FlatList,
-  Linking,
   Pressable,
   RefreshControl,
   View,
   useWindowDimensions,
 } from 'react-native';
-
 import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from '@react-navigation/native';
 
-import { useAuth } from '../context/AuthContext';
-import { useAppData } from '../context/AppDataContext';
-import { useSettings, useTheme } from '../context/SettingsContext';
-
+import { auth } from '../config/firebase';
 import {
-  deleteReel,
   fetchReels,
   toggleReelLike,
+  deleteReel,
 } from '../services/reels';
 
-import {
-  fetchDiscoverVideos,
-} from '../services/pexels';
-
-import Avatar from '../components/Avatar';
-import EmptyState from '../components/EmptyState';
-import T from '../components/T';
-
-
-function ReelItem({
+const ReelItem = ({
   reel,
-  author,
+  index,
+  activeIndex,
   meId,
-  active,
-  muted,
-  onToggleMute,
+  height,
   onLike,
   onDelete,
-  onOpenAuthor,
-  itemHeight,
-}) {
-  const scale = useRef(new Animated.Value(1)).current;
+}) => {
+  const videoRef = useRef(null);
 
-  const likes = reel.likes || [];
-
-  const liked =
-    !reel.isExternal &&
-    likes.includes(meId);
-
-  const like = () => {
-    // Pexels videos don't have Firebase likes yet.
-    if (reel.isExternal) return;
-
-    Animated.sequence([
-      Animated.timing(scale, {
-        toValue: 1.4,
-        duration: 110,
-        useNativeDriver: true,
-      }),
-      Animated.timing(scale, {
-        toValue: 1,
-        duration: 110,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    onLike(reel);
-  };
-
-  const openAuthor = () => {
-    // Pexels creator
-    if (reel.isExternal) {
-      if (reel.pexelsUrl) {
-        Linking.openURL(reel.pexelsUrl).catch(() => {});
-      }
-      return;
-    }
-
-    // Firebase user
-    if (reel.authorId) {
-      onOpenAuthor(reel.authorId);
-    }
-  };
-
-  return (
-    <Pressable
-      onPress={onToggleMute}
-      style={{
-        height: itemHeight,
-        width: '100%',
-        backgroundColor: '#000',
-      }}
-    >
-      <Video
-        source={{ uri: reel.videoURL }}
-        style={{
-          width: '100%',
-          height: '100%',
-        }}
-        resizeMode={ResizeMode.COVER}
-        isLooping
-        shouldPlay={active}
-        isMuted={muted}
-      />
-
-      {/* Bottom information */}
-      <View
-        style={{
-          position: 'absolute',
-          left: 0,
-          right: 0,
-          bottom: 0,
-          padding: 16,
-          paddingBottom: 28,
-        }}
-      >
-        <Pressable
-          onPress={openAuthor}
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 8,
-            marginBottom: 8,
-          }}
-        >
-          {reel.isExternal ? (
-            <View
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: 17,
-                backgroundColor: '#111',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Ionicons
-                name="play"
-                size={17}
-                color="#fff"
-              />
-            </View>
-          ) : (
-            <Avatar
-              uri={author?.photoURL}
-              name={author?.name}
-              size={34}
-            />
-          )}
-
-          <View>
-            <T
-              weight="semibold"
-              color="#fff"
-              size={14}
-            >
-              {reel.isExternal
-                ? reel.authorName || 'Pexels creator'
-                : author?.username ||
-                  author?.name ||
-                  'User'}
-            </T>
-
-            {reel.isExternal ? (
-              <T
-                color="#ddd"
-                size={11}
-              >
-                Pexels
-              </T>
-            ) : null}
-          </View>
-        </Pressable>
-
-        {reel.caption ? (
-          <T
-            color="#fff"
-            size={13}
-            style={{ maxWidth: '80%' }}
-          >
-            {reel.caption}
-          </T>
-        ) : null}
-
-        {/* Pexels attribution */}
-        {reel.isExternal ? (
-          <Pressable
-            onPress={() => {
-              if (reel.pexelsUrl) {
-                Linking.openURL(reel.pexelsUrl).catch(() => {});
-              }
-            }}
-            style={{ marginTop: 6 }}
-          >
-            <T
-              color="#ddd"
-              size={11}
-            >
-              View on Pexels
-            </T>
-          </Pressable>
-        ) : null}
-      </View>
-
-      {/* Right controls */}
-      <View
-        style={{
-          position: 'absolute',
-          right: 12,
-          bottom: 90,
-          alignItems: 'center',
-          gap: 22,
-        }}
-      >
-        {/* Like only for user reels */}
-        {!reel.isExternal ? (
-          <Pressable
-            onPress={like}
-            hitSlop={10}
-            style={{ alignItems: 'center' }}
-          >
-            <Animated.View
-              style={{
-                transform: [{ scale }],
-              }}
-            >
-              <Ionicons
-                name={
-                  liked
-                    ? 'heart'
-                    : 'heart-outline'
-                }
-                size={32}
-                color={
-                  liked
-                    ? '#F43F5E'
-                    : '#fff'
-                }
-              />
-            </Animated.View>
-
-            <T
-              size={12}
-              color="#fff"
-              style={{ marginTop: 2 }}
-            >
-              {likes.length}
-            </T>
-          </Pressable>
-        ) : null}
-
-        {/* Mute */}
-        <Pressable
-          onPress={onToggleMute}
-          hitSlop={10}
-        >
-          <Ionicons
-            name={
-              muted
-                ? 'volume-mute'
-                : 'volume-high'
-            }
-            size={26}
-            color="#fff"
-          />
-        </Pressable>
-
-        {/* Delete only user's own reels */}
-        {!reel.isExternal &&
-        reel.authorId === meId ? (
-          <Pressable
-            onPress={() => onDelete(reel)}
-            hitSlop={10}
-          >
-            <Ionicons
-              name="trash-outline"
-              size={24}
-              color="#fff"
-            />
-          </Pressable>
-        ) : null}
-      </View>
-    </Pressable>
-  );
-}
-
-
-export default function ReelsScreen({ navigation }) {
-  const { me } = useAuth();
-
-  const {
-    friendIds,
-    friendProfiles,
-  } = useAppData();
-
-  const { colors } = useTheme();
-  const { vibrate } = useSettings();
-
-  const { height } = useWindowDimensions();
-
-  const [reels, setReels] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-
-  const [activeIndex, setActiveIndex] =
-    useState(0);
-
-  const [muted, setMuted] =
-    useState(true);
-
-  const audienceKey = [
-    me.id,
-    ...friendIds,
-  ]
-    .sort()
-    .join(',');
-
-  const people = {
-    [me.id]: me,
-    ...friendProfiles,
-  };
-
-
-  /*
-   * Load both:
-   *
-   * 1. User/friend reels from Firebase
-   * 2. Internet reels from Pexels
-   */
-  const load = useCallback(
-    async () => {
-      try {
-        setLoading(true);
-
-        const [
-          userReels,
-          pexelsReels,
-        ] = await Promise.allSettled([
-          fetchReels(
-            audienceKey.split(',')
-          ),
-          fetchDiscoverVideos(1, 10),
-        ]);
-
-        const firebaseVideos =
-          userReels.status === 'fulfilled'
-            ? userReels.value
-            : [];
-
-        const internetVideos =
-          pexelsReels.status === 'fulfilled'
-            ? pexelsReels.value
-            : [];
-
-        /*
-         * Mix the two feeds.
-         *
-         * Example:
-         * User → Pexels → User → Pexels...
-         */
-        const mixed = [];
-
-        const max = Math.max(
-          firebaseVideos.length,
-          internetVideos.length
-        );
-
-        for (let i = 0; i < max; i++) {
-          if (firebaseVideos[i]) {
-            mixed.push(firebaseVideos[i]);
-          }
-
-          if (internetVideos[i]) {
-            mixed.push(internetVideos[i]);
-          }
-        }
-
-        setReels(mixed);
-        setActiveIndex(0);
-      } catch (e) {
-        console.warn(
-          'reels load failed',
-          e
-        );
-      } finally {
-        setLoading(false);
-        setRefreshing(false);
-      }
-    },
-    [audienceKey]
+  const [muted, setMuted] = useState(false);
+  const [liked, setLiked] = useState(
+    Array.isArray(reel.likes) && reel.likes.includes(meId)
   );
 
+  const isActive = index === activeIndex;
 
-  useFocusEffect(
-    useCallback(() => {
-      load();
-
-      return () =>
-        setActiveIndex(-1);
-    }, [load])
-  );
-
-
-  const onViewableItemsChanged =
-    useRef(
-      ({ viewableItems }) => {
-        if (viewableItems.length) {
-          setActiveIndex(
-            viewableItems[0].index ?? 0
-          );
-        }
-      }
-    ).current;
-
-
-  const viewabilityConfig =
-    useRef({
-      itemVisiblePercentThreshold: 70,
-    }).current;
-
-
-  /*
-   * Firebase Reel like
-   */
-  const onLike = (reel) => {
-    if (reel.isExternal) return;
-
-    const liked =
-      (reel.likes || []).includes(
-        me.id
-      );
-
-    setReels((rs) =>
-      rs.map((r) =>
-        r.id === reel.id
-          ? {
-              ...r,
-              likes: liked
-                ? r.likes.filter(
-                    (x) => x !== me.id
-                  )
-                : [
-                    ...(r.likes || []),
-                    me.id,
-                  ],
-            }
-          : r
-      )
+  useEffect(() => {
+    setLiked(
+      Array.isArray(reel.likes) && reel.likes.includes(meId)
     );
+  }, [reel.likes, meId]);
 
-    if (!liked) {
-      vibrate(15);
+  useEffect(() => {
+    if (!videoRef.current) return;
+
+    if (isActive) {
+      videoRef.current.playAsync().catch(() => {});
+    } else {
+      videoRef.current.pauseAsync().catch(() => {});
     }
+  }, [isActive]);
 
-    toggleReelLike(
-      reel.id,
-      me.id,
-      liked
-    ).catch(() => load());
+  const handleLike = async () => {
+    if (!meId) return;
+
+    const nextLiked = !liked;
+
+    setLiked(nextLiked);
+
+    try {
+      await onLike(reel.id, nextLiked);
+    } catch (error) {
+      setLiked(!nextLiked);
+
+      Alert.alert(
+        'Like failed',
+        'Could not update the like. Please try again.'
+      );
+    }
   };
 
-
-  /*
-   * Delete Firebase Reel
-   */
-  const onDelete = (reel) =>
+  const handleDelete = () => {
     Alert.alert(
       'Delete reel?',
-      'This cannot be undone.',
+      'This video will be permanently deleted.',
       [
         {
           text: 'Cancel',
@@ -482,23 +84,346 @@ export default function ReelsScreen({ navigation }) {
         {
           text: 'Delete',
           style: 'destructive',
-
-          onPress: async () => {
-            setReels((rs) =>
-              rs.filter(
-                (r) =>
-                  r.id !== reel.id
-              )
-            );
-
-            await deleteReel(
-              reel
-            ).catch(() => {});
-          },
+          onPress: () => onDelete(reel),
         },
       ]
     );
+  };
 
+  const likeCount = Array.isArray(reel.likes)
+    ? reel.likes.length
+    : 0;
+
+  return (
+    <View
+      style={{
+        height,
+        width: '100%',
+        backgroundColor: '#000',
+      }}
+    >
+      <Pressable
+        style={{
+          flex: 1,
+        }}
+        onPress={() => {
+          setMuted((value) => !value);
+        }}
+      >
+        <Video
+          ref={videoRef}
+          source={{
+            uri: reel.videoURL,
+          }}
+          style={{
+            width: '100%',
+            height: '100%',
+          }}
+          resizeMode={ResizeMode.COVER}
+          shouldPlay={isActive}
+          isLooping
+          isMuted={muted}
+          useNativeControls={false}
+        />
+
+        {/* Bottom gradient-like dark overlay */}
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            bottom: 0,
+            height: 260,
+            backgroundColor: 'rgba(0,0,0,0.20)',
+          }}
+        />
+
+        {/* Mute indicator */}
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 45,
+            right: 20,
+            width: 42,
+            height: 42,
+            borderRadius: 21,
+            backgroundColor: 'rgba(0,0,0,0.45)',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Ionicons
+            name={muted ? 'volume-mute' : 'volume-high'}
+            size={21}
+            color="#fff"
+          />
+        </View>
+
+        {/* Right-side buttons */}
+        <View
+          style={{
+            position: 'absolute',
+            right: 14,
+            bottom: 115,
+            alignItems: 'center',
+          }}
+        >
+          {/* Like */}
+          <Pressable
+            onPress={handleLike}
+            style={{
+              alignItems: 'center',
+              marginBottom: 22,
+            }}
+          >
+            <Ionicons
+              name={liked ? 'heart' : 'heart-outline'}
+              size={34}
+              color={liked ? '#ff3040' : '#fff'}
+            />
+
+            <Animated.Text
+              style={{
+                color: '#fff',
+                fontSize: 13,
+                marginTop: 3,
+                fontWeight: '600',
+              }}
+            >
+              {likeCount}
+            </Animated.Text>
+          </Pressable>
+
+          {/* Delete own reel */}
+          {reel.authorId === meId && (
+            <Pressable
+              onPress={handleDelete}
+              style={{
+                alignItems: 'center',
+              }}
+            >
+              <Ionicons
+                name="trash-outline"
+                size={30}
+                color="#fff"
+              />
+            </Pressable>
+          )}
+        </View>
+
+        {/* Bottom information */}
+        <View
+          style={{
+            position: 'absolute',
+            left: 16,
+            right: 75,
+            bottom: 30,
+          }}
+        >
+          {/* Username */}
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              marginBottom: 9,
+            }}
+          >
+            <View
+              style={{
+                width: 36,
+                height: 36,
+                borderRadius: 18,
+                backgroundColor: '#111',
+                borderWidth: 1,
+                borderColor: 'rgba(255,255,255,0.4)',
+                alignItems: 'center',
+                justifyContent: 'center',
+                marginRight: 9,
+              }}
+            >
+              <Ionicons
+                name="person"
+                size={18}
+                color="#fff"
+              />
+            </View>
+
+            <Animated.Text
+              numberOfLines={1}
+              style={{
+                color: '#fff',
+                fontSize: 16,
+                fontWeight: '700',
+                flexShrink: 1,
+              }}
+            >
+              {reel.authorName || 'King X user'}
+            </Animated.Text>
+          </View>
+
+          {/* Caption */}
+          {!!reel.caption && (
+            <Animated.Text
+              numberOfLines={3}
+              style={{
+                color: '#fff',
+                fontSize: 14,
+                lineHeight: 20,
+              }}
+            >
+              {reel.caption}
+            </Animated.Text>
+          )}
+        </View>
+      </Pressable>
+    </View>
+  );
+};
+
+export default function ReelsScreen() {
+  const { height } = useWindowDimensions();
+
+  const [reels, setReels] = useState([]);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+
+  const meId = auth.currentUser?.uid || null;
+
+  /*
+   * Load only King X user reels.
+   * Pexels has been completely removed.
+   */
+  const load = useCallback(
+    async (refresh = false) => {
+      if (!meId) {
+        setReels([]);
+        setLoading(false);
+        return;
+      }
+
+      try {
+        if (refresh) {
+          setRefreshing(true);
+        } else {
+          setLoading(true);
+        }
+
+        /*
+         * For now we load reels from the users
+         * available to the current audience.
+         *
+         * Replace audienceKey with your existing
+         * audience logic if your app has one.
+         */
+        const audienceKey = meId;
+
+        const userReels = await fetchReels(
+          audienceKey.split(',')
+        );
+
+        setReels(userReels);
+        setActiveIndex(0);
+      } catch (error) {
+        console.warn('Reels load error:', error);
+
+        Alert.alert(
+          'Could not load reels',
+          'Please check your internet connection and try again.'
+        );
+      } finally {
+        setLoading(false);
+        setRefreshing(false);
+      }
+    },
+    [meId]
+  );
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const onLike = useCallback(
+    async (reelId, nextLiked) => {
+      if (!meId) return;
+
+      await toggleReelLike(
+        reelId,
+        meId,
+        !nextLiked
+      );
+
+      setReels((current) =>
+        current.map((reel) => {
+          if (reel.id !== reelId) return reel;
+
+          const likes = Array.isArray(reel.likes)
+            ? [...reel.likes]
+            : [];
+
+          if (nextLiked) {
+            if (!likes.includes(meId)) {
+              likes.push(meId);
+            }
+          } else {
+            const index = likes.indexOf(meId);
+
+            if (index !== -1) {
+              likes.splice(index, 1);
+            }
+          }
+
+          return {
+            ...reel,
+            likes,
+          };
+        })
+      );
+    },
+    [meId]
+  );
+
+  const onDelete = useCallback(
+    async (reel) => {
+      try {
+        await deleteReel(reel);
+
+        setReels((current) =>
+          current.filter(
+            (item) => item.id !== reel.id
+          )
+        );
+      } catch (error) {
+        console.warn('Delete reel error:', error);
+
+        Alert.alert(
+          'Delete failed',
+          'Could not delete this reel.'
+        );
+      }
+    },
+    []
+  );
+
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 80,
+  }).current;
+
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }) => {
+      if (!viewableItems?.length) return;
+
+      const firstVisible = viewableItems[0];
+
+      if (
+        typeof firstVisible.index === 'number'
+      ) {
+        setActiveIndex(firstVisible.index);
+      }
+    }
+  ).current;
 
   if (loading) {
     return (
@@ -511,47 +436,74 @@ export default function ReelsScreen({ navigation }) {
         }}
       >
         <ActivityIndicator
-          color={colors.primary}
-        />
-
-        <T
+          size="large"
           color="#fff"
-          size={13}
-          style={{ marginTop: 10 }}
-        >
-          Loading reels...
-        </T>
+        />
       </View>
     );
   }
-
 
   if (!reels.length) {
     return (
       <View
         style={{
           flex: 1,
-          backgroundColor: colors.bg,
+          backgroundColor: '#000',
           alignItems: 'center',
           justifyContent: 'center',
+          paddingHorizontal: 30,
         }}
       >
-        <EmptyState
-          icon="videocam-outline"
-          title="No reels yet"
-          text="Add friends or check your internet connection to discover reels."
-          actionLabel="Create a reel"
-          onAction={() =>
-            navigation.navigate(
-              'Create',
-              { mode: 'reel' }
-            )
-          }
+        <Ionicons
+          name="videocam-outline"
+          size={60}
+          color="#fff"
         />
+
+        <Animated.Text
+          style={{
+            color: '#fff',
+            fontSize: 20,
+            fontWeight: '700',
+            marginTop: 15,
+          }}
+        >
+          No reels yet
+        </Animated.Text>
+
+        <Animated.Text
+          style={{
+            color: '#aaa',
+            fontSize: 14,
+            textAlign: 'center',
+            marginTop: 8,
+          }}
+        >
+          Upload a reel to start your King X feed.
+        </Animated.Text>
+
+        <Pressable
+          onPress={() => load(true)}
+          style={{
+            marginTop: 20,
+            paddingHorizontal: 22,
+            paddingVertical: 12,
+            borderRadius: 25,
+            backgroundColor: '#fff',
+          }}
+        >
+          <Animated.Text
+            style={{
+              color: '#000',
+              fontWeight: '700',
+            }}
+          >
+            Refresh
+          </Animated.Text>
+        </Pressable>
       </View>
     );
   }
-
 
   return (
     <View
@@ -562,118 +514,38 @@ export default function ReelsScreen({ navigation }) {
     >
       <FlatList
         data={reels}
-
-        keyExtractor={(r) =>
-          r.id
-        }
-
-        pagingEnabled
-
-        showsVerticalScrollIndicator={
-          false
-        }
-
-        snapToInterval={height}
-
-        decelerationRate="fast"
-
-        refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={() => {
-              setRefreshing(true);
-              load();
-            }}
-            tintColor="#fff"
+        keyExtractor={(item) => item.id}
+        renderItem={({ item, index }) => (
+          <ReelItem
+            reel={item}
+            index={index}
+            activeIndex={activeIndex}
+            meId={meId}
+            height={height}
+            onLike={onLike}
+            onDelete={onDelete}
           />
-        }
-
+        )}
+        pagingEnabled
+        showsVerticalScrollIndicator={false}
+        decelerationRate="fast"
+        snapToAlignment="start"
+        viewabilityConfig={viewabilityConfig}
         onViewableItemsChanged={
           onViewableItemsChanged
         }
-
-        viewabilityConfig={
-          viewabilityConfig
-        }
-
-        getItemLayout={(_, i) => ({
-          length: height,
-          offset: height * i,
-          index: i,
-        })}
-
-        renderItem={({
-          item,
-          index,
-        }) => (
-          <ReelItem
-            reel={item}
-
-            author={
-              people[
-                item.authorId
-              ]
-            }
-
-            meId={me.id}
-
-            itemHeight={height}
-
-            active={
-              index ===
-              activeIndex
-            }
-
-            muted={muted}
-
-            onToggleMute={() =>
-              setMuted(
-                (m) => !m
-              )
-            }
-
-            onLike={onLike}
-
-            onDelete={onDelete}
-
-            onOpenAuthor={(
-              uid
-            ) =>
-              uid === me.id
-                ? navigation.navigate(
-                    'Profile'
-                  )
-                : navigation.navigate(
-                    'UserProfile',
-                    {
-                      userId: uid,
-                    }
-                  )
-            }
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => load(true)}
+            tintColor="#fff"
           />
-        )}
-      />
-
-      {/* Create user reel */}
-      <Pressable
-        onPress={() =>
-          navigation.navigate(
-            'Create',
-            { mode: 'reel' }
-          )
         }
-        style={{
-          position: 'absolute',
-          top: 50,
-          right: 16,
-        }}
-      >
-        <Ionicons
-          name="add-circle"
-          size={32}
-          color="#fff"
-        />
-      </Pressable>
+        initialNumToRender={2}
+        maxToRenderPerBatch={3}
+        windowSize={5}
+        removeClippedSubviews
+      />
     </View>
   );
 }
