@@ -1,4 +1,4 @@
-import { PEXELS_API_KEY } from '../config/pexels';
+import { yYqja091ter6qlPXanYoJYpwZpGaLw2NUsKSonObWnYJUaaprZGxavwa } from '../config/pexels';
 
 const BASE = 'https://api.pexels.com/videos';
 
