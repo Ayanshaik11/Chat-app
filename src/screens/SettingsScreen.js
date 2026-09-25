@@ -5,6 +5,7 @@ import { doc, serverTimestamp, updateDoc } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../context/AuthContext';
 import { useSettings, useTheme } from '../context/SettingsContext';
+import { CURRENT_VERSION } from '../config/appVersion';
 import Screen from '../components/Screen';
 import ScreenHeader from '../components/ScreenHeader';
 import Avatar from '../components/Avatar';
@@ -137,7 +138,7 @@ export default function SettingsScreen({ navigation }) {
         </Section>
 
         <Section title="About">
-          <Row icon="information-circle-outline" label="Chat App" hint="Version 1.0.0" />
+          <Row icon="information-circle-outline" label="King X" hint={`Version ${CURRENT_VERSION}`} />
           <Row icon="cube-outline" label="Package" hint="com.chat.app" last />
         </Section>
       </ScrollView>
