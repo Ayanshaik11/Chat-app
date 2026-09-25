@@ -2,10 +2,10 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   FlatList,
   Pressable,
   RefreshControl,
+  Text,
   View,
   useWindowDimensions,
 } from 'react-native';
@@ -18,8 +18,58 @@ import {
   toggleReelLike,
   deleteReel,
 } from '../services/reels';
+import { fetchYouTubeVideos } from '../services/youtube';
 
-const ReelItem = ({
+const YOUTUBE_BATCH_SIZE = 50;
+
+function shuffle(array) {
+  const result = [...array];
+
+  for (let i = result.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [result[i], result[j]] = [result[j], result[i]];
+  }
+
+  return result;
+}
+
+/*
+ * Inserts one King X reel after a random
+ * 12–15 YouTube videos.
+ */
+function mixVideos(youtubeVideos, kingVideos) {
+  const output = [];
+  let kingIndex = 0;
+  let youtubeIndex = 0;
+
+  while (youtubeIndex < youtubeVideos.length) {
+    const gap = 12 + Math.floor(Math.random() * 4);
+
+    for (
+      let i = 0;
+      i < gap && youtubeIndex < youtubeVideos.length;
+      i++
+    ) {
+      output.push(youtubeVideos[youtubeIndex]);
+      youtubeIndex++;
+    }
+
+    if (kingIndex < kingVideos.length) {
+      output.push(kingVideos[kingIndex]);
+      kingIndex++;
+    }
+  }
+
+  // If King X videos remain, add them at the end.
+  while (kingIndex < kingVideos.length) {
+    output.push(kingVideos[kingIndex]);
+    kingIndex++;
+  }
+
+  return output;
+}
+
+function ReelItem({
   reel,
   index,
   activeIndex,
@@ -27,47 +77,40 @@ const ReelItem = ({
   height,
   onLike,
   onDelete,
-}) => {
+}) {
   const videoRef = useRef(null);
-
   const [muted, setMuted] = useState(false);
-  const [liked, setLiked] = useState(
-    Array.isArray(reel.likes) && reel.likes.includes(meId)
-  );
 
+  const isYouTube = reel.isYouTube === true;
   const isActive = index === activeIndex;
 
-  useEffect(() => {
-    setLiked(
-      Array.isArray(reel.likes) && reel.likes.includes(meId)
-    );
-  }, [reel.likes, meId]);
+  const liked =
+    Array.isArray(reel.likes) &&
+    reel.likes.includes(meId);
+
+  const likeCount = Array.isArray(reel.likes)
+    ? reel.likes.length
+    : 0;
 
   useEffect(() => {
-    if (!videoRef.current) return;
+    if (!videoRef.current || isYouTube) return;
 
     if (isActive) {
       videoRef.current.playAsync().catch(() => {});
     } else {
       videoRef.current.pauseAsync().catch(() => {});
     }
-  }, [isActive]);
+  }, [isActive, isYouTube]);
 
   const handleLike = async () => {
-    if (!meId) return;
-
-    const nextLiked = !liked;
-
-    setLiked(nextLiked);
+    if (!meId || isYouTube) return;
 
     try {
-      await onLike(reel.id, nextLiked);
-    } catch (error) {
-      setLiked(!nextLiked);
-
+      await onLike(reel.id, !liked);
+    } catch {
       Alert.alert(
         'Like failed',
-        'Could not update the like. Please try again.'
+        'Could not update the like.'
       );
     }
   };
@@ -90,197 +133,242 @@ const ReelItem = ({
     );
   };
 
-  const likeCount = Array.isArray(reel.likes)
-    ? reel.likes.length
-    : 0;
-
   return (
     <View
       style={{
-        height,
         width: '100%',
+        height,
         backgroundColor: '#000',
       }}
     >
-      <Pressable
-        style={{
-          flex: 1,
-        }}
-        onPress={() => {
-          setMuted((value) => !value);
-        }}
-      >
-        <Video
-          ref={videoRef}
-          source={{
-            uri: reel.videoURL,
-          }}
-          style={{
-            width: '100%',
-            height: '100%',
-          }}
-          resizeMode={ResizeMode.COVER}
-          shouldPlay={isActive}
-          isLooping
-          isMuted={muted}
-          useNativeControls={false}
-        />
-
-        {/* Bottom gradient-like dark overlay */}
+      {/*
+       * IMPORTANT:
+       * YouTube videos are NOT loaded through expo-av.
+       *
+       * We show the YouTube video placeholder here until
+       * a YouTube-compatible player is added.
+       */}
+      {isYouTube ? (
         <View
-          pointerEvents="none"
           style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 0,
-            height: 260,
-            backgroundColor: 'rgba(0,0,0,0.20)',
-          }}
-        />
-
-        {/* Mute indicator */}
-        <View
-          pointerEvents="none"
-          style={{
-            position: 'absolute',
-            top: 45,
-            right: 20,
-            width: 42,
-            height: 42,
-            borderRadius: 21,
-            backgroundColor: 'rgba(0,0,0,0.45)',
+            flex: 1,
+            backgroundColor: '#111',
             alignItems: 'center',
             justifyContent: 'center',
           }}
         >
           <Ionicons
-            name={muted ? 'volume-mute' : 'volume-high'}
-            size={21}
-            color="#fff"
+            name="logo-youtube"
+            size={70}
+            color="#ff0000"
           />
-        </View>
 
-        {/* Right-side buttons */}
-        <View
-          style={{
-            position: 'absolute',
-            right: 14,
-            bottom: 115,
-            alignItems: 'center',
-          }}
-        >
-          {/* Like */}
-          <Pressable
-            onPress={handleLike}
+          <Text
             style={{
+              color: '#fff',
+              fontSize: 17,
+              fontWeight: '700',
+              marginTop: 15,
+              textAlign: 'center',
+              paddingHorizontal: 30,
+            }}
+          >
+            {reel.title || 'YouTube video'}
+          </Text>
+
+          <Text
+            style={{
+              color: '#aaa',
+              marginTop: 8,
+            }}
+          >
+            {reel.channelTitle || 'YouTube'}
+          </Text>
+
+          <Text
+            style={{
+              color: '#888',
+              marginTop: 15,
+              fontSize: 12,
+            }}
+          >
+            YouTube player will be used here
+          </Text>
+        </View>
+      ) : (
+        <Pressable
+          style={{ flex: 1 }}
+          onPress={() => setMuted((value) => !value)}
+        >
+          <Video
+            ref={videoRef}
+            source={{
+              uri: reel.videoURL,
+            }}
+            style={{
+              width: '100%',
+              height: '100%',
+            }}
+            resizeMode={ResizeMode.COVER}
+            shouldPlay={isActive}
+            isLooping
+            isMuted={muted}
+            useNativeControls={false}
+          />
+
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              top: 45,
+              right: 20,
+              width: 42,
+              height: 42,
+              borderRadius: 21,
+              backgroundColor: 'rgba(0,0,0,0.45)',
               alignItems: 'center',
-              marginBottom: 22,
+              justifyContent: 'center',
             }}
           >
             <Ionicons
-              name={liked ? 'heart' : 'heart-outline'}
-              size={34}
-              color={liked ? '#ff3040' : '#fff'}
+              name={
+                muted
+                  ? 'volume-mute'
+                  : 'volume-high'
+              }
+              size={21}
+              color="#fff"
             />
+          </View>
+        </Pressable>
+      )}
 
-            <Animated.Text
-              style={{
-                color: '#fff',
-                fontSize: 13,
-                marginTop: 3,
-                fontWeight: '600',
-              }}
-            >
-              {likeCount}
-            </Animated.Text>
-          </Pressable>
-
-          {/* Delete own reel */}
-          {reel.authorId === meId && (
+      {/* Right side controls */}
+      <View
+        style={{
+          position: 'absolute',
+          right: 14,
+          bottom: 115,
+          alignItems: 'center',
+        }}
+      >
+        {!isYouTube && (
+          <>
             <Pressable
-              onPress={handleDelete}
+              onPress={handleLike}
               style={{
                 alignItems: 'center',
+                marginBottom: 22,
               }}
             >
               <Ionicons
-                name="trash-outline"
-                size={30}
-                color="#fff"
+                name={
+                  liked
+                    ? 'heart'
+                    : 'heart-outline'
+                }
+                size={34}
+                color={
+                  liked ? '#ff3040' : '#fff'
+                }
               />
-            </Pressable>
-          )}
-        </View>
 
-        {/* Bottom information */}
+              <Text
+                style={{
+                  color: '#fff',
+                  fontSize: 13,
+                  marginTop: 3,
+                  fontWeight: '600',
+                }}
+              >
+                {likeCount}
+              </Text>
+            </Pressable>
+
+            {reel.authorId === meId && (
+              <Pressable onPress={handleDelete}>
+                <Ionicons
+                  name="trash-outline"
+                  size={30}
+                  color="#fff"
+                />
+              </Pressable>
+            )}
+          </>
+        )}
+      </View>
+
+      {/* Bottom information */}
+      <View
+        style={{
+          position: 'absolute',
+          left: 16,
+          right: 70,
+          bottom: 30,
+        }}
+      >
         <View
           style={{
-            position: 'absolute',
-            left: 16,
-            right: 75,
-            bottom: 30,
+            flexDirection: 'row',
+            alignItems: 'center',
+            marginBottom: 9,
           }}
         >
-          {/* Username */}
           <View
             style={{
-              flexDirection: 'row',
+              width: 36,
+              height: 36,
+              borderRadius: 18,
+              backgroundColor: isYouTube
+                ? '#ff0000'
+                : '#111',
               alignItems: 'center',
-              marginBottom: 9,
+              justifyContent: 'center',
+              marginRight: 9,
             }}
           >
-            <View
-              style={{
-                width: 36,
-                height: 36,
-                borderRadius: 18,
-                backgroundColor: '#111',
-                borderWidth: 1,
-                borderColor: 'rgba(255,255,255,0.4)',
-                alignItems: 'center',
-                justifyContent: 'center',
-                marginRight: 9,
-              }}
-            >
-              <Ionicons
-                name="person"
-                size={18}
-                color="#fff"
-              />
-            </View>
-
-            <Animated.Text
-              numberOfLines={1}
-              style={{
-                color: '#fff',
-                fontSize: 16,
-                fontWeight: '700',
-                flexShrink: 1,
-              }}
-            >
-              {reel.authorName || 'King X user'}
-            </Animated.Text>
+            <Ionicons
+              name={
+                isYouTube
+                  ? 'logo-youtube'
+                  : 'person'
+              }
+              size={18}
+              color="#fff"
+            />
           </View>
 
-          {/* Caption */}
-          {!!reel.caption && (
-            <Animated.Text
-              numberOfLines={3}
-              style={{
-                color: '#fff',
-                fontSize: 14,
-                lineHeight: 20,
-              }}
-            >
-              {reel.caption}
-            </Animated.Text>
-          )}
+          <Text
+            numberOfLines={1}
+            style={{
+              color: '#fff',
+              fontSize: 16,
+              fontWeight: '700',
+              flexShrink: 1,
+            }}
+          >
+            {isYouTube
+              ? reel.channelTitle
+              : reel.authorName || 'King X user'}
+          </Text>
         </View>
-      </Pressable>
+
+        {!!(reel.caption || reel.title) && (
+          <Text
+            numberOfLines={3}
+            style={{
+              color: '#fff',
+              fontSize: 14,
+              lineHeight: 20,
+            }}
+          >
+            {reel.caption || reel.title}
+          </Text>
+        )}
+      </View>
     </View>
   );
-};
+}
 
 export default function ReelsScreen() {
   const { height } = useWindowDimensions();
@@ -292,10 +380,6 @@ export default function ReelsScreen() {
 
   const meId = auth.currentUser?.uid || null;
 
-  /*
-   * Load only King X user reels.
-   * Pexels has been completely removed.
-   */
   const load = useCallback(
     async (refresh = false) => {
       if (!meId) {
@@ -312,22 +396,46 @@ export default function ReelsScreen() {
         }
 
         /*
-         * For now we load reels from the users
-         * available to the current audience.
-         *
-         * Replace audienceKey with your existing
-         * audience logic if your app has one.
+         * King X user videos
          */
-        const audienceKey = meId;
-
-        const userReels = await fetchReels(
-          audienceKey.split(',')
+        const kingVideos = await fetchReels(
+          [meId]
         );
 
-        setReels(userReels);
+        /*
+         * YouTube public videos
+         */
+        const youtubeResult =
+          await fetchYouTubeVideos({
+            limit: YOUTUBE_BATCH_SIZE,
+          });
+
+        const youtubeVideos =
+          youtubeResult.videos || [];
+
+        /*
+         * Shuffle YouTube results so the feed
+         * doesn't always have the same order.
+         */
+        const shuffledYouTube =
+          shuffle(youtubeVideos);
+
+        /*
+         * 12–15 YouTube videos,
+         * then 1 King X video.
+         */
+        const mixed = mixVideos(
+          shuffledYouTube,
+          kingVideos
+        );
+
+        setReels(mixed);
         setActiveIndex(0);
       } catch (error) {
-        console.warn('Reels load error:', error);
+        console.warn(
+          'Reels load error:',
+          error
+        );
 
         Alert.alert(
           'Could not load reels',
@@ -357,9 +465,13 @@ export default function ReelsScreen() {
 
       setReels((current) =>
         current.map((reel) => {
-          if (reel.id !== reelId) return reel;
+          if (reel.id !== reelId) {
+            return reel;
+          }
 
-          const likes = Array.isArray(reel.likes)
+          const likes = Array.isArray(
+            reel.likes
+          )
             ? [...reel.likes]
             : [];
 
@@ -368,7 +480,8 @@ export default function ReelsScreen() {
               likes.push(meId);
             }
           } else {
-            const index = likes.indexOf(meId);
+            const index =
+              likes.indexOf(meId);
 
             if (index !== -1) {
               likes.splice(index, 1);
@@ -396,7 +509,10 @@ export default function ReelsScreen() {
           )
         );
       } catch (error) {
-        console.warn('Delete reel error:', error);
+        console.warn(
+          'Delete reel error:',
+          error
+        );
 
         Alert.alert(
           'Delete failed',
@@ -411,19 +527,16 @@ export default function ReelsScreen() {
     itemVisiblePercentThreshold: 80,
   }).current;
 
-  const onViewableItemsChanged = useRef(
-    ({ viewableItems }) => {
+  const onViewableItemsChanged =
+    useRef(({ viewableItems }) => {
       if (!viewableItems?.length) return;
 
-      const firstVisible = viewableItems[0];
+      const item = viewableItems[0];
 
-      if (
-        typeof firstVisible.index === 'number'
-      ) {
-        setActiveIndex(firstVisible.index);
+      if (typeof item.index === 'number') {
+        setActiveIndex(item.index);
       }
-    }
-  ).current;
+    }).current;
 
   if (loading) {
     return (
@@ -443,68 +556,6 @@ export default function ReelsScreen() {
     );
   }
 
-  if (!reels.length) {
-    return (
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: '#000',
-          alignItems: 'center',
-          justifyContent: 'center',
-          paddingHorizontal: 30,
-        }}
-      >
-        <Ionicons
-          name="videocam-outline"
-          size={60}
-          color="#fff"
-        />
-
-        <Animated.Text
-          style={{
-            color: '#fff',
-            fontSize: 20,
-            fontWeight: '700',
-            marginTop: 15,
-          }}
-        >
-          No reels yet
-        </Animated.Text>
-
-        <Animated.Text
-          style={{
-            color: '#aaa',
-            fontSize: 14,
-            textAlign: 'center',
-            marginTop: 8,
-          }}
-        >
-          Upload a reel to start your King X feed.
-        </Animated.Text>
-
-        <Pressable
-          onPress={() => load(true)}
-          style={{
-            marginTop: 20,
-            paddingHorizontal: 22,
-            paddingVertical: 12,
-            borderRadius: 25,
-            backgroundColor: '#fff',
-          }}
-        >
-          <Animated.Text
-            style={{
-              color: '#000',
-              fontWeight: '700',
-            }}
-          >
-            Refresh
-          </Animated.Text>
-        </Pressable>
-      </View>
-    );
-  }
-
   return (
     <View
       style={{
@@ -514,7 +565,9 @@ export default function ReelsScreen() {
     >
       <FlatList
         data={reels}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, index) =>
+          `${item.id}-${index}`
+        }
         renderItem={({ item, index }) => (
           <ReelItem
             reel={item}
