@@ -10,4 +10,4 @@
    you ever need to replace a leaked one, so this is normal for a
    personal project like this.
 ---------------------------------------------------------------- */
-export const PEXELS_API_KEY = 'YOUR_PEXELS_API_KEY';
+export const PEXELS_API_KEY = 'yYqja091ter6qlPXanYoJYpwZpGaLw2NUsKSonObWnYJUaaprZGxavwa';
