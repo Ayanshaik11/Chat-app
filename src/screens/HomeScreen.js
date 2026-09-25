@@ -196,6 +196,7 @@ export default function HomeScreen({ navigation }) {
           <PostCard
             post={item} author={people[item.authorId]} meId={me.id}
             onLike={onLike} onDelete={onDelete}
+            onComment={(post) => navigation.navigate('PostDetail', { postId: post.id, focusComment: true })}
             onOpenAuthor={(uid) => (uid === me.id ? navigation.navigate('Profile') : navigation.navigate('UserProfile', { userId: uid }))}
           />
         )}
