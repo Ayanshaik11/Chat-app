@@ -1,4 +1,10 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
+
 import {
   ActivityIndicator,
   Alert,
@@ -65,31 +71,54 @@ function ReelItem({
 }) {
   const { width } = useWindowDimensions();
 
-  const scale = useRef(new Animated.Value(1)).current;
+  const scale = useRef(
+    new Animated.Value(1)
+  ).current;
 
   const likes = reel.likes || [];
+
   const liked = likes.includes(meId);
 
+  /*
+   * YouTube reels are external.
+   * They cannot be liked/commented on
+   * inside our Firebase system.
+   */
   const canLike = !reel.isExternal;
 
-  const [commentCount, setCommentCount] = useState(null);
+  const [commentCount, setCommentCount] =
+    useState(null);
+
+
+  /* =======================================================
+     COMMENT COUNT
+  ======================================================== */
 
   useEffect(() => {
     let alive = true;
 
     if (!reel.isExternal) {
-      getReelCommentCount(reel.id).then((n) => {
-        if (alive) {
-          setCommentCount(n);
-        }
-      });
+      getReelCommentCount(reel.id)
+        .then((n) => {
+          if (alive) {
+            setCommentCount(n);
+          }
+        })
+        .catch(() => {});
     }
 
     return () => {
       alive = false;
     };
-  }, [reel.id, reel.isExternal]);
+  }, [
+    reel.id,
+    reel.isExternal,
+  ]);
 
+
+  /* =======================================================
+     LIKE
+  ======================================================== */
 
   const like = () => {
     if (!canLike) return;
@@ -100,6 +129,7 @@ function ReelItem({
         duration: 110,
         useNativeDriver: true,
       }),
+
       Animated.timing(scale, {
         toValue: 1,
         duration: 110,
@@ -111,29 +141,54 @@ function ReelItem({
   };
 
 
+  /* =======================================================
+     YOUTUBE THUMBNAIL
+  ======================================================== */
+
+  const youtubeThumbnail =
+    reel.thumbnail ||
+    reel.thumbnailUrl ||
+    (
+      reel.videoId
+        ? `https://i.ytimg.com/vi/${reel.videoId}/hqdefault.jpg`
+        : null
+    );
+
+
   return (
     <View
       style={{
+        width,
         height: itemHeight,
-        width: '100%',
         backgroundColor: '#000',
+        overflow: 'hidden',
       }}
     >
 
       {/* =====================================================
-          YOUTUBE SHORT
+          YOUTUBE DISCOVER REEL
       ====================================================== */}
 
       {reel.isExternal ? (
 
         active ? (
 
+          /*
+           * IMPORTANT:
+           *
+           * Do NOT use justifyContent:'center' here.
+           * The YouTube player should occupy the whole
+           * Reel container.
+           */
           <View
             style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
               width,
               height: itemHeight,
-              justifyContent: 'center',
               backgroundColor: '#000',
+              overflow: 'hidden',
             }}
           >
 
@@ -143,44 +198,53 @@ function ReelItem({
               videoId={reel.videoId}
 
               /* Playback */
-              play={active}
+
+              play={true}
+
               mute={muted}
 
-              /*
-               * Android autoplay fix.
-               */
               forceAndroidAutoplay={true}
 
-              /*
-               * YouTube player settings.
-               */
+
+              /* YouTube player */
+
               initialPlayerParams={{
                 controls: false,
                 modestbranding: true,
                 rel: false,
                 playsinline: true,
-                loop: true,
               }}
 
-              /*
-               * Android WebView settings.
-               */
+
+              /* Android WebView */
+
               webViewProps={{
                 androidLayerType: 'hardware',
-                mediaPlaybackRequiresUserAction: false,
-                allowsFullscreenVideo: false,
-                domStorageEnabled: true,
-                javaScriptEnabled: true,
+
+                mediaPlaybackRequiresUserAction:
+                  false,
+
+                allowsFullscreenVideo:
+                  false,
+
+                allowsInlineMediaPlayback:
+                  true,
+
+                javaScriptEnabled:
+                  true,
+
+                domStorageEnabled:
+                  true,
+
+                mixedContentMode:
+                  'always',
               }}
 
-              /*
-               * Prevent Android blank/black WebView
-               * rendering issues.
-               */
+
+              /* WebView background */
+
               webViewStyle={{
                 backgroundColor: '#000',
-                opacity: 0.99,
-                minHeight: 1,
               }}
             />
 
@@ -189,24 +253,54 @@ function ReelItem({
         ) : (
 
           /*
-           * Don't create YouTube WebViews for every item.
-           * Show thumbnail until the item becomes active.
+           * Do not create YouTube WebViews
+           * for every reel.
+           *
+           * This improves scrolling performance.
            */
           <Pressable
             onPress={onToggleMute}
             style={{
-              flex: 1,
+              width,
+              height: itemHeight,
               backgroundColor: '#000',
             }}
           >
-            <Image
-              source={{ uri: reel.thumbnail }}
-              style={{
-                width: '100%',
-                height: '100%',
-              }}
-              resizeMode="cover"
-            />
+
+            {youtubeThumbnail ? (
+
+              <Image
+                source={{
+                  uri: youtubeThumbnail,
+                }}
+                style={{
+                  width: '100%',
+                  height: '100%',
+                }}
+                resizeMode="cover"
+              />
+
+            ) : (
+
+              <View
+                style={{
+                  flex: 1,
+                  backgroundColor: '#000',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                }}
+              >
+
+                <Ionicons
+                  name="logo-youtube"
+                  size={60}
+                  color="#FF0000"
+                />
+
+              </View>
+
+            )}
+
           </Pressable>
 
         )
@@ -220,23 +314,33 @@ function ReelItem({
         <Pressable
           onPress={onToggleMute}
           style={{
-            flex: 1,
+            width,
+            height: itemHeight,
             backgroundColor: '#000',
           }}
         >
+
           <Video
             source={{
               uri: reel.videoURL,
             }}
+
             style={{
               width: '100%',
               height: '100%',
             }}
-            resizeMode={ResizeMode.COVER}
+
+            resizeMode={
+              ResizeMode.COVER
+            }
+
             isLooping
+
             shouldPlay={active}
+
             isMuted={muted}
           />
+
         </Pressable>
 
       )}
@@ -252,19 +356,27 @@ function ReelItem({
           left: 0,
           right: 0,
           bottom: 0,
+
           padding: 16,
           paddingBottom: 28,
+
+          zIndex: 3,
         }}
+
         pointerEvents="box-none"
       >
 
         {reel.isExternal ? (
 
           <Pressable
-            onPress={() =>
-              reel.youtubeUrl &&
-              Linking.openURL(reel.youtubeUrl)
-            }
+            onPress={() => {
+              if (reel.youtubeUrl) {
+                Linking.openURL(
+                  reel.youtubeUrl
+                );
+              }
+            }}
+
             style={{
               flexDirection: 'row',
               alignItems: 'center',
@@ -278,17 +390,23 @@ function ReelItem({
                 width: 34,
                 height: 34,
                 borderRadius: 17,
-                backgroundColor: '#1a1a1a',
+
+                backgroundColor:
+                  '#1a1a1a',
+
                 alignItems: 'center',
                 justifyContent: 'center',
               }}
             >
+
               <Ionicons
                 name="logo-youtube"
                 size={18}
                 color="#FF0000"
               />
+
             </View>
+
 
             <T
               weight="semibold"
@@ -299,7 +417,9 @@ function ReelItem({
                 maxWidth: '75%',
               }}
             >
-              {reel.authorName}
+              {reel.authorName ||
+                reel.channelTitle ||
+                'YouTube'}
             </T>
 
           </Pressable>
@@ -307,7 +427,12 @@ function ReelItem({
         ) : (
 
           <Pressable
-            onPress={() => onOpenAuthor(reel.authorId)}
+            onPress={() =>
+              onOpenAuthor(
+                reel.authorId
+              )
+            }
+
             style={{
               flexDirection: 'row',
               alignItems: 'center',
@@ -336,7 +461,13 @@ function ReelItem({
 
         )}
 
-        {reel.caption ? (
+
+        {/* Caption / title */}
+
+        {(reel.caption ||
+          reel.title ||
+          reel.description) ? (
+
           <T
             color="#fff"
             size={13}
@@ -345,8 +476,11 @@ function ReelItem({
               maxWidth: '80%',
             }}
           >
-            {reel.caption}
+            {reel.caption ||
+              reel.title ||
+              reel.description}
           </T>
+
         ) : null}
 
       </View>
@@ -359,21 +493,30 @@ function ReelItem({
       <View
         style={{
           position: 'absolute',
+
           right: 12,
           bottom: 90,
+
           alignItems: 'center',
+
           gap: 22,
+
+          zIndex: 4,
         }}
       >
 
-        {/* LIKE */}
+        {/* ===================================================
+            LIKE
+        ==================================================== */}
 
         <Pressable
           onPress={like}
           hitSlop={10}
+
           style={{
             alignItems: 'center',
-            opacity: canLike ? 1 : 0.5,
+            opacity:
+              canLike ? 1 : 0.5,
           }}
         >
 
@@ -386,22 +529,28 @@ function ReelItem({
               ],
             }}
           >
+
             <Ionicons
               name={
                 liked
                   ? 'heart'
                   : 'heart-outline'
               }
+
               size={32}
+
               color={
                 liked
                   ? '#F43F5E'
                   : '#fff'
               }
             />
+
           </Animated.View>
 
+
           {canLike ? (
+
             <T
               size={12}
               color="#fff"
@@ -411,12 +560,15 @@ function ReelItem({
             >
               {likes.length}
             </T>
+
           ) : null}
 
         </Pressable>
 
 
-        {/* COMMENTS */}
+        {/* ===================================================
+            COMMENTS
+        ==================================================== */}
 
         {!reel.isExternal ? (
 
@@ -424,7 +576,9 @@ function ReelItem({
             onPress={() =>
               onOpenComments(reel)
             }
+
             hitSlop={10}
+
             style={{
               alignItems: 'center',
             }}
@@ -436,7 +590,9 @@ function ReelItem({
               color="#fff"
             />
 
+
             {commentCount ? (
+
               <T
                 size={12}
                 color="#fff"
@@ -446,6 +602,7 @@ function ReelItem({
               >
                 {commentCount}
               </T>
+
             ) : null}
 
           </Pressable>
@@ -453,37 +610,50 @@ function ReelItem({
         ) : null}
 
 
-        {/* MUTE */}
+        {/* ===================================================
+            MUTE
+        ==================================================== */}
 
         <Pressable
           onPress={onToggleMute}
           hitSlop={10}
         >
+
           <Ionicons
             name={
               muted
                 ? 'volume-mute'
                 : 'volume-high'
             }
+
             size={26}
             color="#fff"
           />
+
         </Pressable>
 
 
-        {/* DELETE */}
+        {/* ===================================================
+            DELETE
+        ==================================================== */}
 
-        {reel.authorId === meId ? (
+        {!reel.isExternal &&
+        reel.authorId === meId ? (
 
           <Pressable
-            onPress={() => onDelete(reel)}
+            onPress={() =>
+              onDelete(reel)
+            }
+
             hitSlop={10}
           >
+
             <Ionicons
               name="trash-outline"
               size={24}
               color="#fff"
             />
+
           </Pressable>
 
         ) : null}
@@ -507,22 +677,32 @@ function TabPill({
   return (
     <Pressable
       onPress={onPress}
+
       style={{
         paddingHorizontal: 16,
         paddingVertical: 6,
+
         borderRadius: 16,
-        backgroundColor: active
-          ? 'rgba(255,255,255,0.95)'
-          : 'rgba(255,255,255,0.15)',
+
+        backgroundColor:
+          active
+            ? 'rgba(255,255,255,0.95)'
+            : 'rgba(255,255,255,0.15)',
       }}
     >
+
       <T
         weight="semibold"
         size={13}
-        color={active ? '#111' : '#fff'}
+        color={
+          active
+            ? '#111'
+            : '#fff'
+        }
       >
         {label}
       </T>
+
     </Pressable>
   );
 }
@@ -537,7 +717,8 @@ function ReelCommentsSheet({
   meId,
   onClose,
 }) {
-  const { colors, fonts } = useTheme();
+  const { colors, fonts } =
+    useTheme();
 
   const [comments, setComments] =
     useState([]);
@@ -549,6 +730,10 @@ function ReelCommentsSheet({
     useState(false);
 
 
+  /* =======================================================
+     COMMENTS SUBSCRIPTION
+  ======================================================== */
+
   useEffect(
     () =>
       reel
@@ -557,14 +742,21 @@ function ReelCommentsSheet({
             setComments
           )
         : undefined,
+
     [reel?.id]
   );
 
 
+  /* =======================================================
+     SEND COMMENT
+  ======================================================== */
+
   const send = async () => {
     const t = text.trim();
 
-    if (!t || !reel) return;
+    if (!t || !reel) {
+      return;
+    }
 
     setText('');
     setSending(true);
@@ -572,34 +764,48 @@ function ReelCommentsSheet({
     try {
       await addReelComment(
         reel.id,
-        { id: meId },
+        {
+          id: meId,
+        },
         t
       );
+
     } catch (e) {
+
       setText(t);
 
       Alert.alert(
         'Comment not sent',
         e.message
       );
+
     } finally {
+
       setSending(false);
+
     }
   };
 
+
+  /* =======================================================
+     DELETE COMMENT
+  ======================================================== */
 
   const remove = (c) =>
     Alert.alert(
       'Delete comment?',
       undefined,
+
       [
         {
           text: 'Cancel',
           style: 'cancel',
         },
+
         {
           text: 'Delete',
           style: 'destructive',
+
           onPress: () =>
             deleteReelComment(
               reel.id,
@@ -624,8 +830,10 @@ function ReelCommentsSheet({
           backgroundColor:
             'rgba(0,0,0,0.5)',
         }}
+
         onPress={onClose}
       />
+
 
       <KeyboardAvoidingView
         behavior={
@@ -638,12 +846,18 @@ function ReelCommentsSheet({
         <View
           style={{
             height: '65%',
-            backgroundColor: colors.bg,
+
+            backgroundColor:
+              colors.bg,
+
             borderTopLeftRadius: 20,
             borderTopRightRadius: 20,
+
             overflow: 'hidden',
           }}
         >
+
+          {/* Handle */}
 
           <View
             style={{
@@ -651,20 +865,26 @@ function ReelCommentsSheet({
               paddingVertical: 10,
             }}
           >
+
             <View
               style={{
                 width: 40,
                 height: 4,
+
                 borderRadius: 2,
+
                 backgroundColor:
                   colors.border,
               }}
             />
+
           </View>
+
 
           <T
             weight="semibold"
             size={15}
+
             style={{
               textAlign: 'center',
               marginBottom: 8,
@@ -674,20 +894,32 @@ function ReelCommentsSheet({
           </T>
 
 
+          {/* =================================================
+              COMMENTS LIST
+          ================================================== */}
+
           <FlatList
             data={comments}
-            keyExtractor={(c) => c.id}
+
+            keyExtractor={(c) =>
+              c.id
+            }
+
             keyboardShouldPersistTaps="handled"
+
             contentContainerStyle={{
               paddingBottom: 8,
             }}
 
-            renderItem={({ item }) => (
+            renderItem={({
+              item,
+            }) => (
 
               <View
                 style={{
                   flexDirection: 'row',
                   gap: 10,
+
                   paddingHorizontal: 16,
                   paddingVertical: 8,
                 }}
@@ -699,6 +931,7 @@ function ReelCommentsSheet({
                   size={30}
                 />
 
+
                 <View
                   style={{
                     flex: 1,
@@ -706,6 +939,7 @@ function ReelCommentsSheet({
                 >
 
                   <T size={14}>
+
                     <T
                       weight="semibold"
                       size={14}
@@ -714,30 +948,37 @@ function ReelCommentsSheet({
                     </T>
 
                     {item.text}
+
                   </T>
+
 
                   <T
                     size={11}
                     color="subtext"
+
                     style={{
                       marginTop: 2,
                     }}
                   >
-                    {timeAgo(item.createdAt)}
+                    {timeAgo(
+                      item.createdAt
+                    )}
                   </T>
 
                 </View>
 
 
-                {item.authorId === meId ||
-                reel?.authorId === meId ? (
+                {(item.authorId === meId ||
+                  reel?.authorId === meId) ? (
 
                   <Pressable
                     onPress={() =>
                       remove(item)
                     }
+
                     hitSlop={10}
                   >
+
                     <Ionicons
                       name="trash-outline"
                       size={16}
@@ -745,6 +986,7 @@ function ReelCommentsSheet({
                         colors.subtext
                       }
                     />
+
                   </Pressable>
 
                 ) : null}
@@ -752,9 +994,12 @@ function ReelCommentsSheet({
               </View>
             )}
 
+
             ListEmptyComponent={
+
               <T
                 color="subtext"
+
                 style={{
                   textAlign: 'center',
                   paddingVertical: 20,
@@ -762,17 +1007,26 @@ function ReelCommentsSheet({
               >
                 No comments yet — be the first!
               </T>
+
             }
           />
 
+
+          {/* =================================================
+              COMMENT INPUT
+          ================================================== */}
 
           <View
             style={{
               flexDirection: 'row',
               alignItems: 'center',
+
               padding: 10,
+
               gap: 8,
+
               borderTopWidth: 1,
+
               borderTopColor:
                 colors.border,
             }}
@@ -780,37 +1034,57 @@ function ReelCommentsSheet({
 
             <TextInput
               value={text}
-              onChangeText={setText}
+
+              onChangeText={
+                setText
+              }
+
               placeholder="Add a comment…"
+
               placeholderTextColor={
                 colors.subtext
               }
+
               style={{
                 flex: 1,
+
                 height: 40,
+
                 backgroundColor:
                   colors.inputBg,
+
                 borderRadius: 20,
+
                 paddingHorizontal: 16,
+
                 fontFamily:
                   fonts.regular,
+
                 fontSize: 14,
+
                 color: colors.text,
               }}
             />
 
+
             <Pressable
               onPress={send}
+
               disabled={
-                !text.trim() || sending
+                !text.trim() ||
+                sending
               }
+
               hitSlop={10}
+
               style={{
-                opacity: text.trim()
-                  ? 1
-                  : 0.4,
+                opacity:
+                  text.trim()
+                    ? 1
+                    : 0.4,
               }}
             >
+
               <T
                 weight="semibold"
                 size={14}
@@ -818,6 +1092,7 @@ function ReelCommentsSheet({
               >
                 Post
               </T>
+
             </Pressable>
 
           </View>
@@ -855,6 +1130,18 @@ export default function ReelsScreen({
     useWindowDimensions();
 
 
+  /* =======================================================
+     LIST REF
+  ======================================================== */
+
+  const listRef =
+    useRef(null);
+
+
+  /* =======================================================
+     STATE
+  ======================================================== */
+
   const [tab, setTab] =
     useState('discover');
 
@@ -886,6 +1173,10 @@ export default function ReelsScreen({
     useState(null);
 
 
+  /* =======================================================
+     AUDIENCE
+  ======================================================== */
+
   const audienceKey =
     [me.id, ...friendIds]
       .sort()
@@ -897,6 +1188,10 @@ export default function ReelsScreen({
     ...friendProfiles,
   };
 
+
+  /* =======================================================
+     CURRENT REELS
+  ======================================================== */
 
   const reels =
     tab === 'discover'
@@ -912,16 +1207,23 @@ export default function ReelsScreen({
     useCallback(async () => {
 
       try {
-        setFriendReels(
+
+        const data =
           await fetchReels(
             audienceKey.split(',')
-          )
+          );
+
+        setFriendReels(
+          data
         );
+
       } catch (e) {
+
         console.warn(
           'reels load failed',
           e
         );
+
       }
 
     }, [audienceKey]);
@@ -951,7 +1253,10 @@ export default function ReelsScreen({
           setDiscoverReels(
             (prev) =>
               append
-                ? [...prev, ...items]
+                ? [
+                    ...prev,
+                    ...items,
+                  ]
                 : items
           );
 
@@ -967,15 +1272,20 @@ export default function ReelsScreen({
             e
           );
 
+
           if (!append) {
+
             Alert.alert(
               'Could not load Discover',
+
               e?.message ||
                 'Could not load videos right now. Try again shortly.'
             );
+
           }
 
         }
+
       },
       []
     );
@@ -990,26 +1300,39 @@ export default function ReelsScreen({
 
       setLoading(true);
 
-      Promise.all([
+      const jobs = [
         loadFriends(),
+      ];
 
-        discoverReels.length
-          ? null
-          : loadDiscover(null),
-      ]).finally(() => {
-        setLoading(false);
-      });
+
+      if (!discoverReels.length) {
+        jobs.push(
+          loadDiscover(null)
+        );
+      }
+
+
+      Promise.all(jobs)
+        .finally(() => {
+          setLoading(false);
+        });
 
 
       return () => {
+
         /*
-         * Stop currently playing YouTube video
-         * when leaving the screen.
+         * Stop YouTube player when
+         * leaving the screen.
          */
         setActiveIndex(-1);
+
       };
 
-    }, [loadFriends])
+    }, [
+      loadFriends,
+      loadDiscover,
+      discoverReels.length,
+    ])
   );
 
 
@@ -1017,47 +1340,65 @@ export default function ReelsScreen({
      LOAD MORE
   ======================================================== */
 
-  const onEndReached = () => {
+  const onEndReached =
+    useCallback(() => {
 
-    if (
-      tab !== 'discover' ||
-      loadingMore ||
-      !discoverPageToken
-    ) {
-      return;
-    }
-
-
-    setLoadingMore(true);
+      if (
+        tab !== 'discover' ||
+        loadingMore ||
+        !discoverPageToken
+      ) {
+        return;
+      }
 
 
-    loadDiscover(
+      setLoadingMore(true);
+
+
+      loadDiscover(
+        discoverPageToken,
+        true
+      ).finally(() => {
+
+        setLoadingMore(false);
+
+      });
+
+    }, [
+      tab,
+      loadingMore,
       discoverPageToken,
-      true
-    ).finally(() => {
-      setLoadingMore(false);
-    });
-  };
+      loadDiscover,
+    ]);
 
 
   /* =======================================================
      REFRESH
   ======================================================== */
 
-  const onRefresh = () => {
+  const onRefresh =
+    useCallback(() => {
 
-    setRefreshing(true);
-
-    const job =
-      tab === 'discover'
-        ? loadDiscover(null)
-        : loadFriends();
+      setRefreshing(true);
 
 
-    job.finally(() => {
-      setRefreshing(false);
-    });
-  };
+      const job =
+        tab === 'discover'
+          ? loadDiscover(null)
+          : loadFriends();
+
+
+      job.finally(() => {
+
+        setRefreshing(false);
+
+      });
+
+    }, [
+      tab,
+      loadDiscover,
+      loadFriends,
+    ]);
 
 
   /* =======================================================
@@ -1066,12 +1407,40 @@ export default function ReelsScreen({
 
   const onViewableItemsChanged =
     useRef(
-      ({ viewableItems }) => {
+      ({
+        viewableItems,
+      }) => {
 
-        if (viewableItems.length) {
+        if (!viewableItems?.length) {
+          return;
+        }
+
+
+        /*
+         * Choose the most visible item.
+         *
+         * This prevents the active player from
+         * changing randomly while swiping.
+         */
+
+        const sorted =
+          [...viewableItems].sort(
+            (a, b) =>
+              (b.percentVisible || 0) -
+              (a.percentVisible || 0)
+          );
+
+
+        const index =
+          sorted[0]?.index;
+
+
+        if (
+          typeof index === 'number'
+        ) {
 
           setActiveIndex(
-            viewableItems[0].index ?? 0
+            index
           );
 
         }
@@ -1082,7 +1451,7 @@ export default function ReelsScreen({
 
   const viewabilityConfig =
     useRef({
-      itemVisiblePercentThreshold: 70,
+      itemVisiblePercentThreshold: 85,
     }).current;
 
 
@@ -1090,85 +1459,141 @@ export default function ReelsScreen({
      LIKE
   ======================================================== */
 
-  const onLike = (reel) => {
+  const onLike = useCallback(
+    (reel) => {
 
-    const liked =
-      (reel.likes || [])
-        .includes(me.id);
-
-
-    setFriendReels((rs) =>
-      rs.map((r) =>
-        r.id === reel.id
-          ? {
-              ...r,
-
-              likes: liked
-                ? r.likes.filter(
-                    (x) =>
-                      x !== me.id
-                  )
-                : [
-                    ...(r.likes || []),
-                    me.id,
-                  ],
-            }
-          : r
-      )
-    );
+      const liked =
+        (reel.likes || [])
+          .includes(me.id);
 
 
-    if (!liked) {
-      vibrate(15);
-    }
+      setFriendReels(
+        (rs) =>
+          rs.map((r) =>
+            r.id === reel.id
+              ? {
+                  ...r,
+
+                  likes: liked
+                    ? r.likes.filter(
+                        (x) =>
+                          x !== me.id
+                      )
+                    : [
+                        ...(r.likes ||
+                          []),
+                        me.id,
+                      ],
+                }
+              : r
+          )
+      );
 
 
-    toggleReelLike(
-      reel.id,
+      if (!liked) {
+        vibrate(15);
+      }
+
+
+      toggleReelLike(
+        reel.id,
+        me.id,
+        liked
+      ).catch(() => {
+        loadFriends();
+      });
+
+    },
+
+    [
       me.id,
-      liked
-    ).catch(() =>
-      loadFriends()
-    );
-  };
+      vibrate,
+      loadFriends,
+    ]
+  );
 
 
   /* =======================================================
      DELETE
   ======================================================== */
 
-  const onDelete = (reel) =>
+  const onDelete =
+    useCallback(
+      (reel) => {
 
-    Alert.alert(
-      'Delete reel?',
-      'This cannot be undone.',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
+        Alert.alert(
+          'Delete reel?',
 
-        {
-          text: 'Delete',
-          style: 'destructive',
+          'This cannot be undone.',
 
-          onPress: async () => {
+          [
+            {
+              text: 'Cancel',
+              style: 'cancel',
+            },
 
-            setFriendReels(
-              (rs) =>
-                rs.filter(
-                  (r) =>
-                    r.id !== reel.id
-                )
-            );
+            {
+              text: 'Delete',
 
-            await deleteReel(
-              reel
-            ).catch(() => {});
+              style: 'destructive',
 
-          },
-        },
-      ]
+              onPress:
+                async () => {
+
+                  setFriendReels(
+                    (rs) =>
+                      rs.filter(
+                        (r) =>
+                          r.id !==
+                          reel.id
+                      )
+                  );
+
+
+                  await deleteReel(
+                    reel
+                  ).catch(() => {});
+
+                },
+            },
+          ]
+        );
+
+      },
+
+      []
+    );
+
+
+  /* =======================================================
+     TAB CHANGE
+  ======================================================== */
+
+  const changeTab =
+    useCallback(
+      (nextTab) => {
+
+        setActiveIndex(0);
+
+        setTab(nextTab);
+
+
+        /*
+         * Start from the first reel
+         * whenever switching tabs.
+         */
+
+        requestAnimationFrame(() => {
+
+          listRef.current?.scrollToOffset({
+            offset: 0,
+            animated: false,
+          });
+
+        });
+
+      },
+      []
     );
 
 
@@ -1181,13 +1606,19 @@ export default function ReelsScreen({
     <View
       style={{
         position: 'absolute',
+
         top: 50,
         left: 16,
         right: 16,
+
         flexDirection: 'row',
-        justifyContent: 'space-between',
-        zIndex: 5,
-        elevation: 5,
+
+        justifyContent:
+          'space-between',
+
+        zIndex: 10,
+
+        elevation: 10,
       }}
     >
 
@@ -1200,21 +1631,30 @@ export default function ReelsScreen({
 
         <TabPill
           label="Discover"
+
           active={
             tab === 'discover'
           }
+
           onPress={() =>
-            setTab('discover')
+            changeTab(
+              'discover'
+            )
           }
         />
 
+
         <TabPill
           label="Friends"
+
           active={
             tab === 'friends'
           }
+
           onPress={() =>
-            setTab('friends')
+            changeTab(
+              'friends'
+            )
           }
         />
 
@@ -1230,12 +1670,16 @@ export default function ReelsScreen({
             }
           )
         }
+
+        hitSlop={10}
       >
+
         <Ionicons
           name="add-circle"
           size={32}
           color="#fff"
         />
+
       </Pressable>
 
     </View>
@@ -1253,17 +1697,25 @@ export default function ReelsScreen({
       <View
         style={{
           flex: 1,
-          backgroundColor: '#000',
+
+          backgroundColor:
+            '#000',
+
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
+
         <ActivityIndicator
-          color={colors.primary}
+          color={
+            colors.primary
+          }
         />
+
       </View>
 
     );
+
   }
 
 
@@ -1283,13 +1735,19 @@ export default function ReelsScreen({
       {header}
 
 
+      {/* ===================================================
+          EMPTY STATE
+      ==================================================== */}
+
       {!reels.length ? (
 
         <View
           style={{
             flex: 1,
+
             alignItems: 'center',
-            justifyContent: 'center',
+            justifyContent:
+              'center',
           }}
         >
 
@@ -1328,32 +1786,79 @@ export default function ReelsScreen({
 
       ) : (
 
+        /* =================================================
+           REELS LIST
+        ================================================== */
+
         <FlatList
           key={tab}
 
+          ref={listRef}
+
           data={reels}
 
-          keyExtractor={(r) =>
-            r.id
+          keyExtractor={(
+            item,
+            index
+          ) =>
+            item.id ||
+            item.videoId ||
+            `reel-${index}`
           }
 
+
+          /* =================================================
+             ONE REEL PER SWIPE
+          ================================================== */
+
           pagingEnabled
+
+          snapToInterval={
+            height
+          }
+
+          snapToAlignment="start"
+
+          disableIntervalMomentum={
+            true
+          }
+
+          decelerationRate="fast"
+
+
+          /* =================================================
+             PERFORMANCE
+          ================================================== */
+
+          removeClippedSubviews={
+            false
+          }
+
+          windowSize={3}
+
+          initialNumToRender={2}
+
+          maxToRenderPerBatch={2}
+
+          updateCellsBatchingPeriod={
+            50
+          }
+
+
+          /* =================================================
+             DISPLAY
+          ================================================== */
 
           showsVerticalScrollIndicator={
             false
           }
 
-          snapToInterval={height}
+          bounces={false}
 
-          decelerationRate="fast"
 
-          refreshControl={
-            <RefreshControl
-              refreshing={refreshing}
-              onRefresh={onRefresh}
-              tintColor="#fff"
-            />
-          }
+          /* =================================================
+             VIEWABILITY
+          ================================================== */
 
           onViewableItemsChanged={
             onViewableItemsChanged
@@ -1363,17 +1868,59 @@ export default function ReelsScreen({
             viewabilityConfig
           }
 
-          getItemLayout={(_, i) => ({
+
+          /* =================================================
+             ITEM SIZE
+          ================================================== */
+
+          getItemLayout={(
+            _,
+            index
+          ) => ({
             length: height,
-            offset: height * i,
-            index: i,
+            offset:
+              height * index,
+            index,
           })}
 
-          onEndReachedThreshold={2}
+
+          /* =================================================
+             PAGINATION
+          ================================================== */
+
+          onEndReachedThreshold={
+            0.5
+          }
 
           onEndReached={
             onEndReached
           }
+
+
+          /* =================================================
+             PULL TO REFRESH
+          ================================================== */
+
+          refreshControl={
+
+            <RefreshControl
+              refreshing={
+                refreshing
+              }
+
+              onRefresh={
+                onRefresh
+              }
+
+              tintColor="#fff"
+            />
+
+          }
+
+
+          /* =================================================
+             RENDER REEL
+          ================================================= */
 
           renderItem={({
             item,
@@ -1391,13 +1938,18 @@ export default function ReelsScreen({
 
               meId={me.id}
 
-              itemHeight={height}
-
-              active={
-                index === activeIndex
+              itemHeight={
+                height
               }
 
-              muted={muted}
+              active={
+                index ===
+                activeIndex
+              }
+
+              muted={
+                muted
+              }
 
               onToggleMute={() =>
                 setMuted(
@@ -1405,26 +1957,43 @@ export default function ReelsScreen({
                 )
               }
 
-              onLike={onLike}
+              onLike={
+                onLike
+              }
 
-              onDelete={onDelete}
+              onDelete={
+                onDelete
+              }
 
               onOpenComments={
                 setCommentsReel
               }
 
-              onOpenAuthor={(uid) =>
-                uid === me.id
-                  ? navigation.navigate(
-                      'Profile'
-                    )
-                  : navigation.navigate(
-                      'UserProfile',
-                      {
-                        userId: uid,
-                      }
-                    )
-              }
+              onOpenAuthor={(
+                uid
+              ) => {
+
+                if (
+                  uid === me.id
+                ) {
+
+                  navigation.navigate(
+                    'Profile'
+                  );
+
+                } else {
+
+                  navigation.navigate(
+                    'UserProfile',
+                    {
+                      userId: uid,
+                    }
+                  );
+
+                }
+
+              }}
+
             />
 
           )}
@@ -1434,11 +2003,19 @@ export default function ReelsScreen({
       )}
 
 
+      {/* =====================================================
+          COMMENTS
+      ====================================================== */}
+
       <ReelCommentsSheet
         reel={commentsReel}
+
         meId={me.id}
+
         onClose={() =>
-          setCommentsReel(null)
+          setCommentsReel(
+            null
+          )
         }
       />
 
