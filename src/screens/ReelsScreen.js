@@ -16,8 +16,8 @@ import {
   useWindowDimensions,
 } from 'react-native';
 
-import { Video, ResizeMode } from 'expo-av';
 import YoutubePlayer from 'react-native-youtube-iframe';
+import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '../context/AuthContext';
@@ -34,9 +34,9 @@ import {
 } from '../services/reels';
 
 
-/* -------------------------------------------------------
+/* =======================================================
    HELPERS
-------------------------------------------------------- */
+======================================================= */
 
 const normalizeReelsResult = (result) => {
   if (Array.isArray(result)) {
@@ -63,50 +63,79 @@ const normalizeReelsResult = (result) => {
 };
 
 
-/* -------------------------------------------------------
+/* =======================================================
    SCREEN
-------------------------------------------------------- */
+======================================================= */
 
 export default function ReelsScreen() {
   const { width, height } = useWindowDimensions();
 
   const { user } = useAuth();
-  const {
-    users,
-  } = useAppData();
+  useAppData();
 
-  const [activeTab, setActiveTab] = useState('discover');
+  /* -------------------------------------------------------
+     STATE
+  ------------------------------------------------------- */
 
-  const [discoverReels, setDiscoverReels] = useState([]);
-  const [friendReels, setFriendReels] = useState([]);
+  const [activeTab, setActiveTab] =
+    useState('discover');
 
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const [discoverReels, setDiscoverReels] =
+    useState([]);
 
-  const [activeIndex, setActiveIndex] = useState(0);
+  const [friendReels, setFriendReels] =
+    useState([]);
 
-  const [nextPageToken, setNextPageToken] = useState(null);
+  const [loading, setLoading] =
+    useState(false);
 
-  const [commentCounts, setCommentCounts] = useState({});
-  const [comments, setComments] = useState([]);
+  const [refreshing, setRefreshing] =
+    useState(false);
+
+  const [loadingMore, setLoadingMore] =
+    useState(false);
+
+  const [activeIndex, setActiveIndex] =
+    useState(0);
+
+  const [nextPageToken, setNextPageToken] =
+    useState(null);
+
+  const [commentCounts, setCommentCounts] =
+    useState({});
+
+  const [comments, setComments] =
+    useState([]);
 
   const [commentSheetVisible, setCommentSheetVisible] =
     useState(false);
 
-  const [selectedReel, setSelectedReel] = useState(null);
+  const [selectedReel, setSelectedReel] =
+    useState(null);
+
+  /* -------------------------------------------------------
+     REFS
+  ------------------------------------------------------- */
 
   const listRef = useRef(null);
 
-  const mountedRef = useRef(true);
+  const mountedRef =
+    useRef(true);
 
-  /* Prevent repeated Friends loading */
-  const friendsLoadedRef = useRef(false);
+  const friendsLoadedRef =
+    useRef(false);
+
+  /*
+   * Used to force a fresh YoutubePlayer
+   * whenever the active video changes.
+   */
+  const youtubePlayerKey =
+    useRef(0);
 
 
-  /* -------------------------------------------------------
-     MOUNT / UNMOUNT
-  ------------------------------------------------------- */
+  /* =======================================================
+     MOUNT
+  ======================================================= */
 
   useEffect(() => {
     mountedRef.current = true;
@@ -117,9 +146,9 @@ export default function ReelsScreen() {
   }, []);
 
 
-  /* -------------------------------------------------------
-     DISCOVER
-  ------------------------------------------------------- */
+  /* =======================================================
+     DISCOVER — YOUTUBE
+  ======================================================= */
 
   const loadDiscover = useCallback(
     async (refresh = false) => {
@@ -130,51 +159,70 @@ export default function ReelsScreen() {
           setLoading(true);
         }
 
-        const result = await fetchShorts(
-          refresh ? null : nextPageToken
-        );
+        const result =
+          await fetchShorts(
+            refresh
+              ? null
+              : nextPageToken
+          );
 
-        if (!mountedRef.current) return;
+        if (!mountedRef.current) {
+          return;
+        }
 
-        const items = Array.isArray(result?.items)
-          ? result.items
-          : [];
+        const items =
+          Array.isArray(result?.items)
+            ? result.items
+            : [];
 
         if (refresh) {
           setDiscoverReels(items);
+
           setNextPageToken(
-            result?.nextPageToken || null
+            result?.nextPageToken ||
+              null
           );
+
           setActiveIndex(0);
+
+          youtubePlayerKey.current += 1;
         } else {
-          setDiscoverReels((previous) => {
-            const oldItems = Array.isArray(previous)
-              ? previous
-              : [];
+          setDiscoverReels(
+            (previous) => {
+              const oldItems =
+                Array.isArray(previous)
+                  ? previous
+                  : [];
 
-            const existingIds = new Set(
-              oldItems.map(
-                (item) =>
-                  item?.videoId || item?.id
-              )
-            );
+              const existingIds =
+                new Set(
+                  oldItems.map(
+                    (item) =>
+                      item?.videoId ||
+                      item?.id
+                  )
+                );
 
-            const newItems = items.filter(
-              (item) =>
-                item &&
-                !existingIds.has(
-                  item.videoId || item.id
-                )
-            );
+              const newItems =
+                items.filter(
+                  (item) =>
+                    item &&
+                    !existingIds.has(
+                      item.videoId ||
+                        item.id
+                    )
+                );
 
-            return [
-              ...oldItems,
-              ...newItems,
-            ];
-          });
+              return [
+                ...oldItems,
+                ...newItems,
+              ];
+            }
+          );
 
           setNextPageToken(
-            result?.nextPageToken || null
+            result?.nextPageToken ||
+              null
           );
         }
       } catch (error) {
@@ -191,7 +239,9 @@ export default function ReelsScreen() {
           );
         }
       } finally {
-        if (!mountedRef.current) return;
+        if (!mountedRef.current) {
+          return;
+        }
 
         setLoading(false);
         setRefreshing(false);
@@ -201,94 +251,93 @@ export default function ReelsScreen() {
   );
 
 
-  /* -------------------------------------------------------
+  /* =======================================================
      FRIEND REELS
-  ------------------------------------------------------- */
+  ======================================================= */
 
-  const loadFriendReels = useCallback(
-    async (forceRefresh = false) => {
-      if (!user?.uid) {
-        if (mountedRef.current) {
-          setFriendReels([]);
-        }
-        return;
-      }
+  const loadFriendReels =
+    useCallback(
+      async (forceRefresh = false) => {
+        if (!user?.uid) {
+          if (mountedRef.current) {
+            setFriendReels([]);
+          }
 
-      try {
-        if (
-          !forceRefresh &&
-          friendsLoadedRef.current
-        ) {
           return;
         }
 
-        setLoading(true);
+        try {
+          if (
+            !forceRefresh &&
+            friendsLoadedRef.current
+          ) {
+            return;
+          }
 
-        const result = await fetchReels(
-          user.uid
-        );
+          setLoading(true);
 
-        if (!mountedRef.current) return;
+          const result =
+            await fetchReels(
+              user.uid
+            );
 
-        /*
-         * fetchReels may return:
-         *
-         * []
-         * { reels: [] }
-         * { items: [] }
-         * { data: [] }
-         * { results: [] }
-         *
-         * Normalize all of them.
-         */
-        const reels =
-          normalizeReelsResult(result);
+          if (!mountedRef.current) {
+            return;
+          }
 
-        setFriendReels(reels);
+          const reels =
+            normalizeReelsResult(
+              result
+            );
 
-        friendsLoadedRef.current = true;
+          setFriendReels(reels);
 
-        setActiveIndex(0);
-      } catch (error) {
-        console.error(
-          'Friends reels error:',
-          error
-        );
+          friendsLoadedRef.current =
+            true;
 
-        if (mountedRef.current) {
-          setFriendReels([]);
-
-          Alert.alert(
-            'Friends Reels',
-            error?.message ||
-              'Could not load friend reels.'
+          setActiveIndex(0);
+        } catch (error) {
+          console.error(
+            'Friends reels error:',
+            error
           );
+
+          if (mountedRef.current) {
+            setFriendReels([]);
+
+            Alert.alert(
+              'Friends Reels',
+              error?.message ||
+                'Could not load friend reels.'
+            );
+          }
+        } finally {
+          if (mountedRef.current) {
+            setLoading(false);
+          }
         }
-      } finally {
-        if (mountedRef.current) {
-          setLoading(false);
-        }
-      }
-    },
-    [user?.uid]
-  );
+      },
+      [user?.uid]
+    );
 
 
-  /* -------------------------------------------------------
-     INITIAL DISCOVER LOAD
-  ------------------------------------------------------- */
+  /* =======================================================
+     INITIAL LOAD
+  ======================================================= */
 
   useEffect(() => {
     loadDiscover(true);
   }, []);
 
 
-  /* -------------------------------------------------------
+  /* =======================================================
      TAB CHANGE
-  ------------------------------------------------------- */
+  ======================================================= */
 
   useEffect(() => {
-    if (activeTab === 'friends') {
+    if (
+      activeTab === 'friends'
+    ) {
       loadFriendReels();
     }
   }, [
@@ -297,134 +346,184 @@ export default function ReelsScreen() {
   ]);
 
 
-  /* -------------------------------------------------------
+  /* =======================================================
      CURRENT DATA
-  ------------------------------------------------------- */
+  ======================================================= */
 
   const data =
     activeTab === 'discover'
-      ? Array.isArray(discoverReels)
+      ? Array.isArray(
+          discoverReels
+        )
         ? discoverReels
         : []
-      : Array.isArray(friendReels)
+      : Array.isArray(
+          friendReels
+        )
         ? friendReels
         : [];
 
 
-  /* -------------------------------------------------------
+  /* =======================================================
+     ACTIVE VIDEO CHANGED
+  ======================================================= */
+
+  useEffect(() => {
+    /*
+     * Re-create the YoutubePlayer when the
+     * active video changes. This helps Android
+     * start the newly selected video.
+     */
+    youtubePlayerKey.current += 1;
+  }, [
+    activeIndex,
+    activeTab,
+  ]);
+
+
+  /* =======================================================
      REFRESH
-  ------------------------------------------------------- */
+  ======================================================= */
 
-  const handleRefresh = useCallback(
-    async () => {
-      if (activeTab === 'discover') {
-        setNextPageToken(null);
-        await loadDiscover(true);
-      } else {
-        friendsLoadedRef.current = false;
-        await loadFriendReels(true);
-      }
-    },
-    [
-      activeTab,
-      loadDiscover,
-      loadFriendReels,
-    ]
-  );
+  const handleRefresh =
+    useCallback(
+      async () => {
+        if (
+          activeTab ===
+          'discover'
+        ) {
+          setNextPageToken(null);
 
+          await loadDiscover(true);
+        } else {
+          friendsLoadedRef.current =
+            false;
 
-  /* -------------------------------------------------------
-     LOAD MORE DISCOVER
-  ------------------------------------------------------- */
-
-  const handleLoadMore = useCallback(
-    async () => {
-      if (activeTab !== 'discover') {
-        return;
-      }
-
-      if (
-        loadingMore ||
-        loading ||
-        !nextPageToken
-      ) {
-        return;
-      }
-
-      try {
-        setLoadingMore(true);
-
-        const result =
-          await fetchShorts(nextPageToken);
-
-        if (!mountedRef.current) return;
-
-        const items =
-          Array.isArray(result?.items)
-            ? result.items
-            : [];
-
-        setDiscoverReels((previous) => {
-          const oldItems =
-            Array.isArray(previous)
-              ? previous
-              : [];
-
-          const existingIds = new Set(
-            oldItems.map(
-              (item) =>
-                item?.videoId ||
-                item?.id
-            )
+          await loadFriendReels(
+            true
           );
+        }
+      },
+      [
+        activeTab,
+        loadDiscover,
+        loadFriendReels,
+      ]
+    );
 
-          const newItems =
-            items.filter(
-              (item) =>
-                item &&
-                !existingIds.has(
-                  item.videoId ||
-                    item.id
-                )
+
+  /* =======================================================
+     LOAD MORE
+  ======================================================= */
+
+  const handleLoadMore =
+    useCallback(
+      async () => {
+        if (
+          activeTab !==
+          'discover'
+        ) {
+          return;
+        }
+
+        if (
+          loadingMore ||
+          loading ||
+          !nextPageToken
+        ) {
+          return;
+        }
+
+        try {
+          setLoadingMore(true);
+
+          const result =
+            await fetchShorts(
+              nextPageToken
             );
 
-          return [
-            ...oldItems,
-            ...newItems,
-          ];
-        });
+          if (!mountedRef.current) {
+            return;
+          }
 
-        setNextPageToken(
-          result?.nextPageToken || null
-        );
-      } catch (error) {
-        console.error(
-          'Load more error:',
-          error
-        );
-      } finally {
-        if (mountedRef.current) {
-          setLoadingMore(false);
+          const items =
+            Array.isArray(
+              result?.items
+            )
+              ? result.items
+              : [];
+
+          setDiscoverReels(
+            (previous) => {
+              const oldItems =
+                Array.isArray(
+                  previous
+                )
+                  ? previous
+                  : [];
+
+              const existingIds =
+                new Set(
+                  oldItems.map(
+                    (item) =>
+                      item?.videoId ||
+                      item?.id
+                  )
+                );
+
+              const newItems =
+                items.filter(
+                  (item) =>
+                    item &&
+                    !existingIds.has(
+                      item.videoId ||
+                        item.id
+                    )
+                );
+
+              return [
+                ...oldItems,
+                ...newItems,
+              ];
+            }
+          );
+
+          setNextPageToken(
+            result?.nextPageToken ||
+              null
+          );
+        } catch (error) {
+          console.error(
+            'Load more error:',
+            error
+          );
+        } finally {
+          if (
+            mountedRef.current
+          ) {
+            setLoadingMore(false);
+          }
         }
-      }
-    },
-    [
-      activeTab,
-      loadingMore,
-      loading,
-      nextPageToken,
-    ]
-  );
+      },
+      [
+        activeTab,
+        loadingMore,
+        loading,
+        nextPageToken,
+      ]
+    );
 
 
-  /* -------------------------------------------------------
+  /* =======================================================
      VIEWABILITY
-  ------------------------------------------------------- */
+  ======================================================= */
 
   const onViewableItemsChanged =
     useRef(
       ({ viewableItems }) => {
-        if (!viewableItems?.length) {
+        if (
+          !viewableItems?.length
+        ) {
           return;
         }
 
@@ -432,418 +531,547 @@ export default function ReelsScreen() {
           viewableItems[0];
 
         if (
-          first?.index !== null &&
-          first?.index !== undefined
+          first?.index !==
+            null &&
+          first?.index !==
+            undefined
         ) {
-          setActiveIndex(first.index);
+          setActiveIndex(
+            first.index
+          );
         }
       }
     ).current;
 
-  const viewabilityConfig = useRef({
-    itemVisiblePercentThreshold: 70,
-  }).current;
+
+  const viewabilityConfig =
+    useRef({
+      itemVisiblePercentThreshold: 70,
+    }).current;
 
 
-  /* -------------------------------------------------------
+  /* =======================================================
      LIKE
-  ------------------------------------------------------- */
+  ======================================================= */
 
-  const handleLike = async (item) => {
-    if (!user?.uid || !item?.id) {
-      return;
-    }
-
-    try {
-      await toggleLikeReel(
-        item.id,
-        user.uid
-      );
-
-      /*
-       * Update local state immediately.
-       */
-      const updateList = (list) =>
-        list.map((reel) => {
-          if (reel.id !== item.id) {
-            return reel;
-          }
-
-          const likes = Array.isArray(
-            reel.likes
-          )
-            ? reel.likes
-            : [];
-
-          const alreadyLiked =
-            likes.includes(user.uid);
-
-          return {
-            ...reel,
-            likes: alreadyLiked
-              ? likes.filter(
-                  (id) =>
-                    id !== user.uid
-                )
-              : [
-                  ...likes,
-                  user.uid,
-                ],
-          };
-        });
-
-      if (activeTab === 'discover') {
-        setDiscoverReels(updateList);
-      } else {
-        setFriendReels(updateList);
+  const handleLike =
+    async (item) => {
+      if (
+        !user?.uid ||
+        !item?.id
+      ) {
+        return;
       }
-    } catch (error) {
-      console.error(
-        'Like error:',
-        error
-      );
-    }
-  };
+
+      try {
+        await toggleLikeReel(
+          item.id,
+          user.uid
+        );
+
+        const updateList =
+          (list) =>
+            list.map(
+              (reel) => {
+                if (
+                  reel.id !==
+                  item.id
+                ) {
+                  return reel;
+                }
+
+                const likes =
+                  Array.isArray(
+                    reel.likes
+                  )
+                    ? reel.likes
+                    : [];
+
+                const alreadyLiked =
+                  likes.includes(
+                    user.uid
+                  );
+
+                return {
+                  ...reel,
+                  likes:
+                    alreadyLiked
+                      ? likes.filter(
+                          (id) =>
+                            id !==
+                            user.uid
+                        )
+                      : [
+                          ...likes,
+                          user.uid,
+                        ],
+                };
+              }
+            );
+
+        if (
+          activeTab ===
+          'discover'
+        ) {
+          setDiscoverReels(
+            updateList
+          );
+        } else {
+          setFriendReels(
+            updateList
+          );
+        }
+      } catch (error) {
+        console.error(
+          'Like error:',
+          error
+        );
+      }
+    };
 
 
-  /* -------------------------------------------------------
+  /* =======================================================
      COMMENTS
-  ------------------------------------------------------- */
+  ======================================================= */
 
-  const openComments = async (item) => {
-    if (!item?.id) {
-      return;
-    }
-
-    setSelectedReel(item);
-    setCommentSheetVisible(true);
-
-    try {
-      const result =
-        await fetchComments(item.id);
-
-      if (!mountedRef.current) {
+  const openComments =
+    async (item) => {
+      if (!item?.id) {
         return;
       }
 
-      const loadedComments =
-        Array.isArray(result)
-          ? result
-          : Array.isArray(
-              result?.comments
-            )
-            ? result.comments
-            : [];
-
-      setComments(
-        loadedComments
+      setSelectedReel(item);
+      setCommentSheetVisible(
+        true
       );
 
-      setCommentCounts(
-        (previous) => ({
-          ...previous,
-          [item.id]:
-            loadedComments.length,
-        })
-      );
-    } catch (error) {
-      console.error(
-        'Comments error:',
-        error
-      );
-    }
-  };
+      try {
+        const result =
+          await fetchComments(
+            item.id
+          );
 
+        if (
+          !mountedRef.current
+        ) {
+          return;
+        }
 
-  const submitComment = async (
-    text
-  ) => {
-    if (
-      !user?.uid ||
-      !selectedReel?.id ||
-      !text?.trim()
-    ) {
-      return;
-    }
+        const loadedComments =
+          Array.isArray(result)
+            ? result
+            : Array.isArray(
+                result?.comments
+              )
+              ? result.comments
+              : [];
 
-    try {
-      await addComment(
-        selectedReel.id,
-        user.uid,
-        text.trim()
-      );
-
-      const result =
-        await fetchComments(
-          selectedReel.id
+        setComments(
+          loadedComments
         );
 
-      const loadedComments =
-        Array.isArray(result)
-          ? result
-          : Array.isArray(
-              result?.comments
-            )
-            ? result.comments
-            : [];
+        setCommentCounts(
+          (previous) => ({
+            ...previous,
+            [item.id]:
+              loadedComments.length,
+          })
+        );
+      } catch (error) {
+        console.error(
+          'Comments error:',
+          error
+        );
+      }
+    };
 
-      if (!mountedRef.current) {
+
+  const submitComment =
+    async (text) => {
+      if (
+        !user?.uid ||
+        !selectedReel?.id ||
+        !text?.trim()
+      ) {
         return;
       }
 
-      setComments(
-        loadedComments
-      );
-
-      setCommentCounts(
-        (previous) => ({
-          ...previous,
-          [selectedReel.id]:
-            loadedComments.length,
-        })
-      );
-    } catch (error) {
-      console.error(
-        'Add comment error:',
-        error
-      );
-    }
-  };
-
-
-  const removeComment = async (
-    commentId
-  ) => {
-    if (!commentId) {
-      return;
-    }
-
-    try {
-      await deleteComment(
-        commentId
-      );
-
-      if (!selectedReel?.id) {
-        return;
-      }
-
-      const result =
-        await fetchComments(
-          selectedReel.id
+      try {
+        await addComment(
+          selectedReel.id,
+          user.uid,
+          text.trim()
         );
 
-      const loadedComments =
-        Array.isArray(result)
-          ? result
-          : Array.isArray(
-              result?.comments
-            )
-            ? result.comments
-            : [];
+        const result =
+          await fetchComments(
+            selectedReel.id
+          );
 
-      if (!mountedRef.current) {
+        const loadedComments =
+          Array.isArray(result)
+            ? result
+            : Array.isArray(
+                result?.comments
+              )
+              ? result.comments
+              : [];
+
+        if (
+          !mountedRef.current
+        ) {
+          return;
+        }
+
+        setComments(
+          loadedComments
+        );
+
+        setCommentCounts(
+          (previous) => ({
+            ...previous,
+            [selectedReel.id]:
+              loadedComments.length,
+          })
+        );
+      } catch (error) {
+        console.error(
+          'Add comment error:',
+          error
+        );
+      }
+    };
+
+
+  const removeComment =
+    async (commentId) => {
+      if (!commentId) {
         return;
       }
 
-      setComments(
-        loadedComments
-      );
+      try {
+        await deleteComment(
+          commentId
+        );
 
-      setCommentCounts(
-        (previous) => ({
-          ...previous,
-          [selectedReel.id]:
-            loadedComments.length,
-        })
-      );
-    } catch (error) {
-      console.error(
-        'Delete comment error:',
-        error
-      );
-    }
-  };
+        if (
+          !selectedReel?.id
+        ) {
+          return;
+        }
 
+        const result =
+          await fetchComments(
+            selectedReel.id
+          );
 
-  /* -------------------------------------------------------
-     RENDER FRIEND VIDEO
-  ------------------------------------------------------- */
+        const loadedComments =
+          Array.isArray(result)
+            ? result
+            : Array.isArray(
+                result?.comments
+              )
+              ? result.comments
+              : [];
 
-  const renderFriendVideo = (
-    item,
-    index
-  ) => {
-    const isActive =
-      index === activeIndex;
+        if (
+          !mountedRef.current
+        ) {
+          return;
+        }
 
-    const uri =
-      item?.videoUrl ||
-      item?.url ||
-      item?.video ||
-      item?.mediaUrl;
+        setComments(
+          loadedComments
+        );
 
-    if (!uri) {
-      return (
-        <View
-          style={{
-            width,
-            height,
-            backgroundColor: '#000',
-          }}
-        />
-      );
-    }
-
-    return (
-      <View
-        style={{
-          width,
-          height,
-          backgroundColor: '#000',
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}
-      >
-        <Video
-          source={{ uri }}
-          style={{
-            width,
-            height,
-          }}
-          resizeMode={ResizeMode.COVER}
-          shouldPlay={isActive}
-          isLooping
-          useNativeControls={false}
-        />
-
-        {/* Overlay */}
-        <View
-          style={{
-            position: 'absolute',
-            left: 16,
-            right: 16,
-            bottom: 35,
-          }}
-        >
-          <Animated.Text
-            style={{
-              color: '#fff',
-              fontSize: 16,
-              fontWeight: '600',
-            }}
-          >
-            {item?.caption ||
-              item?.title ||
-              ''}
-          </Animated.Text>
-        </View>
-      </View>
-    );
-  };
+        setCommentCounts(
+          (previous) => ({
+            ...previous,
+            [selectedReel.id]:
+              loadedComments.length,
+          })
+        );
+      } catch (error) {
+        console.error(
+          'Delete comment error:',
+          error
+        );
+      }
+    };
 
 
-  /* -------------------------------------------------------
-     RENDER YOUTUBE
-  ------------------------------------------------------- */
+  /* =======================================================
+     FRIEND VIDEO
+  ======================================================= */
 
-  const renderYoutubeVideo = (
-    item,
-    index
-  ) => {
-    const isActive =
-      index === activeIndex;
+  const renderFriendVideo =
+    (item, index) => {
+      const isActive =
+        index === activeIndex;
 
-    if (!item?.videoId) {
-      return (
-        <View
-          style={{
-            width,
-            height,
-            backgroundColor: '#000',
-            justifyContent: 'center',
-            alignItems: 'center',
-          }}
-        />
-      );
-    }
+      const uri =
+        item?.videoUrl ||
+        item?.url ||
+        item?.video ||
+        item?.mediaUrl;
 
-    /*
-     * We do NOT force the whole screen into
-     * TikTok/Instagram 9:16.
-     *
-     * The YouTube player is centered.
-     * YouTube controls the actual video content.
-     */
-    const playerWidth =
-      Math.min(
-        width,
-        720
-      );
-
-    const playerHeight =
-      Math.round(
-        playerWidth * (9 / 16)
-      );
-
-    return (
-      <View
-        style={{
-          width,
-          height,
-          backgroundColor: '#000',
-          justifyContent: 'center',
-          alignItems: 'center',
-        }}
-      >
-        <YoutubePlayer
-          height={playerHeight}
-          width={playerWidth}
-          videoId={item.videoId}
-          play={isActive}
-          mute={false}
-          forceAndroidAutoplay
-          webViewProps={{
-            allowsInlineMediaPlayback: true,
-            mediaPlaybackRequiresUserAction: false,
-          }}
-          onChangeState={(state) => {
-            console.log(
-              'YouTube state:',
-              state
-            );
-          }}
-          onError={(error) => {
-            console.log(
-              'YouTube error:',
-              error
-            );
-          }}
-        />
-
-        {/* YouTube information */}
-        <View
-          style={{
-            position: 'absolute',
-            left: 16,
-            right: 16,
-            bottom: 30,
-          }}
-        >
+      if (!uri) {
+        return (
           <View
             style={{
-              maxWidth: width * 0.8,
+              width,
+              height,
+              backgroundColor:
+                '#000',
+            }}
+          />
+        );
+      }
+
+      return (
+        <View
+          style={{
+            width,
+            height,
+            backgroundColor:
+              '#000',
+            justifyContent:
+              'center',
+            alignItems: 'center',
+          }}
+        >
+          <Video
+            source={{
+              uri,
+            }}
+            style={{
+              width,
+              height,
+            }}
+            resizeMode={
+              ResizeMode.COVER
+            }
+            shouldPlay={
+              isActive
+            }
+            isLooping
+            useNativeControls={
+              false
+            }
+          />
+
+          <View
+            style={{
+              position:
+                'absolute',
+              left: 16,
+              right: 16,
+              bottom: 35,
+            }}
+          >
+            <Animated.Text
+              style={{
+                color: '#fff',
+                fontSize: 16,
+                fontWeight:
+                  '600',
+              }}
+            >
+              {item?.caption ||
+                item?.title ||
+                ''}
+            </Animated.Text>
+          </View>
+        </View>
+      );
+    };
+
+
+  /* =======================================================
+     YOUTUBE VIDEO
+  ======================================================= */
+
+  const renderYoutubeVideo =
+    (item, index) => {
+      const isActive =
+        index === activeIndex;
+
+      if (!item?.videoId) {
+        return (
+          <View
+            style={{
+              width,
+              height,
+              backgroundColor:
+                '#000',
+              justifyContent:
+                'center',
+              alignItems:
+                'center',
+            }}
+          >
+            <Ionicons
+              name="logo-youtube"
+              size={50}
+              color="#555"
+            />
+          </View>
+        );
+      }
+
+      /*
+       * LARGE PLAYER
+       *
+       * Use the full screen width.
+       * This removes the old 720px cap.
+       */
+      const playerWidth =
+        width;
+
+      /*
+       * Standard YouTube player
+       * ratio.
+       *
+       * The player itself is centered
+       * vertically on the screen.
+       */
+      const playerHeight =
+        Math.round(
+          playerWidth *
+            (9 / 16)
+        );
+
+      return (
+        <View
+          style={{
+            width,
+            height,
+            backgroundColor:
+              '#000',
+            justifyContent:
+              'center',
+            alignItems:
+              'center',
+          }}
+        >
+
+          {/* -------------------------------------------
+              YOUTUBE PLAYER
+          ------------------------------------------- */}
+
+          <YoutubePlayer
+            key={`${item.videoId}-${youtubePlayerKey.current}`}
+
+            width={
+              playerWidth
+            }
+
+            height={
+              playerHeight
+            }
+
+            videoId={
+              item.videoId
+            }
+
+            /*
+             * Start playing when this
+             * reel becomes active.
+             */
+            play={
+              isActive
+            }
+
+            /*
+             * Keep sound enabled.
+             */
+            mute={false}
+
+            /*
+             * Android autoplay request.
+             */
+            forceAndroidAutoplay
+
+            /*
+             * Tell the WebView that
+             * media can autoplay.
+             */
+            webViewProps={{
+              allowsInlineMediaPlayback:
+                true,
+
+              mediaPlaybackRequiresUserAction:
+                false,
+
+              androidLayerType:
+                'hardware',
+
+              javaScriptEnabled:
+                true,
+
+              domStorageEnabled:
+                true,
+            }}
+
+            /*
+             * YouTube player state.
+             */
+            onChangeState={(
+              state
+            ) => {
+              console.log(
+                'YouTube state:',
+                state,
+                item.videoId
+              );
+            }}
+
+            onError={(
+              error
+            ) => {
+              console.log(
+                'YouTube error:',
+                error,
+                item.videoId
+              );
+            }}
+          />
+
+
+          {/* -------------------------------------------
+              TITLE / CHANNEL
+          ------------------------------------------- */}
+
+          <View
+            pointerEvents="none"
+            style={{
+              position:
+                'absolute',
+              left: 16,
+              right: 16,
+              bottom: 35,
             }}
           >
             <Animated.Text
               numberOfLines={2}
               style={{
                 color: '#fff',
-                fontSize: 16,
-                fontWeight: '700',
+                fontSize: 17,
+                fontWeight:
+                  '700',
+                textShadowColor:
+                  'rgba(0,0,0,0.8)',
+                textShadowOffset:
+                  {
+                    width: 0,
+                    height: 1,
+                  },
+                textShadowRadius:
+                  4,
               }}
             >
               {item?.title ||
-                'YouTube Short'}
+                'YouTube Video'}
             </Animated.Text>
 
             <Animated.Text
@@ -852,6 +1080,15 @@ export default function ReelsScreen() {
                 color: '#ddd',
                 fontSize: 13,
                 marginTop: 5,
+                textShadowColor:
+                  'rgba(0,0,0,0.8)',
+                textShadowOffset:
+                  {
+                    width: 0,
+                    height: 1,
+                  },
+                textShadowRadius:
+                  4,
               }}
             >
               {item?.authorName ||
@@ -859,162 +1096,193 @@ export default function ReelsScreen() {
                 'YouTube'}
             </Animated.Text>
           </View>
+
         </View>
-      </View>
-    );
-  };
+      );
+    };
 
 
-  /* -------------------------------------------------------
+  /* =======================================================
      RENDER ITEM
-  ------------------------------------------------------- */
+  ======================================================= */
 
-  const renderItem = ({
-    item,
-    index,
-  }) => {
-    const isYoutube =
-      activeTab === 'discover' ||
-      item?.isExternal === true ||
-      !!item?.videoId;
+  const renderItem =
+    ({
+      item,
+      index,
+    }) => {
+      const isYoutube =
+        activeTab ===
+          'discover' ||
+        item?.isExternal ===
+          true ||
+        !!item?.videoId;
 
-    if (isYoutube) {
-      return renderYoutubeVideo(
+      if (isYoutube) {
+        return renderYoutubeVideo(
+          item,
+          index
+        );
+      }
+
+      return renderFriendVideo(
         item,
         index
       );
-    }
-
-    return renderFriendVideo(
-      item,
-      index
-    );
-  };
+    };
 
 
-  /* -------------------------------------------------------
+  /* =======================================================
      EMPTY STATE
-  ------------------------------------------------------- */
+  ======================================================= */
 
-  const renderEmpty = () => {
-    if (loading) {
+  const renderEmpty =
+    () => {
+      if (loading) {
+        return (
+          <View
+            style={{
+              flex: 1,
+              height,
+              backgroundColor:
+                '#000',
+              justifyContent:
+                'center',
+              alignItems:
+                'center',
+            }}
+          >
+            <ActivityIndicator
+              size="large"
+              color="#fff"
+            />
+          </View>
+        );
+      }
+
       return (
         <View
           style={{
             flex: 1,
             height,
-            backgroundColor: '#000',
-            justifyContent: 'center',
-            alignItems: 'center',
+            backgroundColor:
+              '#000',
+            justifyContent:
+              'center',
+            alignItems:
+              'center',
+            paddingHorizontal:
+              30,
           }}
         >
-          <ActivityIndicator
-            size="large"
-            color="#fff"
+          <Ionicons
+            name={
+              activeTab ===
+              'discover'
+                ? 'logo-youtube'
+                : 'people-outline'
+            }
+            size={55}
+            color="#777"
           />
+
+          <Animated.Text
+            style={{
+              color: '#fff',
+              fontSize: 18,
+              fontWeight:
+                '700',
+              marginTop: 15,
+              textAlign:
+                'center',
+            }}
+          >
+            {activeTab ===
+            'discover'
+              ? 'No videos available'
+              : 'No friend reels yet'}
+          </Animated.Text>
+
+          <Animated.Text
+            style={{
+              color: '#999',
+              fontSize: 14,
+              marginTop: 8,
+              textAlign:
+                'center',
+            }}
+          >
+            {activeTab ===
+            'discover'
+              ? 'Pull down to refresh and try again.'
+              : 'Your friends’ uploaded reels will appear here.'}
+          </Animated.Text>
         </View>
       );
-    }
-
-    return (
-      <View
-        style={{
-          flex: 1,
-          height,
-          backgroundColor: '#000',
-          justifyContent: 'center',
-          alignItems: 'center',
-          paddingHorizontal: 30,
-        }}
-      >
-        <Ionicons
-          name={
-            activeTab === 'discover'
-              ? 'logo-youtube'
-              : 'people-outline'
-          }
-          size={55}
-          color="#777"
-        />
-
-        <Animated.Text
-          style={{
-            color: '#fff',
-            fontSize: 18,
-            fontWeight: '700',
-            marginTop: 15,
-            textAlign: 'center',
-          }}
-        >
-          {activeTab === 'discover'
-            ? 'No videos available'
-            : 'No friend reels yet'}
-        </Animated.Text>
-
-        <Animated.Text
-          style={{
-            color: '#999',
-            fontSize: 14,
-            marginTop: 8,
-            textAlign: 'center',
-          }}
-        >
-          {activeTab === 'discover'
-            ? 'Pull down to refresh and try again.'
-            : 'Your friends’ uploaded reels will appear here.'}
-        </Animated.Text>
-      </View>
-    );
-  };
+    };
 
 
-  /* -------------------------------------------------------
+  /* =======================================================
      MAIN UI
-  ------------------------------------------------------- */
+  ======================================================= */
 
   return (
     <View
       style={{
         flex: 1,
-        backgroundColor: '#000',
+        backgroundColor:
+          '#000',
       }}
     >
 
-      {/* -----------------------------------------------
+      {/* =================================================
           TOP TABS
-      ------------------------------------------------ */}
+      ================================================= */}
+
       <View
         style={{
-          position: 'absolute',
+          position:
+            'absolute',
           top: 0,
           left: 0,
           right: 0,
           zIndex: 20,
-          flexDirection: 'row',
-          justifyContent: 'center',
-          alignItems: 'center',
+          flexDirection:
+            'row',
+          justifyContent:
+            'center',
+          alignItems:
+            'center',
           paddingTop: 45,
           paddingBottom: 12,
         }}
       >
+
         <Pressable
-          onPress={() =>
-            setActiveTab('discover')
-          }
+          onPress={() => {
+            setActiveTab(
+              'discover'
+            );
+            setActiveIndex(0);
+          }}
           style={{
-            paddingHorizontal: 18,
-            paddingVertical: 8,
+            paddingHorizontal:
+              18,
+            paddingVertical:
+              8,
           }}
         >
           <Animated.Text
             style={{
               color:
-                activeTab === 'discover'
+                activeTab ===
+                'discover'
                   ? '#fff'
                   : '#888',
               fontSize: 16,
               fontWeight:
-                activeTab === 'discover'
+                activeTab ===
+                'discover'
                   ? '800'
                   : '500',
             }}
@@ -1023,24 +1291,32 @@ export default function ReelsScreen() {
           </Animated.Text>
         </Pressable>
 
+
         <Pressable
-          onPress={() =>
-            setActiveTab('friends')
-          }
+          onPress={() => {
+            setActiveTab(
+              'friends'
+            );
+            setActiveIndex(0);
+          }}
           style={{
-            paddingHorizontal: 18,
-            paddingVertical: 8,
+            paddingHorizontal:
+              18,
+            paddingVertical:
+              8,
           }}
         >
           <Animated.Text
             style={{
               color:
-                activeTab === 'friends'
+                activeTab ===
+                'friends'
                   ? '#fff'
                   : '#888',
               fontSize: 16,
               fontWeight:
-                activeTab === 'friends'
+                activeTab ===
+                'friends'
                   ? '800'
                   : '500',
             }}
@@ -1048,32 +1324,53 @@ export default function ReelsScreen() {
             Friends
           </Animated.Text>
         </Pressable>
+
       </View>
 
 
-      {/* -----------------------------------------------
-          REELS LIST
-      ------------------------------------------------ */}
+      {/* =================================================
+          REELS
+      ================================================= */}
 
       <FlatList
         ref={listRef}
+
         data={data}
-        keyExtractor={(item, index) =>
+
+        keyExtractor={(
+          item,
+          index
+        ) =>
           String(
             item?.id ||
               item?.videoId ||
               `reel-${index}`
           )
         }
-        renderItem={renderItem}
+
+        renderItem={
+          renderItem
+        }
+
         pagingEnabled
-        showsVerticalScrollIndicator={false}
+
+        showsVerticalScrollIndicator={
+          false
+        }
+
         snapToAlignment="start"
+
         decelerationRate="fast"
-        initialNumToRender={2}
-        maxToRenderPerBatch={3}
+
+        initialNumToRender={1}
+
+        maxToRenderPerBatch={2}
+
         windowSize={3}
-        removeClippedSubviews={false}
+
+        removeClippedSubviews={
+          false
+        }
 
         onViewableItemsChanged={
           onViewableItemsChanged
@@ -1084,21 +1381,28 @@ export default function ReelsScreen() {
         }
 
         onEndReached={
-          activeTab === 'discover'
+          activeTab ===
+          'discover'
             ? handleLoadMore
             : undefined
         }
 
-        onEndReachedThreshold={0.6}
+        onEndReachedThreshold={
+          0.6
+        }
 
         refreshControl={
           <RefreshControl
-            refreshing={refreshing}
+            refreshing={
+              refreshing
+            }
             onRefresh={
               handleRefresh
             }
             tintColor="#fff"
-            colors={['#fff']}
+            colors={[
+              '#fff',
+            ]}
           />
         }
 
@@ -1113,7 +1417,8 @@ export default function ReelsScreen() {
                 height: 80,
                 justifyContent:
                   'center',
-                alignItems: 'center',
+                alignItems:
+                  'center',
                 backgroundColor:
                   '#000',
               }}
@@ -1127,16 +1432,16 @@ export default function ReelsScreen() {
       />
 
 
-      {/* -----------------------------------------------
-          COMMENTS SHEET PLACEHOLDER
-          Existing comment logic preserved.
-      ------------------------------------------------ */}
+      {/* =================================================
+          COMMENT SHEET PLACEHOLDER
+      ================================================= */}
 
       {commentSheetVisible && (
         <View
           pointerEvents="box-none"
           style={{
-            position: 'absolute',
+            position:
+              'absolute',
             left: 0,
             right: 0,
             bottom: 0,
