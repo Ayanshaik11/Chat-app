@@ -1,21 +1,21 @@
 import { PROXY_BASE_URL } from '../config/proxy';
 
-// YouTube sends titles/channel names with HTML entities (e.g. "Tom &amp; Jerry")
+// Your Vercel proxy already sends a clean, flat shape:
+// { videoId, title, description, thumbnail, authorName, channelTitle, youtubeUrl, publishedAt, channelId }
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', 39: "'", '#39': "'" };
 function decodeEntities(text = '') {
   return text.replace(/&(amp|lt|gt|quot|#39);/g, (_, code) => ENTITIES[code] || _);
 }
 
 function mapItem(item) {
-  const videoId = item.id?.videoId;
-  if (!videoId) return null;
+  if (!item?.videoId) return null;
   return {
-    id: `yt-${videoId}`,
-    videoId,
-    thumbnail: item.snippet?.thumbnails?.high?.url || item.snippet?.thumbnails?.medium?.url || '',
-    authorName: decodeEntities(item.snippet?.channelTitle || 'YouTube'),
-    caption: decodeEntities(item.snippet?.title || ''),
-    youtubeUrl: `https://www.youtube.com/watch?v=${videoId}`,
+    id: `yt-${item.videoId}`,
+    videoId: item.videoId,
+    thumbnail: item.thumbnail || '',
+    authorName: decodeEntities(item.channelTitle || item.authorName || 'YouTube'),
+    caption: decodeEntities(item.title || ''),
+    youtubeUrl: item.youtubeUrl || `https://www.youtube.com/watch?v=${item.videoId}`,
     isExternal: true,
     authorId: null,
     likes: [],
