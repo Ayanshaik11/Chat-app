@@ -1,3 +1,5 @@
+// src/screens/ReelsScreen.js
+
 import React, {
   useCallback,
   useEffect,
@@ -8,2456 +10,1313 @@ import React, {
 import {
   ActivityIndicator,
   Alert,
-  Animated,
   FlatList,
   Image,
-  KeyboardAvoidingView,
-  Linking,
-  Modal,
-  Platform,
   Pressable,
   RefreshControl,
-  TextInput,
+  StyleSheet,
+  Text,
   View,
   useWindowDimensions,
 } from 'react-native';
 
-import {
-  Video,
-  ResizeMode,
-} from 'expo-av';
+import { Video, ResizeMode } from 'expo-av';
+import YoutubePlayer from 'react-native-youtube-iframe';
+import { Ionicons } from '@expo/vector-icons';
 
-import YoutubePlayer from
-  'react-native-youtube-iframe';
+import { useAuth } from '../context/AuthContext';
+import { useAppData } from '../context/AppDataContext';
+import { useTheme } from '../context/ThemeContext';
+import { useSettings } from '../context/SettingsContext';
 
-import {
-  Ionicons,
-} from '@expo/vector-icons';
-
-import {
-  useFocusEffect,
-} from '@react-navigation/native';
+import { fetchShorts } from '../services/youtube';
 
 import {
-  useAuth,
-} from '../context/AuthContext';
-
-import {
-  useAppData,
-} from '../context/AppDataContext';
-
-import {
-  useSettings,
-  useTheme,
-} from '../context/SettingsContext';
-
-import {
-  deleteReel,
   fetchReels,
   toggleReelLike,
-} from '../services/reels';
-
-import {
-  fetchShorts,
-} from '../services/youtube';
-
-import {
+  deleteReel,
   addReelComment,
   deleteReelComment,
   getReelCommentCount,
   subscribeReelComments,
-} from '../services/reelComments';
+} from '../services/reels';
 
-import {
-  timeAgo,
-} from '../utils/helpers';
-
-import Avatar from
-  '../components/Avatar';
-
-import EmptyState from
-  '../components/EmptyState';
-
-import T from
-  '../components/T';
+import Avatar from '../components/Avatar';
+import EmptyState from '../components/EmptyState';
 
 
-/* =========================================================
-   REEL ITEM
-========================================================= */
+// ============================================================
+// HELPERS
+// ============================================================
 
-function ReelItem({
-  reel,
-  author,
-  meId,
-  active,
-  muted,
-  onToggleMute,
-  onLike,
-  onDelete,
-  onOpenAuthor,
-  onOpenComments,
-  itemHeight,
-}) {
+const timeAgo = (date) => {
+  if (!date) return '';
 
-  const {
-    width,
-  } = useWindowDimensions();
+  const now = Date.now();
+  const then = new Date(date).getTime();
 
+  if (Number.isNaN(then)) return '';
 
-  const scale =
-    useRef(
-      new Animated.Value(1)
-    ).current;
+  const seconds = Math.floor((now - then) / 1000);
+
+  if (seconds < 60) return `${seconds}s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h`;
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d`;
+
+  return new Date(date).toLocaleDateString();
+};
 
 
-  const likes =
-    reel.likes || [];
+// ============================================================
+// SCREEN
+// ============================================================
 
+export default function ReelsScreen({ navigation }) {
+  const { width, height } = useWindowDimensions();
 
-  const liked =
-    likes.includes(meId);
+  const { user } = useAuth();
+  const appData = useAppData();
+  const theme = useTheme();
+  const settings = useSettings();
 
+  const [activeTab, setActiveTab] = useState('discover');
 
-  const canLike =
-    !reel.isExternal;
+  const [discoverReels, setDiscoverReels] = useState([]);
+  const [friendReels, setFriendReels] = useState([]);
 
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
-  const [
-    commentCount,
-    setCommentCount,
-  ] =
-    useState(null);
+  const [activeIndex, setActiveIndex] = useState(0);
 
+  const [nextPageToken, setNextPageToken] = useState(null);
 
-  /* =======================================================
-     COMMENT COUNT
-  ======================================================== */
+  const [commentCounts, setCommentCounts] = useState({});
+  const [comments, setComments] = useState([]);
 
-  useEffect(() => {
+  const [commentSheetVisible, setCommentSheetVisible] =
+    useState(false);
 
-    let alive = true;
+  const [selectedReel, setSelectedReel] = useState(null);
 
+  const listRef = useRef(null);
 
-    if (!reel.isExternal) {
+  const mountedRef = useRef(true);
 
-      getReelCommentCount(
-        reel.id
-      )
-        .then((count) => {
+  // ----------------------------------------------------------
+  // THEME
+  // ----------------------------------------------------------
 
-          if (alive) {
-            setCommentCount(
-              count
-            );
+  const T = {
+    background: theme?.background || '#000',
+    card: theme?.card || '#111',
+    text: theme?.text || '#fff',
+    secondary: theme?.secondaryText || '#aaa',
+    primary: theme?.primary || '#ff1744',
+  };
+
+  // ==========================================================
+  // LOAD YOUTUBE
+  // ==========================================================
+
+  const loadDiscover = useCallback(
+    async (refresh = false) => {
+      try {
+        if (refresh) {
+          setRefreshing(true);
+        } else if (!discoverReels.length) {
+          setLoading(true);
+        }
+
+        const token = refresh ? null : nextPageToken;
+
+        const result = await fetchShorts(token);
+
+        if (!mountedRef.current) return;
+
+        const newItems = result?.items || [];
+
+        setDiscoverReels((previous) => {
+          if (refresh) {
+            return newItems;
           }
 
-        })
-        .catch(() => {});
+          const existingIds = new Set(
+            previous.map((item) => item.videoId)
+          );
 
-    }
+          const filtered = newItems.filter(
+            (item) => !existingIds.has(item.videoId)
+          );
 
+          return [...previous, ...filtered];
+        });
+
+        setNextPageToken(result?.nextPageToken || null);
+
+        if (refresh) {
+          setActiveIndex(0);
+
+          requestAnimationFrame(() => {
+            listRef.current?.scrollToOffset({
+              offset: 0,
+              animated: false,
+            });
+          });
+        }
+      } catch (error) {
+        console.error('Discover load error:', error);
+
+        if (mountedRef.current) {
+          Alert.alert(
+            'Could not load Reels',
+            error?.message || 'Something went wrong.'
+          );
+        }
+      } finally {
+        if (mountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+          setLoadingMore(false);
+        }
+      }
+    },
+    [nextPageToken, discoverReels.length]
+  );
+
+
+  // ==========================================================
+  // LOAD FRIEND REELS
+  // ==========================================================
+
+  const loadFriendReels = useCallback(
+    async (refresh = false) => {
+      try {
+        if (refresh) {
+          setRefreshing(true);
+        } else if (!friendReels.length) {
+          setLoading(true);
+        }
+
+        const result = await fetchReels(user?.uid);
+
+        if (!mountedRef.current) return;
+
+        setFriendReels(result || []);
+
+        setActiveIndex(0);
+
+        requestAnimationFrame(() => {
+          listRef.current?.scrollToOffset({
+            offset: 0,
+            animated: false,
+          });
+        });
+      } catch (error) {
+        console.error('Friend reels error:', error);
+
+        if (mountedRef.current) {
+          Alert.alert(
+            'Could not load Reels',
+            error?.message || 'Something went wrong.'
+          );
+        }
+      } finally {
+        if (mountedRef.current) {
+          setLoading(false);
+          setRefreshing(false);
+        }
+      }
+    },
+    [user?.uid, friendReels.length]
+  );
+
+
+  // ==========================================================
+  // INITIAL LOAD
+  // ==========================================================
+
+  useEffect(() => {
+    mountedRef.current = true;
+
+    loadDiscover();
 
     return () => {
-      alive = false;
+      mountedRef.current = false;
     };
-
-  }, [
-    reel.id,
-    reel.isExternal,
-  ]);
+  }, []);
 
 
-  /* =======================================================
-     LIKE
-  ======================================================== */
+  // ==========================================================
+  // TAB CHANGE
+  // ==========================================================
 
-  const like = () => {
+  useEffect(() => {
+    setActiveIndex(0);
 
-    if (!canLike) {
+    requestAnimationFrame(() => {
+      listRef.current?.scrollToOffset({
+        offset: 0,
+        animated: false,
+      });
+    });
+
+    if (activeTab === 'friends' && !friendReels.length) {
+      loadFriendReels();
+    }
+  }, [activeTab]);
+
+
+  // ==========================================================
+  // REFRESH
+  // ==========================================================
+
+  const onRefresh = useCallback(() => {
+    if (activeTab === 'discover') {
+      setNextPageToken(null);
+      loadDiscover(true);
+    } else {
+      loadFriendReels(true);
+    }
+  }, [activeTab, loadDiscover, loadFriendReels]);
+
+
+  // ==========================================================
+  // LOAD MORE
+  // ==========================================================
+
+  const loadMore = useCallback(async () => {
+    if (
+      activeTab !== 'discover' ||
+      loadingMore ||
+      !nextPageToken
+    ) {
       return;
     }
 
+    setLoadingMore(true);
 
-    Animated.sequence([
-
-      Animated.timing(
-        scale,
-        {
-          toValue: 1.4,
-          duration: 110,
-          useNativeDriver: true,
-        }
-      ),
-
-      Animated.timing(
-        scale,
-        {
-          toValue: 1,
-          duration: 110,
-          useNativeDriver: true,
-        }
-      ),
-
-    ]).start();
+    await loadDiscover(false);
+  }, [
+    activeTab,
+    loadingMore,
+    nextPageToken,
+    loadDiscover,
+  ]);
 
 
-    onLike(reel);
+  // ==========================================================
+  // VIEWABLE ITEM
+  // ==========================================================
 
+  const onViewableItemsChanged = useRef(
+    ({ viewableItems }) => {
+      const first = viewableItems?.[0];
+
+      if (first?.index != null) {
+        setActiveIndex(first.index);
+      }
+    }
+  ).current;
+
+
+  const viewabilityConfig = useRef({
+    itemVisiblePercentThreshold: 85,
+  }).current;
+
+
+  // ==========================================================
+  // LIKE
+  // ==========================================================
+
+  const handleLike = async (item) => {
+    if (item?.isExternal) return;
+
+    try {
+      await toggleReelLike(item.id, user?.uid);
+    } catch (error) {
+      console.error('Like error:', error);
+    }
   };
 
 
-  /* =======================================================
-     YOUTUBE THUMBNAIL
-  ======================================================== */
+  // ==========================================================
+  // DELETE
+  // ==========================================================
 
-  const youtubeThumbnail =
-    reel.thumbnail ||
-    reel.thumbnailUrl ||
-    (
-      reel.videoId
-        ? `https://i.ytimg.com/vi/${reel.videoId}/hqdefault.jpg`
-        : null
+  const handleDelete = (item) => {
+    if (item?.isExternal) return;
+
+    Alert.alert(
+      'Delete Reel',
+      'Are you sure you want to delete this Reel?',
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+        },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteReel(item.id);
+
+              setFriendReels((previous) =>
+                previous.filter(
+                  (reel) => reel.id !== item.id
+                )
+              );
+            } catch (error) {
+              Alert.alert(
+                'Error',
+                error?.message || 'Could not delete Reel.'
+              );
+            }
+          },
+        },
+      ]
+    );
+  };
+
+
+  // ==========================================================
+  // COMMENTS
+  // ==========================================================
+
+  const openComments = async (item) => {
+    setSelectedReel(item);
+    setCommentSheetVisible(true);
+
+    try {
+      const count = await getReelCommentCount(item.id);
+
+      setCommentCounts((previous) => ({
+        ...previous,
+        [item.id]: count || 0,
+      }));
+    } catch (error) {
+      console.error(error);
+    }
+  };
+
+
+  // ==========================================================
+  // COMMENTS SUBSCRIPTION
+  // ==========================================================
+
+  useEffect(() => {
+    if (!selectedReel?.id) return;
+
+    const unsubscribe = subscribeReelComments(
+      selectedReel.id,
+      (newComments) => {
+        setComments(newComments || []);
+      }
     );
 
-
-  return (
-
-    <View
-      style={{
-        width,
-        height: itemHeight,
-        backgroundColor: '#000',
-        overflow: 'hidden',
-      }}
-    >
+    return () => {
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [selectedReel?.id]);
 
 
-      {/* ===================================================
-          YOUTUBE
-      ==================================================== */}
+  // ==========================================================
+  // ADD COMMENT
+  // ==========================================================
 
-      {reel.isExternal ? (
+  const submitComment = async (text) => {
+    if (!selectedReel?.id || !text?.trim()) {
+      return;
+    }
 
-        active ? (
+    try {
+      await addReelComment(
+        selectedReel.id,
+        user?.uid,
+        text.trim()
+      );
+    } catch (error) {
+      Alert.alert(
+        'Error',
+        error?.message || 'Could not add comment.'
+      );
+    }
+  };
 
-          /*
-           * Only ONE YouTube WebView is mounted:
-           * the currently active reel.
-           */
 
-          <View
-            style={{
-              position: 'absolute',
+  // ==========================================================
+  // DELETE COMMENT
+  // ==========================================================
 
-              top: 0,
-              left: 0,
+  const removeComment = async (comment) => {
+    try {
+      await deleteReelComment(
+        selectedReel.id,
+        comment.id
+      );
+    } catch (error) {
+      Alert.alert(
+        'Error',
+        error?.message || 'Could not delete comment.'
+      );
+    }
+  };
 
+
+  // ==========================================================
+  // RENDER YOUTUBE REEL
+  // ==========================================================
+
+  const renderYouTubeReel = ({ item, index }) => {
+    const isActive = index === activeIndex;
+
+    return (
+      <View
+        style={[
+          styles.reel,
+          {
+            width,
+            height,
+          },
+        ]}
+      >
+
+        {/* ====================================================
+            FULL SCREEN YOUTUBE PLAYER
+        ==================================================== */}
+
+        <View
+          style={[
+            styles.videoContainer,
+            {
               width,
-              height: itemHeight,
+              height,
+            },
+          ]}
+        >
 
-              backgroundColor: '#000',
-
-              overflow: 'hidden',
-            }}
-          >
-
+          {isActive ? (
             <YoutubePlayer
-              height={
-                itemHeight
-              }
-
-              width={
-                width
-              }
-
-              videoId={
-                reel.videoId
-              }
-
-              play={
-                true
-              }
-
-              mute={
-                muted
-              }
-
-              forceAndroidAutoplay={
-                true
-              }
-
+              height={height}
+              width={width}
+              videoId={item.videoId}
+              play={true}
+              mute={false}
               initialPlayerParams={{
-                controls: false,
+                controls: true,
                 modestbranding: true,
                 rel: false,
                 playsinline: true,
               }}
-
               webViewProps={{
-                androidLayerType:
-                  'hardware',
-
-                mediaPlaybackRequiresUserAction:
-                  false,
-
-                allowsFullscreenVideo:
-                  false,
-
-                allowsInlineMediaPlayback:
-                  true,
-
-                javaScriptEnabled:
-                  true,
-
-                domStorageEnabled:
-                  true,
-
-                mixedContentMode:
-                  'always',
-              }}
-
-              webViewStyle={{
-                backgroundColor:
-                  '#000',
+                allowsInlineMediaPlayback: true,
+                mediaPlaybackRequiresUserAction: false,
               }}
             />
+          ) : (
+            <Image
+              source={{
+                uri:
+                  item.thumbnail ||
+                  item.thumbnailUrl,
+              }}
+              style={{
+                width,
+                height,
+              }}
+              resizeMode="cover"
+            />
+          )}
+
+        </View>
+
+
+        {/* ====================================================
+            DARK GRADIENT-LIKE OVERLAY
+        ==================================================== */}
+
+        <View
+          pointerEvents="none"
+          style={styles.bottomShade}
+        />
+
+
+        {/* ====================================================
+            TOP BAR
+        ==================================================== */}
+
+        <View style={styles.topBar}>
+
+          <Text style={styles.topTitle}>
+            Discover
+          </Text>
+
+          <Pressable
+            onPress={() => {
+              // Add your search/navigation here if needed
+            }}
+            style={styles.topButton}
+          >
+            <Ionicons
+              name="search"
+              size={25}
+              color="#fff"
+            />
+          </Pressable>
+
+        </View>
+
+
+        {/* ====================================================
+            RIGHT SIDE ACTIONS
+        ==================================================== */}
+
+        <View style={styles.actions}>
+
+          {!item.isExternal && (
+            <Pressable
+              style={styles.actionButton}
+              onPress={() => handleLike(item)}
+            >
+              <Ionicons
+                name={
+                  item.likes?.includes?.(user?.uid)
+                    ? 'heart'
+                    : 'heart-outline'
+                }
+                size={34}
+                color={
+                  item.likes?.includes?.(user?.uid)
+                    ? '#ff1744'
+                    : '#fff'
+                }
+              />
+
+              <Text style={styles.actionText}>
+                {item.likes?.length || 0}
+              </Text>
+            </Pressable>
+          )}
+
+
+          <Pressable
+            style={styles.actionButton}
+            onPress={() => openComments(item)}
+          >
+            <Ionicons
+              name="chatbubble-outline"
+              size={32}
+              color="#fff"
+            />
+
+            <Text style={styles.actionText}>
+              {commentCounts[item.id] || 0}
+            </Text>
+          </Pressable>
+
+
+          <Pressable
+            style={styles.actionButton}
+            onPress={() => {
+              Alert.alert(
+                'YouTube',
+                'Opening this Reel on YouTube is available from the YouTube player.'
+              );
+            }}
+          >
+            <Ionicons
+              name="logo-youtube"
+              size={34}
+              color="#fff"
+            />
+
+            <Text style={styles.actionText}>
+              YouTube
+            </Text>
+          </Pressable>
+
+
+          {!item.isExternal && (
+            <Pressable
+              style={styles.actionButton}
+              onPress={() => handleDelete(item)}
+            >
+              <Ionicons
+                name="trash-outline"
+                size={30}
+                color="#fff"
+              />
+            </Pressable>
+          )}
+
+        </View>
+
+
+        {/* ====================================================
+            BOTTOM INFORMATION
+        ==================================================== */}
+
+        <View style={styles.info}>
+
+          <View style={styles.authorRow}>
+
+            <Avatar
+              uri={item.authorAvatar}
+              size={42}
+            />
+
+            <Text
+              style={styles.authorName}
+              numberOfLines={1}
+            >
+              {item.authorName ||
+                item.channelTitle ||
+                'YouTube'}
+            </Text>
 
           </View>
 
-        ) : (
 
-          /*
-           * Thumbnail until reel becomes active.
-           */
-
-          <Pressable
-            onPress={
-              onToggleMute
-            }
-
-            style={{
-              width,
-              height: itemHeight,
-              backgroundColor: '#000',
-            }}
+          <Text
+            style={styles.caption}
+            numberOfLines={4}
           >
+            {item.caption ||
+              item.title ||
+              item.description ||
+              'YouTube Short'}
+          </Text>
 
-            {youtubeThumbnail ? (
 
-              <Image
-                source={{
-                  uri:
-                    youtubeThumbnail,
-                }}
+          {item.publishedAt && (
+            <Text style={styles.time}>
+              {timeAgo(item.publishedAt)}
+            </Text>
+          )}
 
-                style={{
-                  width: '100%',
-                  height: '100%',
-                }}
+        </View>
 
-                resizeMode="cover"
-              />
+      </View>
+    );
+  };
 
-            ) : (
 
-              <View
-                style={{
-                  flex: 1,
-                  alignItems:
-                    'center',
-                  justifyContent:
-                    'center',
-                  backgroundColor:
-                    '#000',
-                }}
-              >
+  // ==========================================================
+  // FRIEND REEL
+  // ==========================================================
 
-                <Ionicons
-                  name="logo-youtube"
-                  size={60}
-                  color="#FF0000"
-                />
+  const renderFriendReel = ({ item, index }) => {
+    const isActive = index === activeIndex;
 
-              </View>
+    return (
+      <View
+        style={[
+          styles.reel,
+          {
+            width,
+            height,
+          },
+        ]}
+      >
 
-            )}
-
-          </Pressable>
-
-        )
-
-      ) : (
-
-        /* =================================================
-           FRIEND REEL
-        ================================================== */
-
-        <Pressable
-          onPress={
-            onToggleMute
-          }
-
+        <View
           style={{
             width,
-            height: itemHeight,
+            height,
             backgroundColor: '#000',
           }}
         >
 
-          <Video
-            source={{
-              uri:
-                reel.videoURL,
-            }}
-
-            style={{
-              width: '100%',
-              height: '100%',
-            }}
-
-            resizeMode={
-              ResizeMode.COVER
-            }
-
-            isLooping
-
-            shouldPlay={
-              active
-            }
-
-            isMuted={
-              muted
-            }
-          />
-
-        </Pressable>
-
-      )}
-
-
-      {/* ===================================================
-          BOTTOM INFORMATION
-      ==================================================== */}
-
-      <View
-        pointerEvents="box-none"
-
-        style={{
-          position: 'absolute',
-
-          left: 0,
-          right: 0,
-          bottom: 0,
-
-          padding: 16,
-          paddingBottom: 28,
-
-          zIndex: 5,
-        }}
-      >
-
-        {reel.isExternal ? (
-
-          <Pressable
-            onPress={() => {
-
-              if (
-                reel.youtubeUrl
-              ) {
-
-                Linking.openURL(
-                  reel.youtubeUrl
-                );
-
-              }
-
-            }}
-
-            style={{
-              flexDirection:
-                'row',
-
-              alignItems:
-                'center',
-
-              gap: 8,
-
-              marginBottom: 8,
-            }}
-          >
-
-            <View
-              style={{
-                width: 34,
-                height: 34,
-
-                borderRadius: 17,
-
-                backgroundColor:
-                  '#1a1a1a',
-
-                alignItems:
-                  'center',
-
-                justifyContent:
-                  'center',
+          {isActive ? (
+            <Video
+              source={{
+                uri:
+                  item.videoUrl ||
+                  item.url,
               }}
-            >
-
-              <Ionicons
-                name="logo-youtube"
-                size={18}
-                color="#FF0000"
-              />
-
-            </View>
-
-
-            <T
-              weight="semibold"
-              color="#fff"
-              size={14}
-              numberOfLines={1}
-
               style={{
-                maxWidth:
-                  '75%',
+                width,
+                height,
               }}
-            >
-              {reel.authorName ||
-                reel.channelTitle ||
-                'YouTube'}
-            </T>
-
-          </Pressable>
-
-        ) : (
-
-          <Pressable
-            onPress={() =>
-              onOpenAuthor(
-                reel.authorId
-              )
-            }
-
-            style={{
-              flexDirection:
-                'row',
-
-              alignItems:
-                'center',
-
-              gap: 8,
-
-              marginBottom: 8,
-            }}
-          >
-
-            <Avatar
-              uri={
-                author?.photoURL
-              }
-
-              name={
-                author?.name
-              }
-
-              size={34}
+              resizeMode={ResizeMode.COVER}
+              shouldPlay
+              isLooping
+              useNativeControls={false}
             />
+          ) : (
+            <Image
+              source={{
+                uri:
+                  item.thumbnail ||
+                  item.thumbnailUrl,
+              }}
+              style={{
+                width,
+                height,
+              }}
+              resizeMode="cover"
+            />
+          )}
+
+        </View>
 
 
-            <T
-              weight="semibold"
-              color="#fff"
-              size={14}
-            >
-              {author?.username ||
-                author?.name ||
-                'User'}
-            </T>
-
-          </Pressable>
-
-        )}
+        <View
+          pointerEvents="none"
+          style={styles.bottomShade}
+        />
 
 
-        {(reel.caption ||
-          reel.title ||
-          reel.description) ? (
+        {/* TOP */}
 
-          <T
-            color="#fff"
-            size={13}
-            numberOfLines={2}
+        <View style={styles.topBar}>
 
-            style={{
-              maxWidth:
-                '80%',
-            }}
+          <Text style={styles.topTitle}>
+            Friends
+          </Text>
+
+        </View>
+
+
+        {/* ACTIONS */}
+
+        <View style={styles.actions}>
+
+          <Pressable
+            style={styles.actionButton}
+            onPress={() => handleLike(item)}
           >
-            {reel.caption ||
-              reel.title ||
-              reel.description}
-          </T>
-
-        ) : null}
-
-      </View>
-
-
-      {/* ===================================================
-          RIGHT BUTTONS
-      ==================================================== */}
-
-      <View
-        style={{
-          position: 'absolute',
-
-          right: 12,
-          bottom: 90,
-
-          alignItems:
-            'center',
-
-          gap: 22,
-
-          zIndex: 6,
-        }}
-      >
-
-        {/* LIKE */}
-
-        <Pressable
-          onPress={
-            like
-          }
-
-          hitSlop={10}
-
-          style={{
-            alignItems:
-              'center',
-
-            opacity:
-              canLike
-                ? 1
-                : 0.5,
-          }}
-        >
-
-          <Animated.View
-            style={{
-              transform: [
-                {
-                  scale,
-                },
-              ],
-            }}
-          >
-
             <Ionicons
               name={
-                liked
+                item.likes?.includes?.(user?.uid)
                   ? 'heart'
                   : 'heart-outline'
               }
-
-              size={32}
-
+              size={34}
               color={
-                liked
-                  ? '#F43F5E'
+                item.likes?.includes?.(user?.uid)
+                  ? '#ff1744'
                   : '#fff'
               }
             />
 
-          </Animated.View>
+            <Text style={styles.actionText}>
+              {item.likes?.length || 0}
+            </Text>
+          </Pressable>
 
-
-          {canLike ? (
-
-            <T
-              size={12}
-              color="#fff"
-
-              style={{
-                marginTop: 2,
-              }}
-            >
-              {likes.length}
-            </T>
-
-          ) : null}
-
-        </Pressable>
-
-
-        {/* COMMENTS */}
-
-        {!reel.isExternal ? (
 
           <Pressable
-            onPress={() =>
-              onOpenComments(
-                reel
-              )
-            }
-
-            hitSlop={10}
-
-            style={{
-              alignItems:
-                'center',
-            }}
+            style={styles.actionButton}
+            onPress={() => openComments(item)}
           >
-
             <Ionicons
               name="chatbubble-outline"
-              size={28}
+              size={32}
               color="#fff"
             />
 
-
-            {commentCount ? (
-
-              <T
-                size={12}
-                color="#fff"
-
-                style={{
-                  marginTop: 2,
-                }}
-              >
-                {commentCount}
-              </T>
-
-            ) : null}
-
+            <Text style={styles.actionText}>
+              {commentCounts[item.id] || 0}
+            </Text>
           </Pressable>
 
-        ) : null}
-
-
-        {/* MUTE */}
-
-        <Pressable
-          onPress={
-            onToggleMute
-          }
-
-          hitSlop={10}
-        >
-
-          <Ionicons
-            name={
-              muted
-                ? 'volume-mute'
-                : 'volume-high'
-            }
-
-            size={26}
-            color="#fff"
-          />
-
-        </Pressable>
-
-
-        {/* DELETE */}
-
-        {!reel.isExternal &&
-        reel.authorId === meId ? (
 
           <Pressable
-            onPress={() =>
-              onDelete(
-                reel
-              )
-            }
-
-            hitSlop={10}
+            style={styles.actionButton}
+            onPress={() => handleDelete(item)}
           >
-
             <Ionicons
               name="trash-outline"
-              size={24}
+              size={30}
               color="#fff"
             />
-
           </Pressable>
-
-        ) : null}
-
-      </View>
-
-    </View>
-  );
-}
-
-
-/* =========================================================
-   TAB PILL
-========================================================= */
-
-function TabPill({
-  label,
-  active,
-  onPress,
-}) {
-
-  return (
-
-    <Pressable
-      onPress={
-        onPress
-      }
-
-      style={{
-        paddingHorizontal:
-          16,
-
-        paddingVertical:
-          6,
-
-        borderRadius:
-          16,
-
-        backgroundColor:
-          active
-            ? 'rgba(255,255,255,0.95)'
-            : 'rgba(255,255,255,0.15)',
-      }}
-    >
-
-      <T
-        weight="semibold"
-        size={13}
-
-        color={
-          active
-            ? '#111'
-            : '#fff'
-        }
-      >
-        {label}
-      </T>
-
-    </Pressable>
-
-  );
-}
-
-
-/* =========================================================
-   COMMENTS SHEET
-========================================================= */
-
-function ReelCommentsSheet({
-  reel,
-  meId,
-  onClose,
-}) {
-
-  const {
-    colors,
-    fonts,
-  } = useTheme();
-
-
-  const [
-    comments,
-    setComments,
-  ] =
-    useState([]);
-
-
-  const [
-    text,
-    setText,
-  ] =
-    useState('');
-
-
-  const [
-    sending,
-    setSending,
-  ] =
-    useState(false);
-
-
-  useEffect(
-    () =>
-      reel
-        ? subscribeReelComments(
-            reel.id,
-            setComments
-          )
-        : undefined,
-
-    [
-      reel?.id,
-    ]
-  );
-
-
-  const send =
-    async () => {
-
-      const t =
-        text.trim();
-
-
-      if (
-        !t ||
-        !reel
-      ) {
-        return;
-      }
-
-
-      setText('');
-
-      setSending(
-        true
-      );
-
-
-      try {
-
-        await addReelComment(
-          reel.id,
-          {
-            id: meId,
-          },
-          t
-        );
-
-      } catch (e) {
-
-        setText(t);
-
-
-        Alert.alert(
-          'Comment not sent',
-          e.message
-        );
-
-      } finally {
-
-        setSending(
-          false
-        );
-
-      }
-
-    };
-
-
-  const remove =
-    (comment) =>
-
-      Alert.alert(
-        'Delete comment?',
-
-        undefined,
-
-        [
-
-          {
-            text:
-              'Cancel',
-
-            style:
-              'cancel',
-          },
-
-          {
-            text:
-              'Delete',
-
-            style:
-              'destructive',
-
-            onPress:
-              () =>
-                deleteReelComment(
-                  reel.id,
-                  comment.id
-                ).catch(
-                  () => {}
-                ),
-          },
-
-        ]
-      );
-
-
-  return (
-
-    <Modal
-      visible={
-        !!reel
-      }
-
-      transparent
-
-      animationType="slide"
-
-      onRequestClose={
-        onClose
-      }
-    >
-
-      <Pressable
-        style={{
-          flex: 1,
-
-          backgroundColor:
-            'rgba(0,0,0,0.5)',
-        }}
-
-        onPress={
-          onClose
-        }
-      />
-
-
-      <KeyboardAvoidingView
-        behavior={
-          Platform.OS === 'ios'
-            ? 'padding'
-            : undefined
-        }
-      >
-
-        <View
-          style={{
-            height: '65%',
-
-            backgroundColor:
-              colors.bg,
-
-            borderTopLeftRadius:
-              20,
-
-            borderTopRightRadius:
-              20,
-
-            overflow:
-              'hidden',
-          }}
-        >
-
-          <View
-            style={{
-              alignItems:
-                'center',
-
-              paddingVertical:
-                10,
-            }}
-          >
-
-            <View
-              style={{
-                width: 40,
-                height: 4,
-
-                borderRadius: 2,
-
-                backgroundColor:
-                  colors.border,
-              }}
-            />
-
-          </View>
-
-
-          <T
-            weight="semibold"
-            size={15}
-
-            style={{
-              textAlign:
-                'center',
-
-              marginBottom:
-                8,
-            }}
-          >
-            Comments
-          </T>
-
-
-          <FlatList
-            data={
-              comments
-            }
-
-            keyExtractor={(
-              comment
-            ) =>
-              comment.id
-            }
-
-            keyboardShouldPersistTaps={
-              'handled'
-            }
-
-            contentContainerStyle={{
-              paddingBottom:
-                8,
-            }}
-
-            renderItem={({
-              item,
-            }) => (
-
-              <View
-                style={{
-                  flexDirection:
-                    'row',
-
-                  gap: 10,
-
-                  paddingHorizontal:
-                    16,
-
-                  paddingVertical:
-                    8,
-                }}
-              >
-
-                <Avatar
-                  uri={
-                    item.authorPhoto
-                  }
-
-                  name={
-                    item.authorName
-                  }
-
-                  size={30}
-                />
-
-
-                <View
-                  style={{
-                    flex: 1,
-                  }}
-                >
-
-                  <T size={14}>
-
-                    <T
-                      weight="semibold"
-                      size={14}
-                    >
-                      {item.authorName}{' '}
-                    </T>
-
-                    {item.text}
-
-                  </T>
-
-
-                  <T
-                    size={11}
-                    color="subtext"
-
-                    style={{
-                      marginTop: 2,
-                    }}
-                  >
-                    {timeAgo(
-                      item.createdAt
-                    )}
-                  </T>
-
-                </View>
-
-
-                {(
-                  item.authorId === meId ||
-                  reel?.authorId === meId
-                ) ? (
-
-                  <Pressable
-                    onPress={() =>
-                      remove(
-                        item
-                      )
-                    }
-
-                    hitSlop={10}
-                  >
-
-                    <Ionicons
-                      name="trash-outline"
-                      size={16}
-
-                      color={
-                        colors.subtext
-                      }
-                    />
-
-                  </Pressable>
-
-                ) : null}
-
-              </View>
-
-            )}
-
-            ListEmptyComponent={
-
-              <T
-                color="subtext"
-
-                style={{
-                  textAlign:
-                    'center',
-
-                  paddingVertical:
-                    20,
-                }}
-              >
-                No comments yet — be the first!
-              </T>
-
-            }
-          />
-
-
-          <View
-            style={{
-              flexDirection:
-                'row',
-
-              alignItems:
-                'center',
-
-              padding: 10,
-
-              gap: 8,
-
-              borderTopWidth:
-                1,
-
-              borderTopColor:
-                colors.border,
-            }}
-          >
-
-            <TextInput
-              value={
-                text
-              }
-
-              onChangeText={
-                setText
-              }
-
-              placeholder=
-                "Add a comment…"
-
-              placeholderTextColor=
-                {colors.subtext}
-
-              style={{
-                flex: 1,
-
-                height: 40,
-
-                backgroundColor:
-                  colors.inputBg,
-
-                borderRadius:
-                  20,
-
-                paddingHorizontal:
-                  16,
-
-                fontFamily:
-                  fonts.regular,
-
-                fontSize:
-                  14,
-
-                color:
-                  colors.text,
-              }}
-            />
-
-
-            <Pressable
-              onPress={
-                send
-              }
-
-              disabled={
-                !text.trim() ||
-                sending
-              }
-
-              hitSlop={10}
-
-              style={{
-                opacity:
-                  text.trim()
-                    ? 1
-                    : 0.4,
-              }}
-            >
-
-              <T
-                weight="semibold"
-                size={14}
-                color="primary"
-              >
-                Post
-              </T>
-
-            </Pressable>
-
-          </View>
 
         </View>
 
-      </KeyboardAvoidingView>
 
-    </Modal>
-  );
-}
+        {/* INFO */}
 
+        <View style={styles.info}>
 
-/* =========================================================
-   REELS SCREEN
-========================================================= */
+          <View style={styles.authorRow}>
 
-export default function ReelsScreen({
-  navigation,
-}) {
+            <Avatar
+              uri={item.authorAvatar}
+              size={42}
+            />
 
-  const {
-    me,
-  } =
-    useAuth();
+            <Text
+              style={styles.authorName}
+              numberOfLines={1}
+            >
+              {item.authorName ||
+                item.username ||
+                'Friend'}
+            </Text>
 
-
-  const {
-    friendIds,
-    friendProfiles,
-  } =
-    useAppData();
+          </View>
 
 
-  const {
-    colors,
-  } =
-    useTheme();
+          {!!item.caption && (
+            <Text
+              style={styles.caption}
+              numberOfLines={4}
+            >
+              {item.caption}
+            </Text>
+          )}
 
 
-  const {
-    vibrate,
-  } =
-    useSettings();
+          {item.createdAt && (
+            <Text style={styles.time}>
+              {timeAgo(item.createdAt)}
+            </Text>
+          )}
 
+        </View>
 
-  const {
-    height,
-  } =
-    useWindowDimensions();
-
-
-  /* =======================================================
-     LIST REF
-  ======================================================== */
-
-  const listRef =
-    useRef(null);
-
-
-  /* =======================================================
-     STATE
-  ======================================================== */
-
-  const [
-    tab,
-    setTab,
-  ] =
-    useState(
-      'discover'
+      </View>
     );
-
-
-  const [
-    friendReels,
-    setFriendReels,
-  ] =
-    useState([]);
-
-
-  const [
-    discoverReels,
-    setDiscoverReels,
-  ] =
-    useState([]);
-
-
-  const [
-    discoverPageToken,
-    setDiscoverPageToken,
-  ] =
-    useState(null);
-
-
-  const [
-    loadingMore,
-    setLoadingMore,
-  ] =
-    useState(false);
-
-
-  const [
-    loading,
-    setLoading,
-  ] =
-    useState(true);
-
-
-  const [
-    refreshing,
-    setRefreshing,
-  ] =
-    useState(false);
-
-
-  const [
-    activeIndex,
-    setActiveIndex,
-  ] =
-    useState(0);
-
-
-  const [
-    muted,
-    setMuted,
-  ] =
-    useState(true);
-
-
-  const [
-    commentsReel,
-    setCommentsReel,
-  ] =
-    useState(null);
-
-
-  /* =======================================================
-     AUDIENCE
-  ======================================================== */
-
-  const audienceKey =
-    [
-      me.id,
-      ...friendIds,
-    ]
-      .sort()
-      .join(',');
-
-
-  const people = {
-    [me.id]:
-      me,
-
-    ...friendProfiles,
   };
 
 
-  /* =======================================================
-     CURRENT REELS
-  ======================================================== */
+  // ==========================================================
+  // CURRENT DATA
+  // ==========================================================
 
-  const reels =
-    tab === 'discover'
+  const data =
+    activeTab === 'discover'
       ? discoverReels
       : friendReels;
 
 
-  /* =======================================================
-     FRIEND REELS
-  ======================================================== */
-
-  const loadFriends =
-    useCallback(
-      async () => {
-
-        try {
-
-          const data =
-            await fetchReels(
-              audienceKey.split(',')
-            );
-
-
-          setFriendReels(
-            data
-          );
-
-        } catch (e) {
-
-          console.warn(
-            'reels load failed',
-            e
-          );
-
-        }
-
-      },
-      [
-        audienceKey,
-      ]
-    );
-
-
-  /* =======================================================
-     YOUTUBE DISCOVER
-  ======================================================== */
-
-  const loadDiscover =
-    useCallback(
-      async (
-        pageToken = null,
-        append = false
-      ) => {
-
-        try {
-
-          const {
-            items,
-            nextPageToken,
-          } =
-            await fetchShorts(
-              pageToken
-            );
-
-
-          setDiscoverReels(
-            (previous) => {
-
-              if (!append) {
-                return items;
-              }
-
-
-              /*
-               * Prevent duplicate videos
-               * during pagination.
-               */
-
-              const existing =
-                new Set(
-                  previous.map(
-                    (item) =>
-                      item.videoId
-                  )
-                );
-
-
-              const newItems =
-                items.filter(
-                  (item) =>
-                    !existing.has(
-                      item.videoId
-                    )
-                );
-
-
-              return [
-                ...previous,
-                ...newItems,
-              ];
-
-            }
-          );
-
-
-          setDiscoverPageToken(
-            nextPageToken
-          );
-
-        } catch (e) {
-
-          console.error(
-            'YouTube Discover error:',
-            e
-          );
-
-
-          if (!append) {
-
-            Alert.alert(
-              'Could not load Discover',
-
-              e?.message ||
-                'Could not load videos right now. Try again shortly.'
-            );
-
-          }
-
-        }
-
-      },
-      []
-    );
-
-
-  /* =======================================================
-     SCREEN FOCUS
-  ======================================================== */
-
-  useFocusEffect(
-    useCallback(
-      () => {
-
-        setLoading(
-          true
-        );
-
-
-        const jobs = [
-          loadFriends(),
-        ];
-
-
-        if (
-          !discoverReels.length
-        ) {
-
-          jobs.push(
-            loadDiscover(
-              null,
-              false
-            )
-          );
-
-        }
-
-
-        Promise.all(
-          jobs
-        ).finally(
-          () => {
-            setLoading(
-              false
-            );
-          }
-        );
-
-
-        return () => {
-
-          /*
-           * Stop active video
-           * when leaving screen.
-           */
-
-          setActiveIndex(
-            -1
-          );
-
-        };
-
-      },
-
-      [
-        loadFriends,
-        loadDiscover,
-        discoverReels.length,
-      ]
-    )
-  );
-
-
-  /* =======================================================
-     LOAD MORE
-  ======================================================== */
-
-  const onEndReached =
-    useCallback(
-      () => {
-
-        if (
-          tab !== 'discover' ||
-          loadingMore ||
-          !discoverPageToken
-        ) {
-          return;
-        }
-
-
-        setLoadingMore(
-          true
-        );
-
-
-        loadDiscover(
-          discoverPageToken,
-          true
-        ).finally(
-          () => {
-
-            setLoadingMore(
-              false
-            );
-
-          }
-        );
-
-      },
-
-      [
-        tab,
-        loadingMore,
-        discoverPageToken,
-        loadDiscover,
-      ]
-    );
-
-
-  /* =======================================================
-     REFRESH
-  ======================================================== */
-
-  const onRefresh =
-    useCallback(
-      () => {
-
-        setRefreshing(
-          true
-        );
-
-
-        const job =
-          tab === 'discover'
-            ? loadDiscover(
-                null,
-                false
-              )
-            : loadFriends();
-
-
-        job.finally(
-          () => {
-
-            setRefreshing(
-              false
-            );
-
-          }
-        );
-
-      },
-
-      [
-        tab,
-        loadDiscover,
-        loadFriends,
-      ]
-    );
-
-
-  /* =======================================================
-     VIEWABILITY
-  ======================================================== */
-
-  const onViewableItemsChanged =
-    useRef(
-      ({
-        viewableItems,
-      }) => {
-
-        if (
-          !viewableItems?.length
-        ) {
-          return;
-        }
-
-
-        const sorted =
-          [
-            ...viewableItems,
-          ].sort(
-            (
-              a,
-              b
-            ) =>
-              (
-                b.percentVisible ||
-                0
-              ) -
-              (
-                a.percentVisible ||
-                0
-              )
-          );
-
-
-        const index =
-          sorted[0]?.index;
-
-
-        if (
-          typeof index ===
-          'number'
-        ) {
-
-          setActiveIndex(
-            index
-          );
-
-        }
-
-      }
-    ).current;
-
-
-  const viewabilityConfig =
-    useRef({
-      itemVisiblePercentThreshold:
-        85,
-    }).current;
-
-
-  /* =======================================================
-     LIKE
-  ======================================================== */
-
-  const onLike =
-    useCallback(
-      (reel) => {
-
-        const liked =
-          (
-            reel.likes ||
-            []
-          ).includes(
-            me.id
-          );
-
-
-        setFriendReels(
-          (rs) =>
-            rs.map(
-              (r) =>
-                r.id === reel.id
-                  ? {
-                      ...r,
-
-                      likes:
-                        liked
-                          ? (
-                              r.likes ||
-                              []
-                            ).filter(
-                              (x) =>
-                                x !==
-                                me.id
-                            )
-
-                          : [
-                              ...(r.likes ||
-                                []),
-
-                              me.id,
-                            ],
-                    }
-
-                  : r
-            )
-        );
-
-
-        if (
-          !liked
-        ) {
-
-          vibrate(
-            15
-          );
-
-        }
-
-
-        toggleReelLike(
-          reel.id,
-          me.id,
-          liked
-        ).catch(
-          () => {
-            loadFriends();
-          }
-        );
-
-      },
-
-      [
-        me.id,
-        vibrate,
-        loadFriends,
-      ]
-    );
-
-
-  /* =======================================================
-     DELETE
-  ======================================================== */
-
-  const onDelete =
-    useCallback(
-      (reel) => {
-
-        Alert.alert(
-          'Delete reel?',
-
-          'This cannot be undone.',
-
-          [
-
-            {
-              text:
-                'Cancel',
-
-              style:
-                'cancel',
-            },
-
-            {
-              text:
-                'Delete',
-
-              style:
-                'destructive',
-
-              onPress:
-                async () => {
-
-                  setFriendReels(
-                    (rs) =>
-                      rs.filter(
-                        (r) =>
-                          r.id !==
-                          reel.id
-                      )
-                  );
-
-
-                  await deleteReel(
-                    reel
-                  ).catch(
-                    () => {}
-                  );
-
-                },
-            },
-
-          ]
-        );
-
-      },
-
-      []
-    );
-
-
-  /* =======================================================
-     TAB
-  ======================================================== */
-
-  const changeTab =
-    useCallback(
-      (nextTab) => {
-
-        setActiveIndex(
-          0
-        );
-
-
-        setTab(
-          nextTab
-        );
-
-
-        requestAnimationFrame(
-          () => {
-
-            listRef.current?.scrollToOffset(
-              {
-                offset: 0,
-                animated: false,
-              }
-            );
-
-          }
-        );
-
-      },
-
-      []
-    );
-
-
-  /* =======================================================
-     HEADER
-  ======================================================== */
-
-  const header = (
-
-    <View
-      style={{
-        position: 'absolute',
-
-        top: 50,
-        left: 16,
-        right: 16,
-
-        flexDirection:
-          'row',
-
-        justifyContent:
-          'space-between',
-
-        zIndex: 10,
-
-        elevation: 10,
-      }}
-    >
-
+  // ==========================================================
+  // LOADING
+  // ==========================================================
+
+  if (loading && !data.length) {
+    return (
       <View
-        style={{
-          flexDirection:
-            'row',
-
-          gap: 8,
-        }}
+        style={[
+          styles.loading,
+          {
+            backgroundColor: T.background,
+          },
+        ]}
       >
-
-        <TabPill
-          label="Discover"
-
-          active={
-            tab ===
-            'discover'
-          }
-
-          onPress={() =>
-            changeTab(
-              'discover'
-            )
-          }
-        />
-
-
-        <TabPill
-          label="Friends"
-
-          active={
-            tab ===
-            'friends'
-          }
-
-          onPress={() =>
-            changeTab(
-              'friends'
-            )
-          }
-        />
-
-      </View>
-
-
-      <Pressable
-        onPress={() =>
-          navigation.navigate(
-            'Create',
-            {
-              mode:
-                'reel',
-            }
-          )
-        }
-
-        hitSlop={10}
-      >
-
-        <Ionicons
-          name="add-circle"
-          size={32}
+        <ActivityIndicator
+          size="large"
           color="#fff"
         />
 
-      </Pressable>
+        <Text style={styles.loadingText}>
+          Loading Reels...
+        </Text>
+      </View>
+    );
+  }
 
-    </View>
-  );
 
+  // ==========================================================
+  // EMPTY
+  // ==========================================================
 
-  /* =======================================================
-     LOADING
-  ======================================================== */
-
-  if (loading) {
-
+  if (!data.length) {
     return (
-
       <View
-        style={{
-          flex: 1,
-
-          backgroundColor:
-            '#000',
-
-          alignItems:
-            'center',
-
-          justifyContent:
-            'center',
-        }}
+        style={[
+          styles.container,
+          {
+            backgroundColor: T.background,
+          },
+        ]}
       >
 
-        <ActivityIndicator
-          color={
-            colors.primary
+        <View style={styles.tabs}>
+
+          <Pressable
+            onPress={() => setActiveTab('discover')}
+            style={[
+              styles.tab,
+              activeTab === 'discover' &&
+                styles.activeTab,
+            ]}
+          >
+            <Text style={styles.tabText}>
+              Discover
+            </Text>
+          </Pressable>
+
+
+          <Pressable
+            onPress={() => setActiveTab('friends')}
+            style={[
+              styles.tab,
+              activeTab === 'friends' &&
+                styles.activeTab,
+            ]}
+          >
+            <Text style={styles.tabText}>
+              Friends
+            </Text>
+          </Pressable>
+
+        </View>
+
+
+        <EmptyState
+          title={
+            activeTab === 'discover'
+              ? 'No Reels found'
+              : 'No friend Reels yet'
+          }
+          message={
+            activeTab === 'discover'
+              ? 'Try refreshing.'
+              : 'Your friends have not uploaded any Reels yet.'
           }
         />
 
       </View>
-
     );
-
   }
 
 
-  /* =======================================================
-     SCREEN
-  ======================================================== */
+  // ==========================================================
+  // MAIN
+  // ==========================================================
 
   return (
-
     <View
-      style={{
-        flex: 1,
-
-        backgroundColor:
-          '#000',
-      }}
+      style={[
+        styles.container,
+        {
+          backgroundColor: '#000',
+        },
+      ]}
     >
 
-      {header}
+      {/* TAB SWITCHER */}
 
+      <View style={styles.tabs}>
 
-      {/* ===================================================
-          EMPTY
-      ==================================================== */}
-
-      {!reels.length ? (
-
-        <View
-          style={{
-            flex: 1,
-
-            alignItems:
-              'center',
-
-            justifyContent:
-              'center',
-          }}
+        <Pressable
+          onPress={() => setActiveTab('discover')}
+          style={[
+            styles.tab,
+            activeTab === 'discover' &&
+              styles.activeTab,
+          ]}
         >
+          <Text style={styles.tabText}>
+            Discover
+          </Text>
+        </Pressable>
 
-          <EmptyState
-            icon="videocam-outline"
 
-            title={
-              tab === 'discover'
-                ? 'Nothing to discover yet'
-                : 'No reels from friends yet'
-            }
+        <Pressable
+          onPress={() => setActiveTab('friends')}
+          style={[
+            styles.tab,
+            activeTab === 'friends' &&
+              styles.activeTab,
+          ]}
+        >
+          <Text style={styles.tabText}>
+            Friends
+          </Text>
+        </Pressable>
 
-            text={
-              tab === 'discover'
-                ? 'Pull down to try again.'
-                : 'Share a short video, or add friends to see theirs here.'
-            }
+      </View>
 
-            actionLabel={
-              tab === 'friends'
-                ? 'Create a reel'
-                : undefined
-            }
 
-            onAction={() =>
-              navigation.navigate(
-                'Create',
-                {
-                  mode:
-                    'reel',
-                }
-              )
-            }
+      {/* FULL SCREEN REELS */}
+
+      <FlatList
+        ref={listRef}
+
+        data={data}
+
+        keyExtractor={(item, index) =>
+          item.id ||
+          item.videoId ||
+          `${activeTab}-${index}`
+        }
+
+        renderItem={
+          activeTab === 'discover'
+            ? renderYouTubeReel
+            : renderFriendReel
+        }
+
+        extraData={activeIndex}
+
+        horizontal={false}
+
+        showsVerticalScrollIndicator={false}
+
+        pagingEnabled
+
+        snapToInterval={height}
+
+        snapToAlignment="start"
+
+        decelerationRate="fast"
+
+        disableIntervalMomentum
+
+        bounces={false}
+
+        overScrollMode="never"
+
+        getItemLayout={(_, index) => ({
+          length: height,
+          offset: height * index,
+          index,
+        })}
+
+        viewabilityConfig={viewabilityConfig}
+
+        onViewableItemsChanged={
+          onViewableItemsChanged
+        }
+
+        onEndReached={loadMore}
+
+        onEndReachedThreshold={0.5}
+
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#fff"
+            colors={['#fff']}
           />
-
-        </View>
-
-      ) : (
-
-        /* =================================================
-           REELS
-        ================================================== */
-
-        <FlatList
-          key={
-            tab
-          }
-
-          ref={
-            listRef
-          }
-
-          data={
-            reels
-          }
-
-          keyExtractor={(
-            item,
-            index
-          ) =>
-            item.id ||
-            item.videoId ||
-            `reel-${index}`
-          }
-
-
-          /* ONE FULL SCREEN PER SWIPE */
-
-          pagingEnabled
-
-          snapToInterval={
-            height
-          }
-
-          snapToAlignment="start"
-
-          disableIntervalMomentum={
-            true
-          }
-
-          decelerationRate="fast"
-
-
-          /* PERFORMANCE */
-
-          removeClippedSubviews={
-            false
-          }
-
-          windowSize={
-            3
-          }
-
-          initialNumToRender={
-            2
-          }
-
-          maxToRenderPerBatch={
-            2
-          }
-
-          updateCellsBatchingPeriod={
-            50
-          }
-
-
-          /* DISPLAY */
-
-          showsVerticalScrollIndicator={
-            false
-          }
-
-          bounces={
-            false
-          }
-
-
-          /* VIEWABILITY */
-
-          onViewableItemsChanged={
-            onViewableItemsChanged
-          }
-
-          viewabilityConfig={
-            viewabilityConfig
-          }
-
-
-          /* ITEM HEIGHT */
-
-          getItemLayout={(
-            _,
-            index
-          ) => ({
-            length:
-              height,
-
-            offset:
-              height *
-              index,
-
-            index,
-          })}
-
-
-          /* PAGINATION */
-
-          onEndReachedThreshold={
-            0.5
-          }
-
-          onEndReached={
-            onEndReached
-          }
-
-
-          /* REFRESH */
-
-          refreshControl={
-
-            <RefreshControl
-              refreshing={
-                refreshing
-              }
-
-              onRefresh={
-                onRefresh
-              }
-
-              tintColor="#fff"
-            />
-
-          }
-
-
-          /* RENDER */
-
-          renderItem={({
-            item,
-            index,
-          }) => (
-
-            <ReelItem
-              reel={
-                item
-              }
-
-              author={
-                people[
-                  item.authorId
-                ]
-              }
-
-              meId={
-                me.id
-              }
-
-              itemHeight={
-                height
-              }
-
-              active={
-                index ===
-                activeIndex
-              }
-
-              muted={
-                muted
-              }
-
-              onToggleMute={() =>
-                setMuted(
-                  (
-                    value
-                  ) =>
-                    !value
-                )
-              }
-
-              onLike={
-                onLike
-              }
-
-              onDelete={
-                onDelete
-              }
-
-              onOpenComments={
-                setCommentsReel
-              }
-
-              onOpenAuthor={(
-                uid
-              ) => {
-
-                if (
-                  uid ===
-                  me.id
-                ) {
-
-                  navigation.navigate(
-                    'Profile'
-                  );
-
-                } else {
-
-                  navigation.navigate(
-                    'UserProfile',
-                    {
-                      userId:
-                        uid,
-                    }
-                  );
-
-                }
-
-              }}
-            />
-
-          )}
-
-        />
-
-      )}
-
-
-      {/* ===================================================
-          COMMENTS
-      ==================================================== */}
-
-      <ReelCommentsSheet
-        reel={
-          commentsReel
         }
 
-        meId={
-          me.id
-        }
+        windowSize={3}
 
-        onClose={() =>
-          setCommentsReel(
-            null
-          )
-        }
+        initialNumToRender={1}
+
+        maxToRenderPerBatch={1}
+
+        updateCellsBatchingPeriod={50}
+
+        removeClippedSubviews={false}
       />
+
+
+      {/* LOADING MORE */}
+
+      {loadingMore && (
+        <View style={styles.loadingMore}>
+          <ActivityIndicator
+            color="#fff"
+            size="small"
+          />
+        </View>
+      )}
 
     </View>
   );
 }
+
+
+// ============================================================
+// STYLES
+// ============================================================
+
+const styles = StyleSheet.create({
+
+  container: {
+    flex: 1,
+    backgroundColor: '#000',
+  },
+
+
+  loading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000',
+  },
+
+
+  loadingText: {
+    color: '#fff',
+    marginTop: 12,
+    fontSize: 15,
+  },
+
+
+  reel: {
+    backgroundColor: '#000',
+    overflow: 'hidden',
+  },
+
+
+  videoContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    backgroundColor: '#000',
+    overflow: 'hidden',
+  },
+
+
+  bottomShade: {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: 280,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+  },
+
+
+  topBar: {
+    position: 'absolute',
+    top: 45,
+    left: 0,
+    right: 0,
+    height: 55,
+    paddingHorizontal: 18,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 20,
+  },
+
+
+  topTitle: {
+    color: '#fff',
+    fontSize: 21,
+    fontWeight: '700',
+  },
+
+
+  topButton: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+
+  actions: {
+    position: 'absolute',
+    right: 12,
+    bottom: 115,
+    alignItems: 'center',
+    zIndex: 30,
+  },
+
+
+  actionButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 22,
+    minWidth: 50,
+  },
+
+
+  actionText: {
+    color: '#fff',
+    fontSize: 12,
+    marginTop: 4,
+    fontWeight: '600',
+  },
+
+
+  info: {
+    position: 'absolute',
+    left: 16,
+    right: 85,
+    bottom: 25,
+    zIndex: 30,
+  },
+
+
+  authorRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+
+
+  authorName: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    marginLeft: 10,
+    flex: 1,
+  },
+
+
+  caption: {
+    color: '#fff',
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '500',
+  },
+
+
+  time: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+    marginTop: 7,
+  },
+
+
+  tabs: {
+    position: 'absolute',
+    top: 45,
+    left: 0,
+    right: 0,
+    height: 50,
+    zIndex: 100,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+
+
+  tab: {
+    paddingHorizontal: 18,
+    paddingVertical: 8,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+  },
+
+
+  activeTab: {
+    backgroundColor: 'rgba(255,255,255,0.18)',
+  },
+
+
+  tabText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+
+
+  loadingMore: {
+    position: 'absolute',
+    bottom: 25,
+    alignSelf: 'center',
+    padding: 10,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+  },
+
+});
