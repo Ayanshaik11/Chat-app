@@ -1,98 +1,171 @@
-// Vercel serverless function
-// YouTube API key stays ONLY in Vercel Environment Variables.
+/*
+ * =========================================================
+ * KING X — YOUTUBE VERCEL PROXY
+ * =========================================================
+ *
+ * IMPORTANT:
+ *
+ * YOUTUBE_API_KEY is stored ONLY in Vercel.
+ *
+ * Never put the key inside the React Native app.
+ *
+ * Vercel endpoint:
+ *
+ * /api/youtube-shorts
+ * =========================================================
+ */
 
-module.exports = async (req, res) => {
-  const key = process.env.YOUTUBE_API_KEY;
+
+module.exports = async (
+  req,
+  res
+) => {
+
+  const key =
+    process.env.YOUTUBE_API_KEY;
+
+
+  /* =======================================================
+     API KEY CHECK
+  ======================================================== */
 
   if (!key) {
+
     return res.status(500).json({
+
       error:
         'Server is missing YOUTUBE_API_KEY. Add it in Vercel → Settings → Environment Variables.',
+
     });
+
   }
 
-  const pageToken = req.query.pageToken || '';
+
+  const pageToken =
+    req.query?.pageToken ||
+    '';
+
 
   /*
-   * Search specifically around Shorts.
+   * =======================================================
+   * SEARCH QUERY
+   * =======================================================
    *
-   * IMPORTANT:
-   * YouTube Data API does NOT have a shortsOnly=true filter.
-   * videoDuration=short means < 4 minutes, not Shorts.
+   * YouTube Data API does NOT have:
+   *
+   * shortsOnly=true
+   *
+   * So we target Shorts using #shorts and
+   * Indian/Hindi search terms.
    */
+
   const query =
-    '#shorts Hindi|#shorts Bollywood|#shorts comedy|#shorts India|#shorts dank memes|#shorts entertainment|#shorts srk videos|#shorts hindi anime';
+    '#shorts Hindi|#shorts Bollywood|#shorts comedy|#shorts India|#shorts memes|#shorts entertainment';
 
-  const searchParams = new URLSearchParams({
-    part: 'snippet',
 
-    type: 'video',
+  /* =======================================================
+     SEARCH PARAMETERS
+  ======================================================== */
 
-    regionCode: 'IN',
+  const params =
+    new URLSearchParams({
 
-    relevanceLanguage: 'hi',
+      part:
+        'snippet',
 
-    order: 'relevance',
+      type:
+        'video',
 
-    /*
-     * This is still required because Shorts are normally short,
-     * but it is NOT enough by itself to identify Shorts.
-     */
-    videoDuration: 'short',
+      regionCode:
+        'IN',
 
-    videoEmbeddable: 'true',
+      relevanceLanguage:
+        'hi',
 
-    safeSearch: 'moderate',
+      order:
+        'relevance',
 
-    q: query,
+      /*
+       * NOTE:
+       *
+       * "short" means less than 4 minutes.
+       * It does NOT mean Shorts-only.
+       */
 
-    maxResults: '25',
+      videoDuration:
+        'short',
 
-    key,
-  });
+      videoEmbeddable:
+        'true',
+
+      safeSearch:
+        'moderate',
+
+      q:
+        query,
+
+      maxResults:
+        '25',
+
+      key,
+
+    });
+
 
   if (pageToken) {
-    searchParams.set(
+
+    params.set(
       'pageToken',
       pageToken
     );
+
   }
 
+
   try {
+
     /* =====================================================
-       STEP 1
-       SEARCH YOUTUBE
+       STEP 1 — SEARCH
     ====================================================== */
 
-    const searchResponse = await fetch(
-      `https://www.googleapis.com/youtube/v3/search?${searchParams.toString()}`
-    );
+    const searchResponse =
+      await fetch(
+        `https://www.googleapis.com/youtube/v3/search?${params.toString()}`
+      );
+
 
     const searchData =
       await searchResponse.json();
 
+
     if (!searchResponse.ok) {
+
       console.error(
         'YouTube search error:',
         searchData
       );
 
+
       return res.status(
         searchResponse.status
       ).json({
+
         error:
           searchData?.error?.message ||
           'YouTube search failed',
+
       });
+
     }
 
 
     const searchItems =
-      searchData.items || [];
+      searchData.items ||
+      [];
 
 
     /*
-     * Extract video IDs.
+     * Extract IDs.
      */
 
     const videoIds =
@@ -105,25 +178,36 @@ module.exports = async (req, res) => {
 
 
     if (!videoIds.length) {
+
       return res.status(200).json({
+
         items: [],
+
         nextPageToken:
           searchData.nextPageToken ||
           null,
-        regionCode: 'IN',
-        language: 'hi',
-        count: 0,
+
+        regionCode:
+          'IN',
+
+        language:
+          'hi',
+
+        count:
+          0,
+
       });
+
     }
 
 
     /* =====================================================
-       STEP 2
-       GET VIDEO DETAILS
+       STEP 2 — GET VIDEO DETAILS
     ====================================================== */
 
-    const videoParams =
+    const detailParams =
       new URLSearchParams({
+
         part:
           'snippet,contentDetails',
 
@@ -131,103 +215,119 @@ module.exports = async (req, res) => {
           videoIds.join(','),
 
         key,
+
       });
 
 
-    const videoResponse =
+    const detailResponse =
       await fetch(
-        `https://www.googleapis.com/youtube/v3/videos?${videoParams.toString()}`
+        `https://www.googleapis.com/youtube/v3/videos?${detailParams.toString()}`
       );
 
 
-    const videoData =
-      await videoResponse.json();
+    const detailData =
+      await detailResponse.json();
 
 
-    if (!videoResponse.ok) {
+    if (!detailResponse.ok) {
+
       console.error(
         'YouTube videos error:',
-        videoData
+        detailData
       );
 
+
       return res.status(
-        videoResponse.status
+        detailResponse.status
       ).json({
+
         error:
-          videoData?.error?.message ||
+          detailData?.error?.message ||
           'Could not get YouTube video details',
+
       });
+
     }
 
 
     const videos =
-      videoData.items || [];
+      detailData.items ||
+      [];
 
 
     /* =====================================================
-       STEP 3
-       BUILD RESULTS
+       STEP 3 — FORMAT
     ====================================================== */
 
     const items =
-      videos.map((video) => {
+      videos
+        .map(
+          (video) => {
 
-        const videoId =
-          video.id;
-
-        const snippet =
-          video.snippet || {};
-
-
-        const thumbnail =
-          snippet.thumbnails?.maxres?.url ||
-          snippet.thumbnails?.high?.url ||
-          snippet.thumbnails?.medium?.url ||
-          snippet.thumbnails?.default?.url ||
-          `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+            const videoId =
+              video.id;
 
 
-        return {
-          videoId,
+            if (!videoId) {
+              return null;
+            }
 
-          title:
-            snippet.title ||
-            'YouTube Short',
 
-          description:
-            snippet.description ||
-            '',
+            const snippet =
+              video.snippet ||
+              {};
 
-          thumbnail,
 
-          authorName:
-            snippet.channelTitle ||
-            'YouTube',
+            const thumbnail =
+              snippet.thumbnails?.maxres?.url ||
+              snippet.thumbnails?.high?.url ||
+              snippet.thumbnails?.medium?.url ||
+              snippet.thumbnails?.default?.url ||
+              `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
-          channelTitle:
-            snippet.channelTitle ||
-            'YouTube',
 
-          youtubeUrl:
-            `https://www.youtube.com/shorts/${videoId}`,
+            return {
 
-          /*
-           * Useful for debugging/filtering later.
-           */
-          publishedAt:
-            snippet.publishedAt ||
-            null,
+              videoId,
 
-          channelId:
-            snippet.channelId ||
-            null,
-        };
-      });
+              title:
+                snippet.title ||
+                'YouTube Short',
+
+              description:
+                snippet.description ||
+                '',
+
+              thumbnail,
+
+              authorName:
+                snippet.channelTitle ||
+                'YouTube',
+
+              channelTitle:
+                snippet.channelTitle ||
+                'YouTube',
+
+              youtubeUrl:
+                `https://www.youtube.com/shorts/${videoId}`,
+
+              publishedAt:
+                snippet.publishedAt ||
+                null,
+
+              channelId:
+                snippet.channelId ||
+                null,
+
+            };
+
+          }
+        )
+        .filter(Boolean);
 
 
     /* =====================================================
-       STEP 4
-       REMOVE DUPLICATES
+       STEP 4 — REMOVE DUPLICATES
     ====================================================== */
 
     const uniqueItems = [];
@@ -235,22 +335,29 @@ module.exports = async (req, res) => {
     const seen =
       new Set();
 
-    for (const item of items) {
+
+    for (
+      const item of items
+    ) {
 
       if (
-        !item.videoId ||
-        seen.has(item.videoId)
+        seen.has(
+          item.videoId
+        )
       ) {
         continue;
       }
+
 
       seen.add(
         item.videoId
       );
 
+
       uniqueItems.push(
         item
       );
+
     }
 
 
@@ -275,19 +382,24 @@ module.exports = async (req, res) => {
 
       count:
         uniqueItems.length,
+
     });
 
-  } catch (e) {
+  } catch (error) {
 
     console.error(
       'YouTube proxy error:',
-      e
+      error
     );
 
+
     return res.status(500).json({
+
       error:
-        e?.message ||
+        error?.message ||
         'Failed to load YouTube videos',
+
     });
+
   }
 };
