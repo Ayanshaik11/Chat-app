@@ -14,7 +14,7 @@ module.exports = async (req, res) => {
   const pageToken = req.query.pageToken || '';
 
   const query =
-    'Hindi songs|Bollywood songs|Hindi comedy|Indian comedy|Hindi memes|Bollywood|Indian entertainment|trending India|Hindi shorts|Indian shorts';
+    'Bollywood songs|Hindi memes|memes|Bollywood|Indian entertainment|trending|Anime hindi|sad hindi songs|srk videos|new movies';
 
   const params = new URLSearchParams({
     part: 'snippet',
