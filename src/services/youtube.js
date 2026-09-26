@@ -1,42 +1,238 @@
-import { PROXY_BASE_URL } from '../config/proxy';
+/*
+ * =========================================================
+ * KING X — YOUTUBE SERVICE
+ * =========================================================
+ */
 
-// Your Vercel proxy already sends a clean, flat shape:
-// { videoId, title, description, thumbnail, authorName, channelTitle, youtubeUrl, publishedAt, channelId }
-const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', 39: "'", '#39': "'" };
-function decodeEntities(text = '') {
-  return text.replace(/&(amp|lt|gt|quot|#39);/g, (_, code) => ENTITIES[code] || _);
-}
+import {
+  PROXY_API_URL,
+} from '../config/proxy';
 
-function mapItem(item) {
-  if (!item?.videoId) return null;
-  return {
-    id: `yt-${item.videoId}`,
-    videoId: item.videoId,
-    thumbnail: item.thumbnail || '',
-    authorName: decodeEntities(item.channelTitle || item.authorName || 'YouTube'),
-    caption: decodeEntities(item.title || ''),
-    youtubeUrl: item.youtubeUrl || `https://www.youtube.com/watch?v=${item.videoId}`,
-    isExternal: true,
-    authorId: null,
-    likes: [],
-  };
-}
 
-// Calls your own Vercel proxy — the real YouTube API key never ships
-// inside the app; it lives only as a Vercel environment variable.
-export async function fetchShorts(pageToken = null) {
-  if (!PROXY_BASE_URL || PROXY_BASE_URL.includes('YOUR-PROJECT')) {
-    throw new Error('Set PROXY_BASE_URL in src/config/proxy.js to your deployed Vercel URL.');
+const API_URL =
+  `${PROXY_API_URL}/api/youtube-shorts`;
+
+
+/* =========================================================
+   FETCH YOUTUBE SHORTS
+========================================================= */
+
+export async function fetchShorts(
+  pageToken = null
+) {
+  const url =
+    new URL(API_URL);
+
+
+  if (pageToken) {
+    url.searchParams.set(
+      'pageToken',
+      pageToken
+    );
   }
-  const url = new URL(`${PROXY_BASE_URL}/api/youtube-shorts`);
-  if (pageToken) url.searchParams.set('pageToken', pageToken);
 
-  const res = await fetch(url.toString());
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data?.error || 'Could not load videos right now. Try again shortly.');
+
+  const response =
+    await fetch(
+      url.toString()
+    );
+
+
+  let data;
+
+  try {
+
+    data =
+      await response.json();
+
+  } catch (e) {
+
+    throw new Error(
+      'Invalid response from YouTube server.'
+    );
+
+  }
+
+
+  if (!response.ok) {
+
+    throw new Error(
+      data?.error ||
+      data?.message ||
+      'YouTube request failed.'
+    );
+
+  }
+
+
+  /*
+   * Support both the current proxy
+   * and older response formats.
+   */
+
+  const rawItems =
+    Array.isArray(data)
+      ? data
+      : (
+          data?.items ||
+          data?.videos ||
+          data?.results ||
+          []
+        );
+
+
+  const items =
+    rawItems
+      .map(
+        (item, index) => {
+
+          /*
+           * Get YouTube video ID.
+           */
+
+          const videoId =
+            item?.videoId ||
+            item?.id?.videoId ||
+            (
+              typeof item?.id === 'string'
+                ? item.id
+                : null
+            );
+
+
+          if (!videoId) {
+            return null;
+          }
+
+
+          const snippet =
+            item?.snippet ||
+            item;
+
+
+          /*
+           * Thumbnail fallback.
+           */
+
+          const thumbnail =
+            item?.thumbnail ||
+            item?.thumbnailUrl ||
+            snippet?.thumbnails?.maxres?.url ||
+            snippet?.thumbnails?.high?.url ||
+            snippet?.thumbnails?.medium?.url ||
+            snippet?.thumbnails?.default?.url ||
+            `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+
+
+          /*
+           * Return the format expected
+           * by ReelsScreen.
+           */
+
+          return {
+
+            id:
+              `youtube-${videoId}-${index}`,
+
+            videoId,
+
+            isExternal:
+              true,
+
+
+            title:
+              item?.title ||
+              snippet?.title ||
+              'YouTube Short',
+
+
+            caption:
+              item?.caption ||
+              item?.title ||
+              snippet?.title ||
+              '',
+
+
+            description:
+              item?.description ||
+              snippet?.description ||
+              '',
+
+
+            thumbnail,
+
+            thumbnailUrl:
+              thumbnail,
+
+
+            authorName:
+              item?.authorName ||
+              item?.channelTitle ||
+              snippet?.channelTitle ||
+              'YouTube',
+
+
+            channelTitle:
+              item?.channelTitle ||
+              snippet?.channelTitle ||
+              'YouTube',
+
+
+            youtubeUrl:
+              item?.youtubeUrl ||
+              `https://www.youtube.com/shorts/${videoId}`,
+
+
+            likes: [],
+
+          };
+
+        }
+      )
+      .filter(Boolean);
+
+
+  /*
+   * Remove duplicate YouTube videos.
+   */
+
+  const unique = [];
+
+  const seen =
+    new Set();
+
+
+  for (const item of items) {
+
+    if (
+      seen.has(
+        item.videoId
+      )
+    ) {
+      continue;
+    }
+
+
+    seen.add(
+      item.videoId
+    );
+
+
+    unique.push(
+      item
+    );
+
+  }
+
 
   return {
-    items: (data.items || []).map(mapItem).filter(Boolean),
-    nextPageToken: data.nextPageToken || null,
+
+    items:
+      unique,
+
+    nextPageToken:
+      data?.nextPageToken ||
+      null,
+
   };
 }
