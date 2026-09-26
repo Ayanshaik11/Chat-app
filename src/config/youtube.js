@@ -13,4 +13,4 @@
    roughly 100 loads/day total across everyone using the app before
    Discover stops loading until the quota resets.
 ---------------------------------------------------------------- */
-export const YOUTUBE_API_KEY = 'YOUR_YOUTUBE_API_KEY';
+export const YOUTUBE_API_KEY = 'AIzaSyAR9a1Fj3oZHhma-y57INGpcNBOdW0RGS0';
