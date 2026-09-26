@@ -74,6 +74,7 @@ export default function ReelsScreen({ navigation }) {
   const { width, height } = useWindowDimensions();
 
   const { user } = useAuth();
+
   useAppData();
 
   const [activeTab, setActiveTab] = useState('discover');
@@ -521,7 +522,9 @@ export default function ReelsScreen({ navigation }) {
         ]}
       >
 
-        {/* FULL SCREEN VIDEO */}
+        {/* ==================================================
+            CENTERED FULL SCREEN VIDEO
+            ================================================== */}
 
         <View
           style={[
@@ -533,45 +536,80 @@ export default function ReelsScreen({ navigation }) {
           ]}
         >
 
-          {isActive ? (
-            <YoutubePlayer
-              height={height}
-              width={width}
-              videoId={item.videoId}
-              play
-              mute={false}
-
-              initialPlayerParams={{
-                controls: true,
-                modestbranding: true,
-                rel: false,
-                playsinline: true,
-              }}
-
-              webViewProps={{
-                allowsInlineMediaPlayback: true,
-                mediaPlaybackRequiresUserAction: false,
-              }}
-            />
-          ) : (
-            <Image
-              source={{
-                uri:
-                  item.thumbnail ||
-                  item.thumbnailUrl,
-              }}
-              style={{
+          <View
+            style={[
+              styles.youtubeCenter,
+              {
                 width,
                 height,
-              }}
-              resizeMode="cover"
-            />
-          )}
+              },
+            ]}
+          >
+
+            {isActive ? (
+              <YoutubePlayer
+                height={height}
+                width={width}
+                videoId={item.videoId}
+
+                /*
+                 * IMPORTANT:
+                 * The player is controlled by the active
+                 * FlatList item.
+                 *
+                 * When the user swipes to another reel,
+                 * isActive becomes false and this player
+                 * is removed.
+                 */
+                play={true}
+
+                /*
+                 * Sound enabled.
+                 * Android/YouTube may still restrict
+                 * autoplay with sound depending on the
+                 * WebView/player environment.
+                 */
+                mute={false}
+
+                initialPlayerParams={{
+                  controls: false,
+                  modestbranding: true,
+                  rel: false,
+                  playsinline: true,
+                  fs: false,
+                }}
+
+                webViewProps={{
+                  allowsInlineMediaPlayback: true,
+                  mediaPlaybackRequiresUserAction: false,
+                }}
+              />
+            ) : (
+              <Image
+                source={{
+                  uri:
+                    item.thumbnail ||
+                    item.thumbnailUrl,
+                }}
+                style={[
+                  styles.youtubePreview,
+                  {
+                    width,
+                    height,
+                  },
+                ]}
+                resizeMode="cover"
+              />
+            )}
+
+          </View>
 
         </View>
 
 
-        {/* BOTTOM SHADE */}
+        {/* ==================================================
+            BOTTOM SHADE
+            ================================================== */}
 
         <View
           pointerEvents="none"
@@ -579,7 +617,9 @@ export default function ReelsScreen({ navigation }) {
         />
 
 
-        {/* TOP */}
+        {/* ==================================================
+            TOP
+            ================================================== */}
 
         <View style={styles.topBar}>
 
@@ -601,7 +641,9 @@ export default function ReelsScreen({ navigation }) {
         </View>
 
 
-        {/* RIGHT ACTIONS */}
+        {/* ==================================================
+            RIGHT ACTIONS
+            ================================================== */}
 
         <View style={styles.actions}>
 
@@ -701,7 +743,9 @@ export default function ReelsScreen({ navigation }) {
         </View>
 
 
-        {/* BOTTOM INFO */}
+        {/* ==================================================
+            BOTTOM INFO
+            ================================================== */}
 
         <View style={styles.info}>
 
@@ -774,14 +818,18 @@ export default function ReelsScreen({ navigation }) {
         ]}
       >
 
-        {/* FULL SCREEN FRIEND VIDEO */}
+        {/* ==================================================
+            FULL SCREEN FRIEND VIDEO
+            ================================================== */}
 
         <View
-          style={{
-            width,
-            height,
-            backgroundColor: '#000',
-          }}
+          style={[
+            styles.friendVideoContainer,
+            {
+              width,
+              height,
+            },
+          ]}
         >
 
           {isActive ? (
@@ -802,6 +850,7 @@ export default function ReelsScreen({ navigation }) {
               }
 
               shouldPlay
+
               isLooping
 
               useNativeControls={false}
@@ -1282,14 +1331,57 @@ const styles = StyleSheet.create({
   },
 
 
+  // ==========================================================
+  // YOUTUBE VIDEO
+  // ==========================================================
+
   videoContainer: {
     position: 'absolute',
     top: 0,
     left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#000',
+    overflow: 'hidden',
+
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+
+  youtubeCenter: {
+    alignItems: 'center',
+    justifyContent: 'center',
     backgroundColor: '#000',
     overflow: 'hidden',
   },
 
+
+  youtubePreview: {
+    backgroundColor: '#000',
+  },
+
+
+  // ==========================================================
+  // FRIEND VIDEO
+  // ==========================================================
+
+  friendVideoContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: '#000',
+
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+
+  // ==========================================================
+  // OVERLAYS
+  // ==========================================================
 
   bottomShade: {
     position: 'absolute',
@@ -1302,6 +1394,10 @@ const styles = StyleSheet.create({
   },
 
 
+  // ==========================================================
+  // TOP BAR
+  // ==========================================================
+
   topBar: {
     position: 'absolute',
     top: 45,
@@ -1309,10 +1405,12 @@ const styles = StyleSheet.create({
     right: 0,
     height: 55,
     paddingHorizontal: 18,
+
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent:
       'space-between',
+
     zIndex: 20,
   },
 
@@ -1328,16 +1426,23 @@ const styles = StyleSheet.create({
     width: 44,
     height: 44,
     borderRadius: 22,
+
     alignItems: 'center',
     justifyContent: 'center',
   },
 
 
+  // ==========================================================
+  // ACTIONS
+  // ==========================================================
+
   actions: {
     position: 'absolute',
     right: 12,
     bottom: 115,
+
     alignItems: 'center',
+
     zIndex: 30,
   },
 
@@ -1345,7 +1450,9 @@ const styles = StyleSheet.create({
   actionButton: {
     alignItems: 'center',
     justifyContent: 'center',
+
     marginBottom: 22,
+
     minWidth: 50,
   },
 
@@ -1358,11 +1465,17 @@ const styles = StyleSheet.create({
   },
 
 
+  // ==========================================================
+  // INFO
+  // ==========================================================
+
   info: {
     position: 'absolute',
+
     left: 16,
     right: 85,
     bottom: 25,
+
     zIndex: 30,
   },
 
@@ -1370,6 +1483,7 @@ const styles = StyleSheet.create({
   authorRow: {
     flexDirection: 'row',
     alignItems: 'center',
+
     marginBottom: 10,
   },
 
@@ -1378,7 +1492,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontWeight: '700',
+
     marginLeft: 10,
+
     flex: 1,
   },
 
@@ -1394,21 +1510,34 @@ const styles = StyleSheet.create({
   time: {
     color:
       'rgba(255,255,255,0.7)',
+
     fontSize: 12,
+
     marginTop: 7,
   },
 
 
+  // ==========================================================
+  // TABS
+  // ==========================================================
+
   tabs: {
     position: 'absolute',
+
     top: 45,
     left: 0,
     right: 0,
+
     height: 50,
+
     zIndex: 100,
+
     flexDirection: 'row',
+
     alignItems: 'center',
+
     justifyContent: 'center',
+
     gap: 8,
   },
 
@@ -1416,7 +1545,9 @@ const styles = StyleSheet.create({
   tab: {
     paddingHorizontal: 18,
     paddingVertical: 8,
+
     borderRadius: 20,
+
     backgroundColor:
       'rgba(0,0,0,0.45)',
   },
@@ -1435,12 +1566,21 @@ const styles = StyleSheet.create({
   },
 
 
+  // ==========================================================
+  // LOAD MORE
+  // ==========================================================
+
   loadingMore: {
     position: 'absolute',
+
     bottom: 25,
+
     alignSelf: 'center',
+
     padding: 10,
+
     borderRadius: 20,
+
     backgroundColor:
       'rgba(0,0,0,0.6)',
   },
