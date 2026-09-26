@@ -1,6 +1,4 @@
-import { YOUTUBE_API_KEY } from '../config/youtube';
-
-const BASE = 'https://www.googleapis.com/youtube/v3/search';
+import { PROXY_BASE_URL } from '../config/proxy';
 
 function mapItem(item) {
   const videoId = item.id?.videoId;
@@ -18,29 +16,19 @@ function mapItem(item) {
   };
 }
 
-// There's no official "Shorts only" filter in the public API, so this
-// combines videoDuration=short (under 4 min) with a #shorts search term —
-// the standard workaround developers use to bias results toward real Shorts.
+// Calls your own Vercel proxy — the real YouTube API key never ships
+// inside the app; it lives only as a Vercel environment variable.
 export async function fetchShorts(pageToken = null) {
-  if (!YOUTUBE_API_KEY || YOUTUBE_API_KEY === 'YOUR_YOUTUBE_API_KEY') {
-    throw new Error('Add your YouTube API key in src/config/youtube.js first.');
+  if (!PROXY_BASE_URL || PROXY_BASE_URL.includes('YOUR-PROJECT')) {
+    throw new Error('Set PROXY_BASE_URL in src/config/proxy.js to your deployed Vercel URL.');
   }
-  const params = new URLSearchParams({
-    part: 'snippet',
-    type: 'video',
-    videoDuration: 'short',
-    q: '#shorts',
-    maxResults: '10',
-    key: YOUTUBE_API_KEY,
-  });
-  if (pageToken) params.set('pageToken', pageToken);
+  const url = new URL(`${PROXY_BASE_URL}/api/youtube-shorts`);
+  if (pageToken) url.searchParams.set('pageToken', pageToken);
 
-  const res = await fetch(`${BASE}?${params.toString()}`);
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    throw new Error(body?.error?.message || 'Could not load videos right now. Try again shortly.');
-  }
-  const data = await res.json();
+  const res = await fetch(url.toString());
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data?.error || 'Could not load videos right now. Try again shortly.');
+
   return {
     items: (data.items || []).map(mapItem).filter(Boolean),
     nextPageToken: data.nextPageToken || null,
