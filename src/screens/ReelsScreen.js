@@ -26,8 +26,6 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '../context/AuthContext';
 import { useAppData } from '../context/AppDataContext';
-import { useTheme } from '../context/ThemeContext';
-import { useSettings } from '../context/SettingsContext';
 
 import { fetchShorts } from '../services/youtube';
 
@@ -76,9 +74,7 @@ export default function ReelsScreen({ navigation }) {
   const { width, height } = useWindowDimensions();
 
   const { user } = useAuth();
-  const appData = useAppData();
-  const theme = useTheme();
-  const settings = useSettings();
+  useAppData();
 
   const [activeTab, setActiveTab] = useState('discover');
 
@@ -105,17 +101,6 @@ export default function ReelsScreen({ navigation }) {
 
   const mountedRef = useRef(true);
 
-  // ----------------------------------------------------------
-  // THEME
-  // ----------------------------------------------------------
-
-  const T = {
-    background: theme?.background || '#000',
-    card: theme?.card || '#111',
-    text: theme?.text || '#fff',
-    secondary: theme?.secondaryText || '#aaa',
-    primary: theme?.primary || '#ff1744',
-  };
 
   // ==========================================================
   // LOAD YOUTUBE
@@ -154,7 +139,9 @@ export default function ReelsScreen({ navigation }) {
           return [...previous, ...filtered];
         });
 
-        setNextPageToken(result?.nextPageToken || null);
+        setNextPageToken(
+          result?.nextPageToken || null
+        );
 
         if (refresh) {
           setActiveIndex(0);
@@ -167,12 +154,16 @@ export default function ReelsScreen({ navigation }) {
           });
         }
       } catch (error) {
-        console.error('Discover load error:', error);
+        console.error(
+          'Discover load error:',
+          error
+        );
 
         if (mountedRef.current) {
           Alert.alert(
             'Could not load Reels',
-            error?.message || 'Something went wrong.'
+            error?.message ||
+              'Something went wrong.'
           );
         }
       } finally {
@@ -200,7 +191,8 @@ export default function ReelsScreen({ navigation }) {
           setLoading(true);
         }
 
-        const result = await fetchReels(user?.uid);
+        const result =
+          await fetchReels(user?.uid);
 
         if (!mountedRef.current) return;
 
@@ -215,12 +207,16 @@ export default function ReelsScreen({ navigation }) {
           });
         });
       } catch (error) {
-        console.error('Friend reels error:', error);
+        console.error(
+          'Friend reels error:',
+          error
+        );
 
         if (mountedRef.current) {
           Alert.alert(
             'Could not load Reels',
-            error?.message || 'Something went wrong.'
+            error?.message ||
+              'Something went wrong.'
           );
         }
       } finally {
@@ -263,7 +259,10 @@ export default function ReelsScreen({ navigation }) {
       });
     });
 
-    if (activeTab === 'friends' && !friendReels.length) {
+    if (
+      activeTab === 'friends' &&
+      !friendReels.length
+    ) {
       loadFriendReels();
     }
   }, [activeTab]);
@@ -280,7 +279,11 @@ export default function ReelsScreen({ navigation }) {
     } else {
       loadFriendReels(true);
     }
-  }, [activeTab, loadDiscover, loadFriendReels]);
+  }, [
+    activeTab,
+    loadDiscover,
+    loadFriendReels,
+  ]);
 
 
   // ==========================================================
@@ -335,9 +338,15 @@ export default function ReelsScreen({ navigation }) {
     if (item?.isExternal) return;
 
     try {
-      await toggleReelLike(item.id, user?.uid);
+      await toggleReelLike(
+        item.id,
+        user?.uid
+      );
     } catch (error) {
-      console.error('Like error:', error);
+      console.error(
+        'Like error:',
+        error
+      );
     }
   };
 
@@ -360,19 +369,23 @@ export default function ReelsScreen({ navigation }) {
         {
           text: 'Delete',
           style: 'destructive',
+
           onPress: async () => {
             try {
               await deleteReel(item.id);
 
-              setFriendReels((previous) =>
-                previous.filter(
-                  (reel) => reel.id !== item.id
-                )
+              setFriendReels(
+                (previous) =>
+                  previous.filter(
+                    (reel) =>
+                      reel.id !== item.id
+                  )
               );
             } catch (error) {
               Alert.alert(
                 'Error',
-                error?.message || 'Could not delete Reel.'
+                error?.message ||
+                  'Could not delete Reel.'
               );
             }
           },
@@ -391,12 +404,17 @@ export default function ReelsScreen({ navigation }) {
     setCommentSheetVisible(true);
 
     try {
-      const count = await getReelCommentCount(item.id);
+      const count =
+        await getReelCommentCount(
+          item.id
+        );
 
-      setCommentCounts((previous) => ({
-        ...previous,
-        [item.id]: count || 0,
-      }));
+      setCommentCounts(
+        (previous) => ({
+          ...previous,
+          [item.id]: count || 0,
+        })
+      );
     } catch (error) {
       console.error(error);
     }
@@ -410,15 +428,21 @@ export default function ReelsScreen({ navigation }) {
   useEffect(() => {
     if (!selectedReel?.id) return;
 
-    const unsubscribe = subscribeReelComments(
-      selectedReel.id,
-      (newComments) => {
-        setComments(newComments || []);
-      }
-    );
+    const unsubscribe =
+      subscribeReelComments(
+        selectedReel.id,
+        (newComments) => {
+          setComments(
+            newComments || []
+          );
+        }
+      );
 
     return () => {
-      if (typeof unsubscribe === 'function') {
+      if (
+        typeof unsubscribe ===
+        'function'
+      ) {
         unsubscribe();
       }
     };
@@ -430,7 +454,10 @@ export default function ReelsScreen({ navigation }) {
   // ==========================================================
 
   const submitComment = async (text) => {
-    if (!selectedReel?.id || !text?.trim()) {
+    if (
+      !selectedReel?.id ||
+      !text?.trim()
+    ) {
       return;
     }
 
@@ -443,7 +470,8 @@ export default function ReelsScreen({ navigation }) {
     } catch (error) {
       Alert.alert(
         'Error',
-        error?.message || 'Could not add comment.'
+        error?.message ||
+          'Could not add comment.'
       );
     }
   };
@@ -453,7 +481,9 @@ export default function ReelsScreen({ navigation }) {
   // DELETE COMMENT
   // ==========================================================
 
-  const removeComment = async (comment) => {
+  const removeComment = async (
+    comment
+  ) => {
     try {
       await deleteReelComment(
         selectedReel.id,
@@ -462,18 +492,23 @@ export default function ReelsScreen({ navigation }) {
     } catch (error) {
       Alert.alert(
         'Error',
-        error?.message || 'Could not delete comment.'
+        error?.message ||
+          'Could not delete comment.'
       );
     }
   };
 
 
   // ==========================================================
-  // RENDER YOUTUBE REEL
+  // YOUTUBE REEL
   // ==========================================================
 
-  const renderYouTubeReel = ({ item, index }) => {
-    const isActive = index === activeIndex;
+  const renderYouTubeReel = ({
+    item,
+    index,
+  }) => {
+    const isActive =
+      index === activeIndex;
 
     return (
       <View
@@ -486,9 +521,7 @@ export default function ReelsScreen({ navigation }) {
         ]}
       >
 
-        {/* ====================================================
-            FULL SCREEN YOUTUBE PLAYER
-        ==================================================== */}
+        {/* FULL SCREEN VIDEO */}
 
         <View
           style={[
@@ -505,14 +538,16 @@ export default function ReelsScreen({ navigation }) {
               height={height}
               width={width}
               videoId={item.videoId}
-              play={true}
+              play
               mute={false}
+
               initialPlayerParams={{
                 controls: true,
                 modestbranding: true,
                 rel: false,
                 playsinline: true,
               }}
+
               webViewProps={{
                 allowsInlineMediaPlayback: true,
                 mediaPlaybackRequiresUserAction: false,
@@ -536,9 +571,7 @@ export default function ReelsScreen({ navigation }) {
         </View>
 
 
-        {/* ====================================================
-            DARK GRADIENT-LIKE OVERLAY
-        ==================================================== */}
+        {/* BOTTOM SHADE */}
 
         <View
           pointerEvents="none"
@@ -546,9 +579,7 @@ export default function ReelsScreen({ navigation }) {
         />
 
 
-        {/* ====================================================
-            TOP BAR
-        ==================================================== */}
+        {/* TOP */}
 
         <View style={styles.topBar}>
 
@@ -557,10 +588,8 @@ export default function ReelsScreen({ navigation }) {
           </Text>
 
           <Pressable
-            onPress={() => {
-              // Add your search/navigation here if needed
-            }}
             style={styles.topButton}
+            onPress={() => {}}
           >
             <Ionicons
               name="search"
@@ -572,32 +601,38 @@ export default function ReelsScreen({ navigation }) {
         </View>
 
 
-        {/* ====================================================
-            RIGHT SIDE ACTIONS
-        ==================================================== */}
+        {/* RIGHT ACTIONS */}
 
         <View style={styles.actions}>
 
           {!item.isExternal && (
             <Pressable
               style={styles.actionButton}
-              onPress={() => handleLike(item)}
+              onPress={() =>
+                handleLike(item)
+              }
             >
               <Ionicons
                 name={
-                  item.likes?.includes?.(user?.uid)
+                  item.likes?.includes?.(
+                    user?.uid
+                  )
                     ? 'heart'
                     : 'heart-outline'
                 }
                 size={34}
                 color={
-                  item.likes?.includes?.(user?.uid)
+                  item.likes?.includes?.(
+                    user?.uid
+                  )
                     ? '#ff1744'
                     : '#fff'
                 }
               />
 
-              <Text style={styles.actionText}>
+              <Text
+                style={styles.actionText}
+              >
                 {item.likes?.length || 0}
               </Text>
             </Pressable>
@@ -606,7 +641,9 @@ export default function ReelsScreen({ navigation }) {
 
           <Pressable
             style={styles.actionButton}
-            onPress={() => openComments(item)}
+            onPress={() =>
+              openComments(item)
+            }
           >
             <Ionicons
               name="chatbubble-outline"
@@ -614,8 +651,11 @@ export default function ReelsScreen({ navigation }) {
               color="#fff"
             />
 
-            <Text style={styles.actionText}>
-              {commentCounts[item.id] || 0}
+            <Text
+              style={styles.actionText}
+            >
+              {commentCounts[item.id] ||
+                0}
             </Text>
           </Pressable>
 
@@ -625,7 +665,7 @@ export default function ReelsScreen({ navigation }) {
             onPress={() => {
               Alert.alert(
                 'YouTube',
-                'Opening this Reel on YouTube is available from the YouTube player.'
+                'Open this Reel from the YouTube player.'
               );
             }}
           >
@@ -635,7 +675,9 @@ export default function ReelsScreen({ navigation }) {
               color="#fff"
             />
 
-            <Text style={styles.actionText}>
+            <Text
+              style={styles.actionText}
+            >
               YouTube
             </Text>
           </Pressable>
@@ -644,7 +686,9 @@ export default function ReelsScreen({ navigation }) {
           {!item.isExternal && (
             <Pressable
               style={styles.actionButton}
-              onPress={() => handleDelete(item)}
+              onPress={() =>
+                handleDelete(item)
+              }
             >
               <Ionicons
                 name="trash-outline"
@@ -657,9 +701,7 @@ export default function ReelsScreen({ navigation }) {
         </View>
 
 
-        {/* ====================================================
-            BOTTOM INFORMATION
-        ==================================================== */}
+        {/* BOTTOM INFO */}
 
         <View style={styles.info}>
 
@@ -694,8 +736,12 @@ export default function ReelsScreen({ navigation }) {
 
 
           {item.publishedAt && (
-            <Text style={styles.time}>
-              {timeAgo(item.publishedAt)}
+            <Text
+              style={styles.time}
+            >
+              {timeAgo(
+                item.publishedAt
+              )}
             </Text>
           )}
 
@@ -710,8 +756,12 @@ export default function ReelsScreen({ navigation }) {
   // FRIEND REEL
   // ==========================================================
 
-  const renderFriendReel = ({ item, index }) => {
-    const isActive = index === activeIndex;
+  const renderFriendReel = ({
+    item,
+    index,
+  }) => {
+    const isActive =
+      index === activeIndex;
 
     return (
       <View
@@ -723,6 +773,8 @@ export default function ReelsScreen({ navigation }) {
           },
         ]}
       >
+
+        {/* FULL SCREEN FRIEND VIDEO */}
 
         <View
           style={{
@@ -739,13 +791,19 @@ export default function ReelsScreen({ navigation }) {
                   item.videoUrl ||
                   item.url,
               }}
+
               style={{
                 width,
                 height,
               }}
-              resizeMode={ResizeMode.COVER}
+
+              resizeMode={
+                ResizeMode.COVER
+              }
+
               shouldPlay
               isLooping
+
               useNativeControls={false}
             />
           ) : (
@@ -765,6 +823,8 @@ export default function ReelsScreen({ navigation }) {
 
         </View>
 
+
+        {/* SHADE */}
 
         <View
           pointerEvents="none"
@@ -789,23 +849,31 @@ export default function ReelsScreen({ navigation }) {
 
           <Pressable
             style={styles.actionButton}
-            onPress={() => handleLike(item)}
+            onPress={() =>
+              handleLike(item)
+            }
           >
             <Ionicons
               name={
-                item.likes?.includes?.(user?.uid)
+                item.likes?.includes?.(
+                  user?.uid
+                )
                   ? 'heart'
                   : 'heart-outline'
               }
               size={34}
               color={
-                item.likes?.includes?.(user?.uid)
+                item.likes?.includes?.(
+                  user?.uid
+                )
                   ? '#ff1744'
                   : '#fff'
               }
             />
 
-            <Text style={styles.actionText}>
+            <Text
+              style={styles.actionText}
+            >
               {item.likes?.length || 0}
             </Text>
           </Pressable>
@@ -813,7 +881,9 @@ export default function ReelsScreen({ navigation }) {
 
           <Pressable
             style={styles.actionButton}
-            onPress={() => openComments(item)}
+            onPress={() =>
+              openComments(item)
+            }
           >
             <Ionicons
               name="chatbubble-outline"
@@ -821,15 +891,20 @@ export default function ReelsScreen({ navigation }) {
               color="#fff"
             />
 
-            <Text style={styles.actionText}>
-              {commentCounts[item.id] || 0}
+            <Text
+              style={styles.actionText}
+            >
+              {commentCounts[item.id] ||
+                0}
             </Text>
           </Pressable>
 
 
           <Pressable
             style={styles.actionButton}
-            onPress={() => handleDelete(item)}
+            onPress={() =>
+              handleDelete(item)
+            }
           >
             <Ionicons
               name="trash-outline"
@@ -875,8 +950,12 @@ export default function ReelsScreen({ navigation }) {
 
 
           {item.createdAt && (
-            <Text style={styles.time}>
-              {timeAgo(item.createdAt)}
+            <Text
+              style={styles.time}
+            >
+              {timeAgo(
+                item.createdAt
+              )}
             </Text>
           )}
 
@@ -901,24 +980,24 @@ export default function ReelsScreen({ navigation }) {
   // LOADING
   // ==========================================================
 
-  if (loading && !data.length) {
+  if (
+    loading &&
+    !data.length
+  ) {
     return (
-      <View
-        style={[
-          styles.loading,
-          {
-            backgroundColor: T.background,
-          },
-        ]}
-      >
+      <View style={styles.loading}>
+
         <ActivityIndicator
           size="large"
           color="#fff"
         />
 
-        <Text style={styles.loadingText}>
+        <Text
+          style={styles.loadingText}
+        >
           Loading Reels...
         </Text>
+
       </View>
     );
   }
@@ -930,40 +1009,49 @@ export default function ReelsScreen({ navigation }) {
 
   if (!data.length) {
     return (
-      <View
-        style={[
-          styles.container,
-          {
-            backgroundColor: T.background,
-          },
-        ]}
-      >
+      <View style={styles.container}>
 
         <View style={styles.tabs}>
 
           <Pressable
-            onPress={() => setActiveTab('discover')}
+            onPress={() =>
+              setActiveTab(
+                'discover'
+              )
+            }
+
             style={[
               styles.tab,
-              activeTab === 'discover' &&
+              activeTab ===
+                'discover' &&
                 styles.activeTab,
             ]}
           >
-            <Text style={styles.tabText}>
+            <Text
+              style={styles.tabText}
+            >
               Discover
             </Text>
           </Pressable>
 
 
           <Pressable
-            onPress={() => setActiveTab('friends')}
+            onPress={() =>
+              setActiveTab(
+                'friends'
+              )
+            }
+
             style={[
               styles.tab,
-              activeTab === 'friends' &&
+              activeTab ===
+                'friends' &&
                 styles.activeTab,
             ]}
           >
-            <Text style={styles.tabText}>
+            <Text
+              style={styles.tabText}
+            >
               Friends
             </Text>
           </Pressable>
@@ -973,12 +1061,15 @@ export default function ReelsScreen({ navigation }) {
 
         <EmptyState
           title={
-            activeTab === 'discover'
+            activeTab ===
+            'discover'
               ? 'No Reels found'
               : 'No friend Reels yet'
           }
+
           message={
-            activeTab === 'discover'
+            activeTab ===
+            'discover'
               ? 'Try refreshing.'
               : 'Your friends have not uploaded any Reels yet.'
           }
@@ -994,42 +1085,51 @@ export default function ReelsScreen({ navigation }) {
   // ==========================================================
 
   return (
-    <View
-      style={[
-        styles.container,
-        {
-          backgroundColor: '#000',
-        },
-      ]}
-    >
+    <View style={styles.container}>
 
       {/* TAB SWITCHER */}
 
       <View style={styles.tabs}>
 
         <Pressable
-          onPress={() => setActiveTab('discover')}
+          onPress={() =>
+            setActiveTab(
+              'discover'
+            )
+          }
+
           style={[
             styles.tab,
-            activeTab === 'discover' &&
+            activeTab ===
+              'discover' &&
               styles.activeTab,
           ]}
         >
-          <Text style={styles.tabText}>
+          <Text
+            style={styles.tabText}
+          >
             Discover
           </Text>
         </Pressable>
 
 
         <Pressable
-          onPress={() => setActiveTab('friends')}
+          onPress={() =>
+            setActiveTab(
+              'friends'
+            )
+          }
+
           style={[
             styles.tab,
-            activeTab === 'friends' &&
+            activeTab ===
+              'friends' &&
               styles.activeTab,
           ]}
         >
-          <Text style={styles.tabText}>
+          <Text
+            style={styles.tabText}
+          >
             Friends
           </Text>
         </Pressable>
@@ -1037,21 +1137,25 @@ export default function ReelsScreen({ navigation }) {
       </View>
 
 
-      {/* FULL SCREEN REELS */}
+      {/* FULL SCREEN VERTICAL REELS */}
 
       <FlatList
         ref={listRef}
 
         data={data}
 
-        keyExtractor={(item, index) =>
+        keyExtractor={(
+          item,
+          index
+        ) =>
           item.id ||
           item.videoId ||
           `${activeTab}-${index}`
         }
 
         renderItem={
-          activeTab === 'discover'
+          activeTab ===
+          'discover'
             ? renderYouTubeReel
             : renderFriendReel
         }
@@ -1060,7 +1164,9 @@ export default function ReelsScreen({ navigation }) {
 
         horizontal={false}
 
-        showsVerticalScrollIndicator={false}
+        showsVerticalScrollIndicator={
+          false
+        }
 
         pagingEnabled
 
@@ -1076,19 +1182,27 @@ export default function ReelsScreen({ navigation }) {
 
         overScrollMode="never"
 
-        getItemLayout={(_, index) => ({
+        getItemLayout={(
+          _,
+          index
+        ) => ({
           length: height,
-          offset: height * index,
+          offset:
+            height * index,
           index,
         })}
 
-        viewabilityConfig={viewabilityConfig}
+        viewabilityConfig={
+          viewabilityConfig
+        }
 
         onViewableItemsChanged={
           onViewableItemsChanged
         }
 
-        onEndReached={loadMore}
+        onEndReached={
+          loadMore
+        }
 
         onEndReachedThreshold={0.5}
 
@@ -1109,14 +1223,20 @@ export default function ReelsScreen({ navigation }) {
 
         updateCellsBatchingPeriod={50}
 
-        removeClippedSubviews={false}
+        removeClippedSubviews={
+          false
+        }
       />
 
 
-      {/* LOADING MORE */}
+      {/* LOAD MORE */}
 
       {loadingMore && (
-        <View style={styles.loadingMore}>
+        <View
+          style={
+            styles.loadingMore
+          }
+        >
           <ActivityIndicator
             color="#fff"
             size="small"
@@ -1177,7 +1297,8 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     height: 280,
-    backgroundColor: 'rgba(0,0,0,0.35)',
+    backgroundColor:
+      'rgba(0,0,0,0.35)',
   },
 
 
@@ -1190,7 +1311,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent:
+      'space-between',
     zIndex: 20,
   },
 
@@ -1270,7 +1392,8 @@ const styles = StyleSheet.create({
 
 
   time: {
-    color: 'rgba(255,255,255,0.7)',
+    color:
+      'rgba(255,255,255,0.7)',
     fontSize: 12,
     marginTop: 7,
   },
@@ -1294,12 +1417,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 18,
     paddingVertical: 8,
     borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.45)',
+    backgroundColor:
+      'rgba(0,0,0,0.45)',
   },
 
 
   activeTab: {
-    backgroundColor: 'rgba(255,255,255,0.18)',
+    backgroundColor:
+      'rgba(255,255,255,0.18)',
   },
 
 
@@ -1316,7 +1441,8 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     padding: 10,
     borderRadius: 20,
-    backgroundColor: 'rgba(0,0,0,0.6)',
+    backgroundColor:
+      'rgba(0,0,0,0.6)',
   },
 
 });
