@@ -1,238 +1,136 @@
-/*
- * =========================================================
- * KING X — YOUTUBE SERVICE
- * =========================================================
- */
+// src/services/youtube.js
 
-import {
-  PROXY_API_URL,
-} from '../config/proxy';
-
+import PROXY_API_URL from '../config/proxy';
 
 const API_URL =
   `${PROXY_API_URL}/api/youtube-shorts`;
 
 
-/* =========================================================
-   FETCH YOUTUBE SHORTS
-========================================================= */
-
-export async function fetchShorts(
-  pageToken = null
-) {
-  const url =
-    new URL(API_URL);
-
+export async function fetchShorts(pageToken = null) {
+  let url = API_URL;
 
   if (pageToken) {
-    url.searchParams.set(
-      'pageToken',
-      pageToken
-    );
+    url += `?pageToken=${encodeURIComponent(pageToken)}`;
   }
 
+  console.log('YouTube proxy URL:', url);
 
-  const response =
-    await fetch(
-      url.toString()
-    );
-
+  const response = await fetch(url);
 
   let data;
 
   try {
-
-    data =
-      await response.json();
-
-  } catch (e) {
-
+    data = await response.json();
+  } catch (error) {
     throw new Error(
-      'Invalid response from YouTube server.'
+      'YouTube proxy returned an invalid response.'
     );
-
   }
 
-
   if (!response.ok) {
-
     throw new Error(
       data?.error ||
       data?.message ||
-      'YouTube request failed.'
+      `YouTube proxy error: ${response.status}`
     );
-
   }
-
-
-  /*
-   * Support both the current proxy
-   * and older response formats.
-   */
 
   const rawItems =
     Array.isArray(data)
       ? data
-      : (
-          data?.items ||
-          data?.videos ||
-          data?.results ||
-          []
-        );
+      : data?.items ||
+        data?.videos ||
+        data?.results ||
+        [];
 
+  const items = rawItems
+    .map((item, index) => {
+      const videoId =
+        item?.videoId ||
+        item?.id?.videoId ||
+        (typeof item?.id === 'string'
+          ? item.id
+          : null);
 
-  const items =
-    rawItems
-      .map(
-        (item, index) => {
+      if (!videoId) {
+        return null;
+      }
 
-          /*
-           * Get YouTube video ID.
-           */
+      const snippet =
+        item?.snippet || item;
 
-          const videoId =
-            item?.videoId ||
-            item?.id?.videoId ||
-            (
-              typeof item?.id === 'string'
-                ? item.id
-                : null
-            );
+      const thumbnail =
+        item?.thumbnail ||
+        item?.thumbnailUrl ||
+        snippet?.thumbnails?.maxres?.url ||
+        snippet?.thumbnails?.high?.url ||
+        snippet?.thumbnails?.medium?.url ||
+        snippet?.thumbnails?.default?.url ||
+        `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
+      return {
+        id: `youtube-${videoId}-${index}`,
 
-          if (!videoId) {
-            return null;
-          }
+        videoId,
 
+        isExternal: true,
 
-          const snippet =
-            item?.snippet ||
-            item;
+        title:
+          item?.title ||
+          snippet?.title ||
+          'YouTube Short',
 
+        caption:
+          item?.caption ||
+          item?.title ||
+          snippet?.title ||
+          '',
 
-          /*
-           * Thumbnail fallback.
-           */
+        description:
+          item?.description ||
+          snippet?.description ||
+          '',
 
-          const thumbnail =
-            item?.thumbnail ||
-            item?.thumbnailUrl ||
-            snippet?.thumbnails?.maxres?.url ||
-            snippet?.thumbnails?.high?.url ||
-            snippet?.thumbnails?.medium?.url ||
-            snippet?.thumbnails?.default?.url ||
-            `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+        thumbnail,
 
+        thumbnailUrl: thumbnail,
 
-          /*
-           * Return the format expected
-           * by ReelsScreen.
-           */
+        authorName:
+          item?.authorName ||
+          item?.channelTitle ||
+          snippet?.channelTitle ||
+          'YouTube',
 
-          return {
+        channelTitle:
+          item?.channelTitle ||
+          snippet?.channelTitle ||
+          'YouTube',
 
-            id:
-              `youtube-${videoId}-${index}`,
+        youtubeUrl:
+          item?.youtubeUrl ||
+          `https://www.youtube.com/shorts/${videoId}`,
 
-            videoId,
+        likes: [],
+      };
+    })
+    .filter(Boolean);
 
-            isExternal:
-              true,
+  // Remove duplicate videos
+  const seen = new Set();
 
-
-            title:
-              item?.title ||
-              snippet?.title ||
-              'YouTube Short',
-
-
-            caption:
-              item?.caption ||
-              item?.title ||
-              snippet?.title ||
-              '',
-
-
-            description:
-              item?.description ||
-              snippet?.description ||
-              '',
-
-
-            thumbnail,
-
-            thumbnailUrl:
-              thumbnail,
-
-
-            authorName:
-              item?.authorName ||
-              item?.channelTitle ||
-              snippet?.channelTitle ||
-              'YouTube',
-
-
-            channelTitle:
-              item?.channelTitle ||
-              snippet?.channelTitle ||
-              'YouTube',
-
-
-            youtubeUrl:
-              item?.youtubeUrl ||
-              `https://www.youtube.com/shorts/${videoId}`,
-
-
-            likes: [],
-
-          };
-
-        }
-      )
-      .filter(Boolean);
-
-
-  /*
-   * Remove duplicate YouTube videos.
-   */
-
-  const unique = [];
-
-  const seen =
-    new Set();
-
-
-  for (const item of items) {
-
-    if (
-      seen.has(
-        item.videoId
-      )
-    ) {
-      continue;
+  const uniqueItems = items.filter((item) => {
+    if (seen.has(item.videoId)) {
+      return false;
     }
 
-
-    seen.add(
-      item.videoId
-    );
-
-
-    unique.push(
-      item
-    );
-
-  }
-
+    seen.add(item.videoId);
+    return true;
+  });
 
   return {
-
-    items:
-      unique,
+    items: uniqueItems,
 
     nextPageToken:
-      data?.nextPageToken ||
-      null,
-
+      data?.nextPageToken || null,
   };
 }
