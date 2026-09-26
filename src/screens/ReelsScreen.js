@@ -511,6 +511,22 @@ export default function ReelsScreen({ navigation }) {
     const isActive =
       index === activeIndex;
 
+    /*
+     * YouTube's player itself is a normal video player.
+     *
+     * We DON'T force it to fill the entire phone height.
+     *
+     * A 16:9 player frame is used as the safe/default
+     * YouTube display frame and is centered on the screen.
+     *
+     * The video is NOT stretched to 9:16.
+     */
+    const playerWidth = width;
+
+    const playerHeight = Math.round(
+      width * (9 / 16)
+    );
+
     return (
       <View
         style={[
@@ -523,7 +539,7 @@ export default function ReelsScreen({ navigation }) {
       >
 
         {/* ==================================================
-            CENTERED FULL SCREEN VIDEO
+            CENTERED YOUTUBE VIDEO
             ================================================== */}
 
         <View
@@ -540,34 +556,30 @@ export default function ReelsScreen({ navigation }) {
             style={[
               styles.youtubeCenter,
               {
-                width,
-                height,
+                width: playerWidth,
+                height: playerHeight,
               },
             ]}
           >
 
             {isActive ? (
               <YoutubePlayer
-                height={height}
-                width={width}
+                width={playerWidth}
+                height={playerHeight}
+
                 videoId={item.videoId}
 
                 /*
-                 * IMPORTANT:
-                 * The player is controlled by the active
-                 * FlatList item.
-                 *
-                 * When the user swipes to another reel,
-                 * isActive becomes false and this player
-                 * is removed.
+                 * Only the currently visible Reel
+                 * is allowed to autoplay.
                  */
-                play={true}
+                play={isActive}
 
                 /*
-                 * Sound enabled.
-                 * Android/YouTube may still restrict
-                 * autoplay with sound depending on the
-                 * WebView/player environment.
+                 * Request sound.
+                 *
+                 * YouTube/Android may still block
+                 * autoplay-with-sound in some situations.
                  */
                 mute={false}
 
@@ -594,11 +606,11 @@ export default function ReelsScreen({ navigation }) {
                 style={[
                   styles.youtubePreview,
                   {
-                    width,
-                    height,
+                    width: playerWidth,
+                    height: playerHeight,
                   },
                 ]}
-                resizeMode="cover"
+                resizeMode="contain"
               />
             )}
 
@@ -1337,22 +1349,27 @@ const styles = StyleSheet.create({
 
   videoContainer: {
     position: 'absolute',
+
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
+
     backgroundColor: '#000',
-    overflow: 'hidden',
 
     alignItems: 'center',
     justifyContent: 'center',
+
+    overflow: 'hidden',
   },
 
 
   youtubeCenter: {
     alignItems: 'center',
     justifyContent: 'center',
+
     backgroundColor: '#000',
+
     overflow: 'hidden',
   },
 
@@ -1368,10 +1385,12 @@ const styles = StyleSheet.create({
 
   friendVideoContainer: {
     position: 'absolute',
+
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
+
     backgroundColor: '#000',
 
     alignItems: 'center',
@@ -1385,10 +1404,13 @@ const styles = StyleSheet.create({
 
   bottomShade: {
     position: 'absolute',
+
     left: 0,
     right: 0,
     bottom: 0,
+
     height: 280,
+
     backgroundColor:
       'rgba(0,0,0,0.35)',
   },
@@ -1400,14 +1422,19 @@ const styles = StyleSheet.create({
 
   topBar: {
     position: 'absolute',
+
     top: 45,
     left: 0,
     right: 0,
+
     height: 55,
+
     paddingHorizontal: 18,
 
     flexDirection: 'row',
+
     alignItems: 'center',
+
     justifyContent:
       'space-between',
 
@@ -1417,7 +1444,9 @@ const styles = StyleSheet.create({
 
   topTitle: {
     color: '#fff',
+
     fontSize: 21,
+
     fontWeight: '700',
   },
 
@@ -1425,6 +1454,7 @@ const styles = StyleSheet.create({
   topButton: {
     width: 44,
     height: 44,
+
     borderRadius: 22,
 
     alignItems: 'center',
@@ -1438,6 +1468,7 @@ const styles = StyleSheet.create({
 
   actions: {
     position: 'absolute',
+
     right: 12,
     bottom: 115,
 
@@ -1459,8 +1490,11 @@ const styles = StyleSheet.create({
 
   actionText: {
     color: '#fff',
+
     fontSize: 12,
+
     marginTop: 4,
+
     fontWeight: '600',
   },
 
@@ -1482,6 +1516,7 @@ const styles = StyleSheet.create({
 
   authorRow: {
     flexDirection: 'row',
+
     alignItems: 'center',
 
     marginBottom: 10,
@@ -1490,7 +1525,9 @@ const styles = StyleSheet.create({
 
   authorName: {
     color: '#fff',
+
     fontSize: 16,
+
     fontWeight: '700',
 
     marginLeft: 10,
@@ -1501,8 +1538,11 @@ const styles = StyleSheet.create({
 
   caption: {
     color: '#fff',
+
     fontSize: 14,
+
     lineHeight: 20,
+
     fontWeight: '500',
   },
 
@@ -1561,7 +1601,9 @@ const styles = StyleSheet.create({
 
   tabText: {
     color: '#fff',
+
     fontSize: 14,
+
     fontWeight: '700',
   },
 
