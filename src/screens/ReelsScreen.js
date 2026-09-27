@@ -25,6 +25,98 @@ const normalizeReelsResult = (result) => {
 };
 
 /* =======================================================
+   YOUTUBE PLAYER ITEM — separate component so it can hold its own
+   ref and reliably force-start playback once the player is ready.
+   Relying on the `play` prop alone can silently no-op on Android
+   the moment a video first becomes active, before the player has
+   actually finished loading.
+======================================================= */
+
+function YoutubeReelItem({ item, isActive, muted, onToggleMute, width, height }) {
+  const playerRef = useRef(null);
+  const readyRef = useRef(false);
+
+  // YouTube's embedded player always renders at a fixed 16:9 (landscape)
+  // shape no matter what size is requested — so it's rendered at that
+  // natural size, then the whole thing is zoomed up until it covers the
+  // full vertical screen, the same way a real Shorts video fills it.
+  const nativeWidth = width;
+  const nativeHeight = Math.round(nativeWidth * (9 / 16));
+  const coverScale = height / nativeHeight;
+
+  const tryPlay = useCallback(() => {
+    if (isActive && readyRef.current) playerRef.current?.playVideo?.();
+  }, [isActive]);
+
+  // Fires once the WebView player has actually loaded and is controllable —
+  // this is the reliable moment to force playback, not just the `play` prop.
+  const onReady = useCallback(() => {
+    readyRef.current = true;
+    tryPlay();
+  }, [tryPlay]);
+
+  // Also catches the case where this item was already ready and becomes
+  // active later (e.g. swiping back to it) without a fresh mount.
+  useEffect(() => {
+    tryPlay();
+    if (!isActive) playerRef.current?.pauseVideo?.();
+  }, [isActive, tryPlay]);
+
+  return (
+    <View style={{ width, height, backgroundColor: '#000', overflow: 'hidden', justifyContent: 'center', alignItems: 'center' }}>
+      <View style={{ width: nativeWidth, height: nativeHeight, transform: [{ scale: coverScale }] }}>
+        <YoutubePlayer
+          ref={playerRef}
+          width={nativeWidth}
+          height={nativeHeight}
+          videoId={item.videoId}
+          play={isActive}
+          mute={muted}
+          forceAndroidAutoplay
+          webViewProps={{
+            allowsInlineMediaPlayback: true,
+            mediaPlaybackRequiresUserAction: false,
+            androidLayerType: 'hardware',
+            javaScriptEnabled: true,
+            domStorageEnabled: true,
+          }}
+          initialPlayerParams={{ controls: false, modestbranding: true, rel: false, loop: true, playsinline: 1 }}
+          onReady={onReady}
+          onChangeState={(state) => console.log('YouTube state:', state, item.videoId)}
+          onError={(error) => console.log('YouTube error:', error, item.videoId)}
+        />
+      </View>
+
+      {/* tap anywhere on the video to mute/unmute — same as Instagram/TikTok */}
+      <Pressable onPress={onToggleMute} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
+
+      <Pressable
+        onPress={onToggleMute}
+        hitSlop={12}
+        style={{ position: 'absolute', right: 16, bottom: 130, width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center' }}
+      >
+        <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={20} color="#fff" />
+      </Pressable>
+
+      <View pointerEvents="none" style={{ position: 'absolute', left: 16, right: 16, bottom: 35 }}>
+        <Animated.Text
+          numberOfLines={2}
+          style={{ color: '#fff', fontSize: 17, fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 }}
+        >
+          {item?.title || 'YouTube Video'}
+        </Animated.Text>
+        <Animated.Text
+          numberOfLines={1}
+          style={{ color: '#ddd', fontSize: 13, marginTop: 5, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 }}
+        >
+          {item?.authorName || item?.channelTitle || 'YouTube'}
+        </Animated.Text>
+      </View>
+    </View>
+  );
+}
+
+/* =======================================================
    SCREEN
 ======================================================= */
 
@@ -302,7 +394,6 @@ export default function ReelsScreen() {
 
   const renderYoutubeVideo = (item, index) => {
     const isActive = index === activeIndex;
-
     if (!item?.videoId) {
       return (
         <View style={{ width, height, backgroundColor: '#000', justifyContent: 'center', alignItems: 'center' }}>
@@ -310,65 +401,16 @@ export default function ReelsScreen() {
         </View>
       );
     }
-
-    // YouTube's embedded player always renders at a fixed 16:9 (landscape)
-    // shape no matter what size is requested — so it's rendered at that
-    // natural size, then the whole thing is zoomed up until it covers the
-    // full vertical screen, the same way a real Shorts video fills it.
-    const nativeWidth = width;
-    const nativeHeight = Math.round(nativeWidth * (9 / 16));
-    const coverScale = height / nativeHeight;
-
     return (
-      <View style={{ width, height, backgroundColor: '#000', overflow: 'hidden', justifyContent: 'center', alignItems: 'center' }}>
-        <View style={{ width: nativeWidth, height: nativeHeight, transform: [{ scale: coverScale }] }}>
-          <YoutubePlayer
-            key={`${item.videoId}-${youtubePlayerKey.current}`}
-            width={nativeWidth}
-            height={nativeHeight}
-            videoId={item.videoId}
-            play={isActive}
-            mute={muted}
-            forceAndroidAutoplay
-            webViewProps={{
-              allowsInlineMediaPlayback: true,
-              mediaPlaybackRequiresUserAction: false,
-              androidLayerType: 'hardware',
-              javaScriptEnabled: true,
-              domStorageEnabled: true,
-            }}
-            initialPlayerParams={{ controls: false, modestbranding: true, rel: false, loop: true }}
-            onChangeState={(state) => console.log('YouTube state:', state, item.videoId)}
-            onError={(error) => console.log('YouTube error:', error, item.videoId)}
-          />
-        </View>
-
-        {/* tap anywhere on the video to mute/unmute — same as Instagram/TikTok */}
-        <Pressable onPress={() => setMuted((m) => !m)} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
-
-        <Pressable
-          onPress={() => setMuted((m) => !m)}
-          hitSlop={12}
-          style={{ position: 'absolute', right: 16, bottom: 130, width: 38, height: 38, borderRadius: 19, backgroundColor: 'rgba(0,0,0,0.4)', alignItems: 'center', justifyContent: 'center' }}
-        >
-          <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={20} color="#fff" />
-        </Pressable>
-
-        <View pointerEvents="none" style={{ position: 'absolute', left: 16, right: 16, bottom: 35 }}>
-          <Animated.Text
-            numberOfLines={2}
-            style={{ color: '#fff', fontSize: 17, fontWeight: '700', textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 }}
-          >
-            {item?.title || 'YouTube Video'}
-          </Animated.Text>
-          <Animated.Text
-            numberOfLines={1}
-            style={{ color: '#ddd', fontSize: 13, marginTop: 5, textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 }}
-          >
-            {item?.authorName || item?.channelTitle || 'YouTube'}
-          </Animated.Text>
-        </View>
-      </View>
+      <YoutubeReelItem
+        key={`${item.videoId}-${youtubePlayerKey.current}`}
+        item={item}
+        isActive={isActive}
+        muted={muted}
+        onToggleMute={() => setMuted((m) => !m)}
+        width={width}
+        height={height}
+      />
     );
   };
 
