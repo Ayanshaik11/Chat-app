@@ -40,46 +40,29 @@ import {
    HELPERS
 ======================================================= */
 
-const normalizeReelsResult =
-  (result) => {
-    if (Array.isArray(result)) {
-      return result;
-    }
+const normalizeReelsResult = (result) => {
+  if (Array.isArray(result)) {
+    return result;
+  }
 
-    if (
-      Array.isArray(
-        result?.reels
-      )
-    ) {
-      return result.reels;
-    }
+  if (Array.isArray(result?.reels)) {
+    return result.reels;
+  }
 
-    if (
-      Array.isArray(
-        result?.items
-      )
-    ) {
-      return result.items;
-    }
+  if (Array.isArray(result?.items)) {
+    return result.items;
+  }
 
-    if (
-      Array.isArray(
-        result?.data
-      )
-    ) {
-      return result.data;
-    }
+  if (Array.isArray(result?.data)) {
+    return result.data;
+  }
 
-    if (
-      Array.isArray(
-        result?.results
-      )
-    ) {
-      return result.results;
-    }
+  if (Array.isArray(result?.results)) {
+    return result.results;
+  }
 
-    return [];
-  };
+  return [];
+};
 
 
 /* =======================================================
@@ -92,8 +75,7 @@ export default function ReelsScreen() {
     height,
   } = useWindowDimensions();
 
-  const { user } =
-    useAuth();
+  const { user } = useAuth();
 
   useAppData();
 
@@ -105,9 +87,7 @@ export default function ReelsScreen() {
   const [
     activeTab,
     setActiveTab,
-  ] = useState(
-    'discover'
-  );
+  ] = useState('discover');
 
   const [
     discoverReels,
@@ -144,9 +124,6 @@ export default function ReelsScreen() {
     setNextPageToken,
   ] = useState(null);
 
-  /*
-   * Search bar
-   */
   const [
     searchText,
     setSearchText,
@@ -196,8 +173,23 @@ export default function ReelsScreen() {
   const friendsLoadedRef =
     useRef(false);
 
+  /*
+   * Forces a fresh YouTube player when
+   * changing the active video.
+   */
   const youtubePlayerKey =
     useRef(0);
+
+  /*
+   * Reference to the currently rendered
+   * YouTube player.
+   *
+   * We use this to explicitly call
+   * playVideo() when the player becomes
+   * ready.
+   */
+  const youtubePlayerRef =
+    useRef(null);
 
 
   /* =======================================================
@@ -205,12 +197,10 @@ export default function ReelsScreen() {
   ======================================================= */
 
   useEffect(() => {
-    mountedRef.current =
-      true;
+    mountedRef.current = true;
 
     return () => {
-      mountedRef.current =
-        false;
+      mountedRef.current = false;
     };
   }, []);
 
@@ -237,10 +227,6 @@ export default function ReelsScreen() {
               ? queryOverride
               : activeSearch;
 
-          /*
-           * When refreshing, start from
-           * the first YouTube page.
-           */
           const result =
             await fetchShorts(
               refresh
@@ -249,52 +235,38 @@ export default function ReelsScreen() {
               query
             );
 
-          if (
-            !mountedRef.current
-          ) {
+          if (!mountedRef.current) {
             return;
           }
 
           const items =
-            Array.isArray(
-              result?.items
-            )
+            Array.isArray(result?.items)
               ? result.items
               : [];
 
           if (refresh) {
-            setDiscoverReels(
-              items
-            );
+            setDiscoverReels(items);
 
             setNextPageToken(
               result?.nextPageToken ||
-                null
+              null
             );
 
             setActiveIndex(0);
 
-            youtubePlayerKey.current +=
-              1;
+            youtubePlayerKey.current += 1;
 
-            /*
-             * Return to top.
-             */
             setTimeout(() => {
-              listRef.current?.scrollToOffset(
-                {
-                  offset: 0,
-                  animated: false,
-                }
-              );
+              listRef.current?.scrollToOffset({
+                offset: 0,
+                animated: false,
+              });
             }, 50);
           } else {
             setDiscoverReels(
               (previous) => {
                 const oldItems =
-                  Array.isArray(
-                    previous
-                  )
+                  Array.isArray(previous)
                     ? previous
                     : [];
 
@@ -313,7 +285,7 @@ export default function ReelsScreen() {
                       item &&
                       !existingIds.has(
                         item.videoId ||
-                          item.id
+                        item.id
                       )
                   );
 
@@ -326,7 +298,7 @@ export default function ReelsScreen() {
 
             setNextPageToken(
               result?.nextPageToken ||
-                null
+              null
             );
           }
         } catch (error) {
@@ -335,9 +307,7 @@ export default function ReelsScreen() {
             error
           );
 
-          if (
-            mountedRef.current
-          ) {
+          if (mountedRef.current) {
             Alert.alert(
               'YouTube',
               error?.message ||
@@ -345,9 +315,7 @@ export default function ReelsScreen() {
             );
           }
         } finally {
-          if (
-            !mountedRef.current
-          ) {
+          if (!mountedRef.current) {
             return;
           }
 
@@ -363,7 +331,7 @@ export default function ReelsScreen() {
 
 
   /* =======================================================
-     FRIEND REELS
+     FRIEND VIDEOS
   ======================================================= */
 
   const loadFriendReels =
@@ -372,12 +340,8 @@ export default function ReelsScreen() {
         forceRefresh = false
       ) => {
         if (!user?.uid) {
-          if (
-            mountedRef.current
-          ) {
-            setFriendReels(
-              []
-            );
+          if (mountedRef.current) {
+            setFriendReels([]);
           }
 
           return;
@@ -394,41 +358,28 @@ export default function ReelsScreen() {
           setLoading(true);
 
           const result =
-            await fetchReels(
-              user.uid
-            );
+            await fetchReels(user.uid);
 
-          if (
-            !mountedRef.current
-          ) {
+          if (!mountedRef.current) {
             return;
           }
 
           const reels =
-            normalizeReelsResult(
-              result
-            );
+            normalizeReelsResult(result);
 
-          setFriendReels(
-            reels
-          );
+          setFriendReels(reels);
 
-          friendsLoadedRef.current =
-            true;
+          friendsLoadedRef.current = true;
 
           setActiveIndex(0);
         } catch (error) {
           console.error(
-            'Friends reels error:',
+            'Friends videos error:',
             error
           );
 
-          if (
-            mountedRef.current
-          ) {
-            setFriendReels(
-              []
-            );
+          if (mountedRef.current) {
+            setFriendReels([]);
 
             Alert.alert(
               'Friends Videos',
@@ -437,9 +388,7 @@ export default function ReelsScreen() {
             );
           }
         } finally {
-          if (
-            mountedRef.current
-          ) {
+          if (mountedRef.current) {
             setLoading(false);
           }
         }
@@ -453,10 +402,7 @@ export default function ReelsScreen() {
   ======================================================= */
 
   useEffect(() => {
-    loadDiscover(
-      true,
-      ''
-    );
+    loadDiscover(true, '');
   }, []);
 
 
@@ -465,10 +411,7 @@ export default function ReelsScreen() {
   ======================================================= */
 
   useEffect(() => {
-    if (
-      activeTab ===
-      'friends'
-    ) {
+    if (activeTab === 'friends') {
       loadFriendReels();
     }
   }, [
@@ -482,16 +425,11 @@ export default function ReelsScreen() {
   ======================================================= */
 
   const data =
-    activeTab ===
-    'discover'
-      ? Array.isArray(
-          discoverReels
-        )
+    activeTab === 'discover'
+      ? Array.isArray(discoverReels)
         ? discoverReels
         : []
-      : Array.isArray(
-          friendReels
-        )
+      : Array.isArray(friendReels)
         ? friendReels
         : [];
 
@@ -507,17 +445,9 @@ export default function ReelsScreen() {
 
       Keyboard.dismiss();
 
-      /*
-       * Empty search returns to
-       * the default Discover feed.
-       */
-      setActiveSearch(
-        query
-      );
+      setActiveSearch(query);
 
-      setNextPageToken(
-        null
-      );
+      setNextPageToken(null);
 
       setActiveIndex(0);
 
@@ -533,11 +463,10 @@ export default function ReelsScreen() {
       Keyboard.dismiss();
 
       setSearchText('');
+
       setActiveSearch('');
 
-      setNextPageToken(
-        null
-      );
+      setNextPageToken(null);
 
       setActiveIndex(0);
 
@@ -553,8 +482,14 @@ export default function ReelsScreen() {
   ======================================================= */
 
   useEffect(() => {
-    youtubePlayerKey.current +=
-      1;
+    /*
+     * Stop the previous player and force
+     * the new active YouTube player to
+     * initialize again.
+     */
+    youtubePlayerKey.current += 1;
+
+    youtubePlayerRef.current = null;
   }, [
     activeIndex,
     activeTab,
@@ -568,25 +503,17 @@ export default function ReelsScreen() {
   const handleRefresh =
     useCallback(
       async () => {
-        if (
-          activeTab ===
-          'discover'
-        ) {
-          setNextPageToken(
-            null
-          );
+        if (activeTab === 'discover') {
+          setNextPageToken(null);
 
           await loadDiscover(
             true,
             activeSearch
           );
         } else {
-          friendsLoadedRef.current =
-            false;
+          friendsLoadedRef.current = false;
 
-          await loadFriendReels(
-            true
-          );
+          await loadFriendReels(true);
         }
       },
       [
@@ -605,10 +532,7 @@ export default function ReelsScreen() {
   const handleLoadMore =
     useCallback(
       async () => {
-        if (
-          activeTab !==
-          'discover'
-        ) {
+        if (activeTab !== 'discover') {
           return;
         }
 
@@ -621,9 +545,7 @@ export default function ReelsScreen() {
         }
 
         try {
-          setLoadingMore(
-            true
-          );
+          setLoadingMore(true);
 
           const result =
             await fetchShorts(
@@ -631,25 +553,19 @@ export default function ReelsScreen() {
               activeSearch
             );
 
-          if (
-            !mountedRef.current
-          ) {
+          if (!mountedRef.current) {
             return;
           }
 
           const items =
-            Array.isArray(
-              result?.items
-            )
+            Array.isArray(result?.items)
               ? result.items
               : [];
 
           setDiscoverReels(
             (previous) => {
               const oldItems =
-                Array.isArray(
-                  previous
-                )
+                Array.isArray(previous)
                   ? previous
                   : [];
 
@@ -668,7 +584,7 @@ export default function ReelsScreen() {
                     item &&
                     !existingIds.has(
                       item.videoId ||
-                        item.id
+                      item.id
                     )
                 );
 
@@ -681,7 +597,7 @@ export default function ReelsScreen() {
 
           setNextPageToken(
             result?.nextPageToken ||
-              null
+            null
           );
         } catch (error) {
           console.error(
@@ -689,12 +605,8 @@ export default function ReelsScreen() {
             error
           );
         } finally {
-          if (
-            mountedRef.current
-          ) {
-            setLoadingMore(
-              false
-            );
+          if (mountedRef.current) {
+            setLoadingMore(false);
           }
         }
       },
@@ -717,9 +629,7 @@ export default function ReelsScreen() {
       ({
         viewableItems,
       }) => {
-        if (
-          !viewableItems?.length
-        ) {
+        if (!viewableItems?.length) {
           return;
         }
 
@@ -727,14 +637,10 @@ export default function ReelsScreen() {
           viewableItems[0];
 
         if (
-          first?.index !==
-            null &&
-          first?.index !==
-            undefined
+          first?.index !== null &&
+          first?.index !== undefined
         ) {
-          setActiveIndex(
-            first.index
-          );
+          setActiveIndex(first.index);
         }
       }
     ).current;
@@ -770,8 +676,7 @@ export default function ReelsScreen() {
             list.map(
               (reel) => {
                 if (
-                  reel.id !==
-                  item.id
+                  reel.id !== item.id
                 ) {
                   return reel;
                 }
@@ -806,17 +711,10 @@ export default function ReelsScreen() {
               }
             );
 
-        if (
-          activeTab ===
-          'discover'
-        ) {
-          setDiscoverReels(
-            updateList
-          );
+        if (activeTab === 'discover') {
+          setDiscoverReels(updateList);
         } else {
-          setFriendReels(
-            updateList
-          );
+          setFriendReels(updateList);
         }
       } catch (error) {
         console.error(
@@ -837,40 +735,26 @@ export default function ReelsScreen() {
         return;
       }
 
-      setSelectedReel(
-        item
-      );
+      setSelectedReel(item);
 
-      setCommentSheetVisible(
-        true
-      );
+      setCommentSheetVisible(true);
 
       try {
         const result =
-          await fetchComments(
-            item.id
-          );
+          await fetchComments(item.id);
 
-        if (
-          !mountedRef.current
-        ) {
+        if (!mountedRef.current) {
           return;
         }
 
         const loadedComments =
-          Array.isArray(
-            result
-          )
+          Array.isArray(result)
             ? result
-            : Array.isArray(
-                result?.comments
-              )
+            : Array.isArray(result?.comments)
               ? result.comments
               : [];
 
-        setComments(
-          loadedComments
-        );
+        setComments(loadedComments);
 
         setCommentCounts(
           (previous) => ({
@@ -911,25 +795,17 @@ export default function ReelsScreen() {
           );
 
         const loadedComments =
-          Array.isArray(
-            result
-          )
+          Array.isArray(result)
             ? result
-            : Array.isArray(
-                result?.comments
-              )
+            : Array.isArray(result?.comments)
               ? result.comments
               : [];
 
-        if (
-          !mountedRef.current
-        ) {
+        if (!mountedRef.current) {
           return;
         }
 
-        setComments(
-          loadedComments
-        );
+        setComments(loadedComments);
 
         setCommentCounts(
           (previous) => ({
@@ -948,21 +824,15 @@ export default function ReelsScreen() {
 
 
   const removeComment =
-    async (
-      commentId
-    ) => {
+    async (commentId) => {
       if (!commentId) {
         return;
       }
 
       try {
-        await deleteComment(
-          commentId
-        );
+        await deleteComment(commentId);
 
-        if (
-          !selectedReel?.id
-        ) {
+        if (!selectedReel?.id) {
           return;
         }
 
@@ -972,25 +842,17 @@ export default function ReelsScreen() {
           );
 
         const loadedComments =
-          Array.isArray(
-            result
-          )
+          Array.isArray(result)
             ? result
-            : Array.isArray(
-                result?.comments
-              )
+            : Array.isArray(result?.comments)
               ? result.comments
               : [];
 
-        if (
-          !mountedRef.current
-        ) {
+        if (!mountedRef.current) {
           return;
         }
 
-        setComments(
-          loadedComments
-        );
+        setComments(loadedComments);
 
         setCommentCounts(
           (previous) => ({
@@ -1018,8 +880,7 @@ export default function ReelsScreen() {
       index
     ) => {
       const isActive =
-        index ===
-        activeIndex;
+        index === activeIndex;
 
       const uri =
         item?.videoUrl ||
@@ -1033,8 +894,7 @@ export default function ReelsScreen() {
             style={{
               width,
               height,
-              backgroundColor:
-                '#000',
+              backgroundColor: '#000',
             }}
           />
         );
@@ -1045,38 +905,26 @@ export default function ReelsScreen() {
           style={{
             width,
             height,
-            backgroundColor:
-              '#000',
-            justifyContent:
-              'center',
-            alignItems:
-              'center',
+            backgroundColor: '#000',
+            justifyContent: 'center',
+            alignItems: 'center',
           }}
         >
           <Video
-            source={{
-              uri,
-            }}
+            source={{ uri }}
             style={{
               width,
               height,
             }}
-            resizeMode={
-              ResizeMode.COVER
-            }
-            shouldPlay={
-              isActive
-            }
+            resizeMode={ResizeMode.COVER}
+            shouldPlay={isActive}
             isLooping
-            useNativeControls={
-              false
-            }
+            useNativeControls={false}
           />
 
           <View
             style={{
-              position:
-                'absolute',
+              position: 'absolute',
               left: 16,
               right: 16,
               bottom: 35,
@@ -1086,8 +934,7 @@ export default function ReelsScreen() {
               style={{
                 color: '#fff',
                 fontSize: 16,
-                fontWeight:
-                  '600',
+                fontWeight: '600',
               }}
             >
               {item?.caption ||
@@ -1110,8 +957,7 @@ export default function ReelsScreen() {
       index
     ) => {
       const isActive =
-        index ===
-        activeIndex;
+        index === activeIndex;
 
       if (!item?.videoId) {
         return (
@@ -1119,12 +965,9 @@ export default function ReelsScreen() {
             style={{
               width,
               height,
-              backgroundColor:
-                '#000',
-              justifyContent:
-                'center',
-              alignItems:
-                'center',
+              backgroundColor: '#000',
+              justifyContent: 'center',
+              alignItems: 'center',
             }}
           >
             <Ionicons
@@ -1136,18 +979,11 @@ export default function ReelsScreen() {
         );
       }
 
-      /*
-       * Large centered player.
-       *
-       * Full screen width.
-       */
-      const playerWidth =
-        width;
+      const playerWidth = width;
 
       const playerHeight =
         Math.round(
-          playerWidth *
-            (9 / 16)
+          playerWidth * (9 / 16)
         );
 
       return (
@@ -1155,72 +991,114 @@ export default function ReelsScreen() {
           style={{
             width,
             height,
-            backgroundColor:
-              '#000',
-            justifyContent:
-              'center',
-            alignItems:
-              'center',
+            backgroundColor: '#000',
+            justifyContent: 'center',
+            alignItems: 'center',
           }}
         >
 
           <YoutubePlayer
+            /*
+             * Fresh player for the active
+             * video.
+             */
             key={`${item.videoId}-${youtubePlayerKey.current}`}
 
-            width={
-              playerWidth
+            ref={
+              isActive
+                ? youtubePlayerRef
+                : undefined
             }
 
-            height={
-              playerHeight
-            }
+            width={playerWidth}
 
-            videoId={
-              item.videoId
-            }
+            height={playerHeight}
+
+            videoId={item.videoId}
 
             /*
-             * We still request autoplay,
-             * but don't add our own fake
-             * play/mute controls.
+             * Main autoplay switch.
              */
-            play={
-              isActive
-            }
+            play={isActive}
 
+            /*
+             * Keep sound enabled.
+             * YouTube/Android may still apply
+             * its own autoplay policy.
+             */
             mute={false}
 
+            /*
+             * Specifically requests Android
+             * autoplay from the library.
+             */
             forceAndroidAutoplay
 
+            /*
+             * Extra WebView autoplay settings.
+             */
             webViewProps={{
-              allowsInlineMediaPlayback:
-                true,
+              allowsInlineMediaPlayback: true,
 
-              mediaPlaybackRequiresUserAction:
-                false,
+              mediaPlaybackRequiresUserAction: false,
 
-              javaScriptEnabled:
-                true,
+              javaScriptEnabled: true,
 
-              domStorageEnabled:
-                true,
+              domStorageEnabled: true,
 
-              androidLayerType:
-                'hardware',
+              androidLayerType: 'hardware',
             }}
 
-            onChangeState={(
-              state
-            ) => {
+            /*
+             * When YouTube reports that the
+             * player is ready, explicitly tell
+             * the player to start.
+             */
+            onReady={async () => {
+              if (!isActive) {
+                return;
+              }
+
+              console.log(
+                'YouTube ready → autoplay'
+              );
+
+              try {
+                await youtubePlayerRef.current?.playVideo();
+              } catch (error) {
+                console.log(
+                  'Autoplay command failed:',
+                  error
+                );
+              }
+            }}
+
+            onChangeState={(state) => {
               console.log(
                 'YouTube state:',
                 state
               );
+
+              /*
+               * If YouTube reports CUED or
+               * UNSTARTED while this is the
+               * active video, try autoplay
+               * once more.
+               */
+              if (
+                isActive &&
+                (
+                  state === 'cued' ||
+                  state === 'unstarted'
+                )
+              ) {
+                setTimeout(() => {
+                  youtubePlayerRef.current?.playVideo?.();
+                }, 250);
+              }
             }}
 
-            onError={(
-              error
-            ) => {
+            onError={(error) => {
               console.log(
                 'YouTube error:',
                 error
@@ -1228,14 +1106,12 @@ export default function ReelsScreen() {
             }}
           />
 
-
           {/* Video information */}
 
           <View
             pointerEvents="none"
             style={{
-              position:
-                'absolute',
+              position: 'absolute',
               left: 16,
               right: 16,
               bottom: 35,
@@ -1246,17 +1122,14 @@ export default function ReelsScreen() {
               style={{
                 color: '#fff',
                 fontSize: 17,
-                fontWeight:
-                  '700',
+                fontWeight: '700',
                 textShadowColor:
                   'rgba(0,0,0,0.8)',
-                textShadowOffset:
-                  {
-                    width: 0,
-                    height: 1,
-                  },
-                textShadowRadius:
-                  4,
+                textShadowOffset: {
+                  width: 0,
+                  height: 1,
+                },
+                textShadowRadius: 4,
               }}
             >
               {item?.title ||
@@ -1271,13 +1144,11 @@ export default function ReelsScreen() {
                 marginTop: 5,
                 textShadowColor:
                   'rgba(0,0,0,0.8)',
-                textShadowOffset:
-                  {
-                    width: 0,
-                    height: 1,
-                  },
-                textShadowRadius:
-                  4,
+                textShadowOffset: {
+                  width: 0,
+                  height: 1,
+                },
+                textShadowRadius: 4,
               }}
             >
               {item?.authorName ||
@@ -1301,10 +1172,8 @@ export default function ReelsScreen() {
       index,
     }) => {
       const isYoutube =
-        activeTab ===
-          'discover' ||
-        item?.isExternal ===
-          true ||
+        activeTab === 'discover' ||
+        item?.isExternal === true ||
         !!item?.videoId;
 
       if (isYoutube) {
@@ -1333,12 +1202,9 @@ export default function ReelsScreen() {
             style={{
               flex: 1,
               height,
-              backgroundColor:
-                '#000',
-              justifyContent:
-                'center',
-              alignItems:
-                'center',
+              backgroundColor: '#000',
+              justifyContent: 'center',
+              alignItems: 'center',
             }}
           >
             <ActivityIndicator
@@ -1354,20 +1220,15 @@ export default function ReelsScreen() {
           style={{
             flex: 1,
             height,
-            backgroundColor:
-              '#000',
-            justifyContent:
-              'center',
-            alignItems:
-              'center',
-            paddingHorizontal:
-              30,
+            backgroundColor: '#000',
+            justifyContent: 'center',
+            alignItems: 'center',
+            paddingHorizontal: 30,
           }}
         >
           <Ionicons
             name={
-              activeTab ===
-              'discover'
+              activeTab === 'discover'
                 ? 'logo-youtube'
                 : 'people-outline'
             }
@@ -1379,15 +1240,12 @@ export default function ReelsScreen() {
             style={{
               color: '#fff',
               fontSize: 18,
-              fontWeight:
-                '700',
+              fontWeight: '700',
               marginTop: 15,
-              textAlign:
-                'center',
+              textAlign: 'center',
             }}
           >
-            {activeTab ===
-            'discover'
+            {activeTab === 'discover'
               ? activeSearch
                 ? `No videos found for "${activeSearch}"`
                 : 'No videos available'
@@ -1399,12 +1257,10 @@ export default function ReelsScreen() {
               color: '#999',
               fontSize: 14,
               marginTop: 8,
-              textAlign:
-                'center',
+              textAlign: 'center',
             }}
           >
-            {activeTab ===
-            'discover'
+            {activeTab === 'discover'
               ? 'Try another YouTube search.'
               : 'Your friends’ uploaded videos will appear here.'}
           </Animated.Text>
@@ -1421,8 +1277,7 @@ export default function ReelsScreen() {
     <View
       style={{
         flex: 1,
-        backgroundColor:
-          '#000',
+        backgroundColor: '#000',
       }}
     >
 
@@ -1432,8 +1287,7 @@ export default function ReelsScreen() {
 
       <View
         style={{
-          position:
-            'absolute',
+          position: 'absolute',
           top: 0,
           left: 0,
           right: 0,
@@ -1443,49 +1297,35 @@ export default function ReelsScreen() {
         }}
       >
 
-        {/* -----------------------------------------------
-            TABS
-        ----------------------------------------------- */}
+        {/* TABS */}
 
         <View
           style={{
-            flexDirection:
-              'row',
-            justifyContent:
-              'center',
-            alignItems:
-              'center',
+            flexDirection: 'row',
+            justifyContent: 'center',
+            alignItems: 'center',
           }}
         >
 
           <Pressable
             onPress={() => {
-              setActiveTab(
-                'discover'
-              );
-
-              setActiveIndex(
-                0
-              );
+              setActiveTab('discover');
+              setActiveIndex(0);
             }}
             style={{
-              paddingHorizontal:
-                18,
-              paddingVertical:
-                8,
+              paddingHorizontal: 18,
+              paddingVertical: 8,
             }}
           >
             <Animated.Text
               style={{
                 color:
-                  activeTab ===
-                  'discover'
+                  activeTab === 'discover'
                     ? '#fff'
                     : '#888',
                 fontSize: 16,
                 fontWeight:
-                  activeTab ===
-                  'discover'
+                  activeTab === 'discover'
                     ? '800'
                     : '500',
               }}
@@ -1497,32 +1337,23 @@ export default function ReelsScreen() {
 
           <Pressable
             onPress={() => {
-              setActiveTab(
-                'friends'
-              );
-
-              setActiveIndex(
-                0
-              );
+              setActiveTab('friends');
+              setActiveIndex(0);
             }}
             style={{
-              paddingHorizontal:
-                18,
-              paddingVertical:
-                8,
+              paddingHorizontal: 18,
+              paddingVertical: 8,
             }}
           >
             <Animated.Text
               style={{
                 color:
-                  activeTab ===
-                  'friends'
+                  activeTab === 'friends'
                     ? '#fff'
                     : '#888',
                 fontSize: 16,
                 fontWeight:
-                  activeTab ===
-                  'friends'
+                  activeTab === 'friends'
                     ? '800'
                     : '500',
               }}
@@ -1534,18 +1365,13 @@ export default function ReelsScreen() {
         </View>
 
 
-        {/* -----------------------------------------------
-            YOUTUBE SEARCH BAR
-        ----------------------------------------------- */}
+        {/* YOUTUBE SEARCH BAR */}
 
-        {activeTab ===
-          'discover' && (
+        {activeTab === 'discover' && (
           <View
             style={{
-              flexDirection:
-                'row',
-              alignItems:
-                'center',
+              flexDirection: 'row',
+              alignItems: 'center',
               marginTop: 6,
               marginBottom: 5,
             }}
@@ -1555,18 +1381,13 @@ export default function ReelsScreen() {
               style={{
                 flex: 1,
                 height: 42,
-                flexDirection:
-                  'row',
-                alignItems:
-                  'center',
+                flexDirection: 'row',
+                alignItems: 'center',
                 backgroundColor:
                   'rgba(25,25,25,0.95)',
-                borderRadius:
-                  22,
-                paddingHorizontal:
-                  14,
-                borderWidth:
-                  1,
+                borderRadius: 22,
+                paddingHorizontal: 14,
+                borderWidth: 1,
                 borderColor:
                   'rgba(255,255,255,0.15)',
               }}
@@ -1579,15 +1400,9 @@ export default function ReelsScreen() {
               />
 
               <TextInput
-                value={
-                  searchText
-                }
-                onChangeText={
-                  setSearchText
-                }
-                onSubmitEditing={
-                  performSearch
-                }
+                value={searchText}
+                onChangeText={setSearchText}
+                onSubmitEditing={performSearch}
                 returnKeyType="search"
                 placeholder="Search on YouTube"
                 placeholderTextColor="#888"
@@ -1602,12 +1417,9 @@ export default function ReelsScreen() {
                 }}
               />
 
-              {searchText.length >
-                0 && (
+              {searchText.length > 0 && (
                 <Pressable
-                  onPress={
-                    clearSearch
-                  }
+                  onPress={clearSearch}
                   style={{
                     padding: 4,
                   }}
@@ -1624,21 +1436,15 @@ export default function ReelsScreen() {
 
 
             <Pressable
-              onPress={
-                performSearch
-              }
+              onPress={performSearch}
               style={{
                 width: 42,
                 height: 42,
                 marginLeft: 8,
-                borderRadius:
-                  21,
-                backgroundColor:
-                  '#fff',
-                justifyContent:
-                  'center',
-                alignItems:
-                  'center',
+                borderRadius: 21,
+                backgroundColor: '#fff',
+                justifyContent: 'center',
+                alignItems: 'center',
               }}
             >
               <Ionicons
@@ -1669,20 +1475,16 @@ export default function ReelsScreen() {
         ) =>
           String(
             item?.id ||
-              item?.videoId ||
-              `video-${index}`
+            item?.videoId ||
+            `video-${index}`
           )
         }
 
-        renderItem={
-          renderItem
-        }
+        renderItem={renderItem}
 
         pagingEnabled
 
-        showsVerticalScrollIndicator={
-          false
-        }
+        showsVerticalScrollIndicator={false}
 
         snapToAlignment="start"
 
@@ -1694,9 +1496,7 @@ export default function ReelsScreen() {
 
         windowSize={3}
 
-        removeClippedSubviews={
-          false
-        }
+        removeClippedSubviews={false}
 
         onViewableItemsChanged={
           onViewableItemsChanged
@@ -1707,67 +1507,48 @@ export default function ReelsScreen() {
         }
 
         onEndReached={
-          activeTab ===
-          'discover'
+          activeTab === 'discover'
             ? handleLoadMore
             : undefined
         }
 
-        onEndReachedThreshold={
-          0.6
-        }
+        onEndReachedThreshold={0.6}
 
         refreshControl={
           <RefreshControl
-            refreshing={
-              refreshing
-            }
-            onRefresh={
-              handleRefresh
-            }
+            refreshing={refreshing}
+            onRefresh={handleRefresh}
             tintColor="#fff"
-            colors={[
-              '#fff',
-            ]}
+            colors={['#fff']}
           />
         }
 
-        ListEmptyComponent={
-          renderEmpty
-        }
+        ListEmptyComponent={renderEmpty}
 
         ListFooterComponent={
           loadingMore ? (
             <View
               style={{
                 height: 80,
-                justifyContent:
-                  'center',
-                alignItems:
-                  'center',
-                backgroundColor:
-                  '#000',
+                justifyContent: 'center',
+                alignItems: 'center',
+                backgroundColor: '#000',
               }}
             >
-              <ActivityIndicator
-                color="#fff"
-              />
+              <ActivityIndicator color="#fff" />
             </View>
           ) : null
         }
       />
 
 
-      {/* =================================================
-          COMMENT SHEET PLACEHOLDER
-      ================================================= */}
+      {/* COMMENT SHEET PLACEHOLDER */}
 
       {commentSheetVisible && (
         <View
           pointerEvents="box-none"
           style={{
-            position:
-              'absolute',
+            position: 'absolute',
             left: 0,
             right: 0,
             bottom: 0,
