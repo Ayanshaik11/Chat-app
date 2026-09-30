@@ -42,12 +42,12 @@ module.exports = async (req, res) => {
    * across multiple keyword groups.
    */
   const defaultQuery =
-    '#shorts Hindi | ' +
-    '#shorts Bollywood | ' +
-    '#shorts comedy | ' +
-    '#shorts India | ' +
-    '#shorts memes | ' +
-    '#shorts entertainment';
+    'Hindi songs | ' +
+    'Bollywood | ' +
+    'comedy | ' +
+    'India | ' +
+    'memes | ' +
+    'entertainment';
 
   /*
    * If user searches something:
@@ -62,7 +62,7 @@ module.exports = async (req, res) => {
    * phrase-only search.
    */
   const query = userQuery
-    ? `#shorts ${userQuery}`
+    ? ` ${userQuery}`
     : defaultQuery;
 
   const params = new URLSearchParams({
