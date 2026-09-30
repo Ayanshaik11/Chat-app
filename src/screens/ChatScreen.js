@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import { collection, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
@@ -8,7 +9,7 @@ import { useAuth } from '../context/AuthContext';
 import { useAppData } from '../context/AppDataContext';
 import { useTheme } from '../context/SettingsContext';
 import { chatIdFor, markChatRead, sendMessage } from '../services/chat';
-import { clock, isOnline, lastSeenText } from '../utils/helpers';
+import { clock, isOnline, lastSeenText, timeAgo, toMillis } from '../utils/helpers';
 import { gradientProps } from '../theme';
 import Screen from '../components/Screen';
 import ScreenHeader from '../components/ScreenHeader';
@@ -36,10 +37,21 @@ export default function ChatScreen({ route, navigation }) {
     [chatId]
   );
 
-  // clear the unread counter while this chat is open
-  useEffect(() => {
-    if (unread > 0) markChatRead(chatId, me.id).catch(() => {});
-  }, [unread, chatId, me.id]);
+  // clear the unread counter and record that I've read up to now, every
+  // time this chat is opened — this is what lets the other person's app
+  // show "Seen" under their message once they open the chat, in turn.
+  useFocusEffect(
+    useCallback(() => {
+      markChatRead(chatId, me.id).catch(() => {});
+    }, [chatId, me.id])
+  );
+
+  // "Seen …" shows under my most recent message once the other person's
+  // own lastRead timestamp catches up to when I sent it.
+  const lastMine = messages[0]?.senderId === me.id ? messages[0] : null;
+  const otherLastRead = chats[chatId]?.lastRead?.[user.id];
+  const seen = lastMine && otherLastRead && toMillis(otherLastRead) >= toMillis(lastMine.createdAt);
+  const seenText = seen ? (timeAgo(otherLastRead) === 'now' ? 'Seen just now' : `Seen ${timeAgo(otherLastRead)} ago`) : null;
 
   const send = async () => {
     const t = text.trim();
@@ -97,6 +109,11 @@ export default function ChatScreen({ route, navigation }) {
             renderItem={renderItem}
             contentContainerStyle={{ padding: 12, flexGrow: 1 }}
             keyboardShouldPersistTaps="handled"
+            ListHeaderComponent={
+              seenText ? (
+                <T size={11} color="subtext" style={{ alignSelf: 'flex-end', marginBottom: 6 }}>{seenText}</T>
+              ) : null
+            }
           />
           {!messages.length ? (
             <View
