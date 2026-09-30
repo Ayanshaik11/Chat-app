@@ -24,4 +24,4 @@ export async function sendMessage(me, other, text) {
 }
 
 export const markChatRead = (chatId, meId) =>
-  setDoc(doc(db, 'chats', chatId), { unread: { [meId]: 0 } }, { merge: true });
+  setDoc(doc(db, 'chats', chatId), { unread: { [meId]: 0 }, lastRead: { [meId]: serverTimestamp() } }, { merge: true });
