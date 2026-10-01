@@ -30,7 +30,8 @@
       "permissions": [
         "VIBRATE",
         "CAMERA",
-        "REQUEST_INSTALL_PACKAGES"
+        "REQUEST_INSTALL_PACKAGES",
+        "POST_NOTIFICATIONS"
       ]
     },
     "plugins": [
@@ -62,6 +63,13 @@
           "photosPermission": "Chat App needs access to your photos to let you choose images and videos to share.",
           "savePhotosPermission": "Chat App needs access to save photos.",
           "isAccessMediaLocationEnabled": false
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/adaptive-icon.png",
+          "color": "#E11D2A"
         }
       ]
     ]
