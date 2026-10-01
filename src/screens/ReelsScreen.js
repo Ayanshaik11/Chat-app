@@ -23,7 +23,6 @@ import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 
 import { useAuth } from '../context/AuthContext';
-import { useAppData } from '../context/AppDataContext';
 
 import { fetchShorts } from '../services/youtube';
 
@@ -76,8 +75,6 @@ export default function ReelsScreen() {
   } = useWindowDimensions();
 
   const { user } = useAuth();
-
-  useAppData();
 
 
   /* -------------------------------------------------------
@@ -173,24 +170,6 @@ export default function ReelsScreen() {
   const friendsLoadedRef =
     useRef(false);
 
-  /*
-   * Forces a fresh YouTube player when
-   * changing the active video.
-   */
-  const youtubePlayerKey =
-    useRef(0);
-
-  /*
-   * Reference to the currently rendered
-   * YouTube player.
-   *
-   * We use this to explicitly call
-   * playVideo() when the player becomes
-   * ready.
-   */
-  const youtubePlayerRef =
-    useRef(null);
-
 
   /* =======================================================
      MOUNT
@@ -254,9 +233,11 @@ export default function ReelsScreen() {
 
             setActiveIndex(0);
 
-            youtubePlayerKey.current += 1;
-
             setTimeout(() => {
+              if (!mountedRef.current) {
+                return;
+              }
+
               listRef.current?.scrollToOffset({
                 offset: 0,
                 animated: false,
@@ -478,25 +459,6 @@ export default function ReelsScreen() {
 
 
   /* =======================================================
-     ACTIVE VIDEO CHANGE
-  ======================================================= */
-
-  useEffect(() => {
-    /*
-     * Stop the previous player and force
-     * the new active YouTube player to
-     * initialize again.
-     */
-    youtubePlayerKey.current += 1;
-
-    youtubePlayerRef.current = null;
-  }, [
-    activeIndex,
-    activeTab,
-  ]);
-
-
-  /* =======================================================
      REFRESH
   ======================================================= */
 
@@ -633,15 +595,25 @@ export default function ReelsScreen() {
           return;
         }
 
-        const first =
-          viewableItems[0];
+        const index =
+          viewableItems[0]?.index;
 
         if (
-          first?.index !== null &&
-          first?.index !== undefined
+          index === null ||
+          index === undefined
         ) {
-          setActiveIndex(first.index);
+          return;
         }
+
+        setActiveIndex(
+          (previous) => {
+            if (previous === index) {
+              return previous;
+            }
+
+            return index;
+          }
+        );
       }
     ).current;
 
@@ -979,7 +951,8 @@ export default function ReelsScreen() {
         );
       }
 
-      const playerWidth = width;
+      const playerWidth =
+        width;
 
       const playerHeight =
         Math.round(
@@ -996,108 +969,20 @@ export default function ReelsScreen() {
             alignItems: 'center',
           }}
         >
-
           <YoutubePlayer
-            /*
-             * Fresh player for the active
-             * video.
-             */
-            key={`${item.videoId}-${youtubePlayerKey.current}`}
-
-            ref={
-              isActive
-                ? youtubePlayerRef
-                : undefined
-            }
-
             width={playerWidth}
-
             height={playerHeight}
-
             videoId={item.videoId}
-
-            /*
-             * Main autoplay switch.
-             */
             play={isActive}
-
-            /*
-             * Keep sound enabled.
-             * YouTube/Android may still apply
-             * its own autoplay policy.
-             */
             mute={false}
-
-            /*
-             * Specifically requests Android
-             * autoplay from the library.
-             */
             forceAndroidAutoplay
-
-            /*
-             * Extra WebView autoplay settings.
-             */
             webViewProps={{
               allowsInlineMediaPlayback: true,
-
               mediaPlaybackRequiresUserAction: false,
-
               javaScriptEnabled: true,
-
               domStorageEnabled: true,
-
               androidLayerType: 'hardware',
             }}
-
-            /*
-             * When YouTube reports that the
-             * player is ready, explicitly tell
-             * the player to start.
-             */
-            onReady={async () => {
-              if (!isActive) {
-                return;
-              }
-
-              console.log(
-                'YouTube ready → autoplay'
-              );
-
-              try {
-                await youtubePlayerRef.current?.playVideo();
-              } catch (error) {
-                console.log(
-                  'Autoplay command failed:',
-                  error
-                );
-              }
-            }}
-
-            onChangeState={(state) => {
-              console.log(
-                'YouTube state:',
-                state
-              );
-
-              /*
-               * If YouTube reports CUED or
-               * UNSTARTED while this is the
-               * active video, try autoplay
-               * once more.
-               */
-              if (
-                isActive &&
-                (
-                  state === 'cued' ||
-                  state === 'unstarted'
-                )
-              ) {
-                setTimeout(() => {
-                  youtubePlayerRef.current?.playVideo?.();
-                }, 250);
-              }
-            }}
-
             onError={(error) => {
               console.log(
                 'YouTube error:',
@@ -1106,7 +991,7 @@ export default function ReelsScreen() {
             }}
           />
 
-          {/* Video information */}
+          {/* VIDEO INFORMATION */}
 
           <View
             pointerEvents="none"
@@ -1156,7 +1041,6 @@ export default function ReelsScreen() {
                 'YouTube'}
             </Animated.Text>
           </View>
-
         </View>
       );
     };
@@ -1309,8 +1193,10 @@ export default function ReelsScreen() {
 
           <Pressable
             onPress={() => {
-              setActiveTab('discover');
-              setActiveIndex(0);
+              if (activeTab !== 'discover') {
+                setActiveTab('discover');
+                setActiveIndex(0);
+              }
             }}
             style={{
               paddingHorizontal: 18,
@@ -1337,8 +1223,10 @@ export default function ReelsScreen() {
 
           <Pressable
             onPress={() => {
-              setActiveTab('friends');
-              setActiveIndex(0);
+              if (activeTab !== 'friends') {
+                setActiveTab('friends');
+                setActiveIndex(0);
+              }
             }}
             style={{
               paddingHorizontal: 18,
@@ -1401,8 +1289,12 @@ export default function ReelsScreen() {
 
               <TextInput
                 value={searchText}
-                onChangeText={setSearchText}
-                onSubmitEditing={performSearch}
+                onChangeText={
+                  setSearchText
+                }
+                onSubmitEditing={
+                  performSearch
+                }
                 returnKeyType="search"
                 placeholder="Search on YouTube"
                 placeholderTextColor="#888"
@@ -1523,7 +1415,9 @@ export default function ReelsScreen() {
           />
         }
 
-        ListEmptyComponent={renderEmpty}
+        ListEmptyComponent={
+          renderEmpty
+        }
 
         ListFooterComponent={
           loadingMore ? (
@@ -1535,14 +1429,18 @@ export default function ReelsScreen() {
                 backgroundColor: '#000',
               }}
             >
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator
+                color="#fff"
+              />
             </View>
           ) : null
         }
       />
 
 
-      {/* COMMENT SHEET PLACEHOLDER */}
+      {/* =================================================
+          COMMENT SHEET PLACEHOLDER
+      ================================================= */}
 
       {commentSheetVisible && (
         <View
