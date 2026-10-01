@@ -25,3 +25,7 @@ export async function sendMessage(me, other, text) {
 
 export const markChatRead = (chatId, meId) =>
   setDoc(doc(db, 'chats', chatId), { unread: { [meId]: 0 }, lastRead: { [meId]: serverTimestamp() } }, { merge: true });
+
+// Shown to the other person as a live "typing…" indicator while this is true
+export const setTyping = (chatId, meId, isTyping) =>
+  setDoc(doc(db, 'chats', chatId), { typing: { [meId]: isTyping } }, { merge: true }).catch(() => {});
