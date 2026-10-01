@@ -12,6 +12,7 @@ import Screen from '../components/Screen';
 import ScreenHeader from '../components/ScreenHeader';
 import Btn from '../components/Btn';
 import T from '../components/T';
+import MediaGalleryPicker from '../components/MediaGalleryPicker';
 
 // mode = 'post' (photos only) | 'story' (photo or video, disappears after 24h) | 'reel' (video only)
 export default function CreateScreen({ route, navigation }) {
@@ -25,25 +26,27 @@ export default function CreateScreen({ route, navigation }) {
   const [asset, setAsset] = useState(null);
   const [caption, setCaption] = useState('');
   const [progress, setProgress] = useState(null);
+  const [galleryOpen, setGalleryOpen] = useState(false);
   const uploading = progress !== null;
 
   const titles = { post: 'New post', story: 'New story', reel: 'New reel' };
 
-  const pick = async (source) => {
+  // Photos taken aren't cropped to square here the way the old gallery flow
+  // could, since that used expo-image-picker's own crop step — fine for
+  // story/reel (already full-frame), and posts still render as a square
+  // crop via the feed's own Image sizing.
+  const openCamera = async () => {
     try {
-      const a = await pickMedia({ source, video: isVideoMode, square: !isVideoMode });
+      const a = await pickMedia({ source: 'camera', video: isVideoMode, square: !isVideoMode });
       if (a) setAsset(a);
     } catch (e) {
-      Alert.alert('Could not open', e.message);
+      Alert.alert('Could not open camera', e.message);
     }
   };
 
-  const choose = () =>
-    Alert.alert(titles[mode], 'Choose a source', [
-      { text: 'Gallery', onPress: () => pick('gallery') },
-      { text: 'Camera', onPress: () => pick('camera') },
-      { text: 'Cancel', style: 'cancel' },
-    ]);
+  // Opens the in-app recent-media grid directly — no hand-off to Android's
+  // generic file picker.
+  const choose = () => setGalleryOpen(true);
 
   const share = async () => {
     if (!asset) return;
@@ -127,6 +130,17 @@ export default function CreateScreen({ route, navigation }) {
           {uploading ? <T size={12} color="subtext">Uploading… {Math.round(progress * 100)}%</T> : null}
         </ScrollView>
       </KeyboardAvoidingView>
+
+      <MediaGalleryPicker
+        visible={galleryOpen}
+        allowVideo={isVideoMode}
+        onClose={() => setGalleryOpen(false)}
+        onSelect={(a) => {
+          setAsset(a);
+          setGalleryOpen(false);
+        }}
+        onOpenCamera={openCamera}
+      />
     </Screen>
   );
 }
