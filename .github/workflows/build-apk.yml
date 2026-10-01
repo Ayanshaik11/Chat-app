@@ -69,10 +69,10 @@ jobs:
           signing_config = """
               signingConfigs {
                   release {
-                      storeFile file(KINGX_STORE_FILE)
-                      storePassword KINGX_STORE_PASSWORD
-                      keyAlias KINGX_KEY_ALIAS
-                      keyPassword KINGX_KEY_PASSWORD
+                      storeFile file(project.findProperty("KINGX_STORE_FILE"))
+                      storePassword project.findProperty("KINGX_STORE_PASSWORD")
+                      keyAlias project.findProperty("KINGX_KEY_ALIAS")
+                      keyPassword project.findProperty("KINGX_KEY_PASSWORD")
                   }
               }
           """
@@ -84,33 +84,27 @@ jobs:
                   1
               )
 
+          text = text.replace(
+              "signingConfig signingConfigs.debug",
+              "signingConfig signingConfigs.release"
+          )
+
           if "signingConfig signingConfigs.release" not in text:
               text = text.replace(
-                  "signingConfig signingConfigs.debug",
-                  "signingConfig signingConfigs.release"
-              )
-
-          if "signingConfig signingConfigs.release" not in text:
-              marker = "buildTypes {"
-
-              replacement = """buildTypes {
+                  "buildTypes {",
+                  """buildTypes {
                   release {
                       signingConfig signingConfigs.release
-                  }
-              """
-
-              text = text.replace(
-                  marker,
-                  replacement,
+                  }""",
                   1
               )
 
           path.write_text(text)
           PY
 
-      - name: Verify release signing configuration
+      - name: Verify signing configuration
         run: |
-          echo "Checking Gradle signing configuration..."
+          echo "Checking signing configuration..."
 
           grep -n "KINGX_STORE_FILE" android/app/build.gradle
           grep -n "signingConfig signingConfigs.release" android/app/build.gradle
