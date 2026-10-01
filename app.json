@@ -55,6 +55,14 @@
             "enableShrinkResourcesInReleaseBuilds": true
           }
         }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Chat App needs access to your photos to let you choose images and videos to share.",
+          "savePhotosPermission": "Chat App needs access to save photos.",
+          "isAccessMediaLocationEnabled": false
+        }
       ]
     ]
   }
