@@ -1,10 +1,15 @@
 import React from 'react';
 import { ActivityIndicator, View } from 'react-native';
-import { NavigationContainer, DarkTheme, DefaultTheme } from '@react-navigation/native';
+import {
+  NavigationContainer,
+  DarkTheme,
+  DefaultTheme,
+} from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
+
 import { useAuth } from '../context/AuthContext';
 import { useAppData } from '../context/AppDataContext';
 import { useTheme } from '../context/SettingsContext';
@@ -24,6 +29,7 @@ import SettingsScreen from '../screens/SettingsScreen';
 import CreateScreen from '../screens/CreateScreen';
 import StoryViewerScreen from '../screens/StoryViewerScreen';
 import ReelsScreen from '../screens/ReelsScreen';
+
 import { navigationRef } from './navigationRef';
 
 const Stack = createNativeStackNavigator();
@@ -40,41 +46,146 @@ const TAB_ICONS = {
 
 function Tabs() {
   const { colors, fonts } = useTheme();
-  const { unreadNotifs, unreadMessages } = useAppData();
+  const {
+    unreadNotifs,
+    unreadMessages,
+  } = useAppData();
+
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.subtext,
-        // Reels goes edge-to-edge like Instagram — no tab bar cutting into the video
-        tabBarStyle: route.name === 'Reels' ? { display: 'none' } : { backgroundColor: colors.tabBar, borderTopColor: colors.border },
-        tabBarLabelStyle: { fontFamily: fonts.medium, fontSize: 10 },
-        tabBarBadgeStyle: { backgroundColor: colors.accent, color: '#fff', fontFamily: fonts.semibold, fontSize: 10 },
-        tabBarIcon: ({ color, focused }) => (
-          <Ionicons name={TAB_ICONS[route.name][focused ? 0 : 1]} size={24} color={color} />
-        ),
-      })}
+      screenOptions={({ route }) => {
+        const icons = TAB_ICONS[route.name];
+
+        return {
+          headerShown: false,
+
+          tabBarActiveTintColor: colors.primary,
+          tabBarInactiveTintColor: colors.subtext,
+
+          tabBarStyle:
+            route.name === 'Reels'
+              ? { display: 'none' }
+              : {
+                  backgroundColor: colors.tabBar,
+                  borderTopColor: colors.border,
+                },
+
+          tabBarLabelStyle: {
+            fontFamily: fonts.medium,
+            fontSize: 10,
+          },
+
+          tabBarBadgeStyle: {
+            backgroundColor: colors.accent,
+            color: '#fff',
+            fontFamily: fonts.semibold,
+            fontSize: 10,
+          },
+
+          tabBarIcon: ({ color, focused }) => {
+            return (
+              <Ionicons
+                name={icons[focused ? 0 : 1]}
+                size={24}
+                color={color}
+              />
+            );
+          },
+        };
+      }}
     >
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Find" component={FindScreen} />
-      <Tab.Screen name="Reels" component={ReelsScreen} />
-      <Tab.Screen name="Messages" component={MessagesScreen} options={{ tabBarBadge: unreadMessages > 0 ? unreadMessages : undefined }} />
-      <Tab.Screen name="Notifications" component={NotificationsScreen} options={{ tabBarBadge: unreadNotifs > 0 ? unreadNotifs : undefined }} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen
+        name="Home"
+        component={HomeScreen}
+      />
+
+      <Tab.Screen
+        name="Find"
+        component={FindScreen}
+      />
+
+      <Tab.Screen
+        name="Reels"
+        component={ReelsScreen}
+      />
+
+      <Tab.Screen
+        name="Messages"
+        component={MessagesScreen}
+        options={{
+          tabBarBadge:
+            unreadMessages > 0
+              ? unreadMessages
+              : undefined,
+        }}
+      />
+
+      <Tab.Screen
+        name="Notifications"
+        component={NotificationsScreen}
+        options={{
+          tabBarBadge:
+            unreadNotifs > 0
+              ? unreadNotifs
+              : undefined,
+        }}
+      />
+
+      <Tab.Screen
+        name="Profile"
+        component={ProfileScreen}
+      />
     </Tab.Navigator>
   );
 }
 
 export default function RootNavigator() {
-  const { fbUser, me, initializing } = useAuth();
-  const { colors, isDark } = useTheme();
+  const {
+    fbUser,
+    me,
+    initializing,
+  } = useAuth();
 
-  const base = isDark ? DarkTheme : DefaultTheme;
+  const {
+    colors,
+    isDark,
+  } = useTheme();
+
+  if (
+    initializing ||
+    (fbUser && !me)
+  ) {
+    return (
+      <LinearGradient
+        colors={[
+          '#050505',
+          '#1a0505',
+          '#E11D2A',
+        ]}
+        style={{
+          flex: 1,
+          alignItems: 'center',
+          justifyContent: 'center',
+        }}
+      >
+        <ActivityIndicator
+          color="#fff"
+          size="large"
+        />
+      </LinearGradient>
+    );
+  }
+
+  const baseTheme = isDark
+    ? DarkTheme
+    : DefaultTheme;
+
   const navTheme = {
-    ...base,
+    ...baseTheme,
+
     colors: {
-      ...base.colors,
+      ...baseTheme.colors,
+
       primary: colors.primary,
       background: colors.bg,
       card: colors.card,
@@ -84,32 +195,72 @@ export default function RootNavigator() {
     },
   };
 
-  // wait for auth + my profile document
-  if (initializing || (fbUser && !me)) {
-    return (
-      <LinearGradient colors={['#050505', '#1a0505', '#E11D2A']} style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-        <ActivityIndicator color="#fff" size="large" />
-      </LinearGradient>
-    );
-  }
-
   return (
-    <NavigationContainer ref={navigationRef} theme={navTheme}>
-      <Stack.Navigator screenOptions={{ headerShown: false }}>
+    <NavigationContainer
+      ref={navigationRef}
+      theme={navTheme}
+    >
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
+        }}
+      >
         {fbUser ? (
           <>
-            <Stack.Screen name="Main" component={Tabs} />
-            <Stack.Screen name="Chat" component={ChatScreen} />
-            <Stack.Screen name="UserProfile" component={UserProfileScreen} />
-            <Stack.Screen name="FriendsList" component={FriendsListScreen} />
-            <Stack.Screen name="PostDetail" component={PostDetailScreen} />
-            <Stack.Screen name="EditProfile" component={EditProfileScreen} />
-            <Stack.Screen name="Settings" component={SettingsScreen} />
-            <Stack.Screen name="Create" component={CreateScreen} />
-            <Stack.Screen name="StoryViewer" component={StoryViewerScreen} options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
+            <Stack.Screen
+              name="Main"
+              component={Tabs}
+            />
+
+            <Stack.Screen
+              name="Chat"
+              component={ChatScreen}
+            />
+
+            <Stack.Screen
+              name="UserProfile"
+              component={UserProfileScreen}
+            />
+
+            <Stack.Screen
+              name="FriendsList"
+              component={FriendsListScreen}
+            />
+
+            <Stack.Screen
+              name="PostDetail"
+              component={PostDetailScreen}
+            />
+
+            <Stack.Screen
+              name="EditProfile"
+              component={EditProfileScreen}
+            />
+
+            <Stack.Screen
+              name="Settings"
+              component={SettingsScreen}
+            />
+
+            <Stack.Screen
+              name="Create"
+              component={CreateScreen}
+            />
+
+            <Stack.Screen
+              name="StoryViewer"
+              component={StoryViewerScreen}
+              options={{
+                presentation: 'fullScreenModal',
+                animation: 'fade',
+              }}
+            />
           </>
         ) : (
-          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen
+            name="Login"
+            component={LoginScreen}
+          />
         )}
       </Stack.Navigator>
     </NavigationContainer>
