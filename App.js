@@ -6,10 +6,13 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useFonts, Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold, Poppins_700Bold } from '@expo-google-fonts/poppins';
 import { BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 
+import * as Notifications from 'expo-notifications';
 import { SettingsProvider, useTheme } from './src/context/SettingsContext';
-import { AuthProvider } from './src/context/AuthContext';
+import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { AppDataProvider } from './src/context/AppDataContext';
 import RootNavigator from './src/navigation/RootNavigator';
+import { navigateToChat } from './src/navigation/navigationRef';
+import { registerForPushNotifications } from './src/services/pushTokens';
 import useUpdateCheck from './src/hooks/useUpdateCheck';
 import UpdateCard from './src/components/UpdateCard';
 
@@ -38,7 +41,28 @@ class ErrorBoundary extends React.Component {
 
 function Root() {
   const { isDark } = useTheme();
+  const { me } = useAuth();
   const updateState = useUpdateCheck();
+
+  // Registers this device for push notifications once logged in, and keeps
+  // the token fresh if it rotates while the app is open.
+  useEffect(() => {
+    if (me?.id) registerForPushNotifications(me.id).catch(() => {});
+  }, [me?.id]);
+
+  // Tapping a message notification jumps straight to that chat — the
+  // notification's "data" payload (sent from the Vercel proxy) carries who
+  // the message was from.
+  useEffect(() => {
+    const sub = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data;
+      if (data?.type === 'message' && data?.fromId) {
+        navigateToChat({ id: data.fromId, name: data.fromName || 'User', photoURL: data.fromPhoto || '' });
+      }
+    });
+    return () => sub.remove();
+  }, []);
+
   return (
     <View style={{ flex: 1 }}>
       <StatusBar style={isDark ? 'light' : 'dark'} />
