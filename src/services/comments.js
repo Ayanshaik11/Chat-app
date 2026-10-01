@@ -19,11 +19,28 @@ export function addComment(postId, me, text) {
 export const deleteComment = (postId, commentId) => deleteDoc(doc(commentsRef(postId), commentId));
 
 // Live list of comments, oldest first — used on the post detail screen
-export function subscribeComments(postId, onChange) {
+export function subscribeComments(postId, onChange, onError) {
   return onSnapshot(
-    query(commentsRef(postId), orderBy('createdAt', 'asc')),
-    (snap) => onChange(snap.docs.map((d) => ({ id: d.id, ...d.data() }))),
-    () => {}
+    query(
+      commentsRef(postId),
+      orderBy('createdAt', 'asc')
+    ),
+    (snap) => {
+      onChange(
+        snap.docs.map((d) => ({
+          id: d.id,
+          ...d.data(),
+        }))
+      );
+    },
+    (error) => {
+      console.error(
+        'Comments listener error:',
+        error
+      );
+
+      onError?.(error);
+    }
   );
 }
 
