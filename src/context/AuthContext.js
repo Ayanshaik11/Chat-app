@@ -1,154 +1,456 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
 import { AppState } from 'react-native';
-import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
+
 import {
-  GoogleAuthProvider, onAuthStateChanged, signInWithCredential, signOut as fbSignOut,
+  GoogleSignin,
+  statusCodes,
+} from '@react-native-google-signin/google-signin';
+
+import {
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithCredential,
+  signOut as fbSignOut,
 } from 'firebase/auth';
-import { doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
-import { auth, db, GOOGLE_WEB_CLIENT_ID } from '../config/firebase';
-import { addNotification } from '../services/notifications';
+
+import {
+  doc,
+  getDoc,
+  onSnapshot,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+} from 'firebase/firestore';
+
+import {
+  auth,
+  db,
+  GOOGLE_WEB_CLIENT_ID,
+} from '../config/firebase';
+
+import {
+  addNotification,
+} from '../services/notifications';
+
 import { useSettings } from './SettingsContext';
 
-GoogleSignin.configure({ webClientId: GOOGLE_WEB_CLIENT_ID, offlineAccess: false });
+
+GoogleSignin.configure({
+  webClientId: GOOGLE_WEB_CLIENT_ID,
+  offlineAccess: false,
+});
+
 
 const AuthContext = createContext(null);
 
+
 // The Google account id is used as the app's user id
 export const googleIdOf = (fbUser) =>
-  fbUser?.providerData?.find((p) => p.providerId === 'google.com')?.uid || null;
+  fbUser
+    ?.providerData
+    ?.find(
+      (p) => p.providerId === 'google.com'
+    )
+    ?.uid || null;
+
 
 export function AuthProvider({ children }) {
   const { settings } = useSettings();
+
   const [fbUser, setFbUser] = useState(null);
   const [initializing, setInitializing] = useState(true);
   const [profile, setProfile] = useState(null);
   const [busy, setBusy] = useState(false);
-  const googleId = googleIdOf(fbUser);
-  const showOnlineRef = useRef(settings.showOnline);
-  showOnlineRef.current = settings.showOnline;
 
-  useEffect(
-    () =>
-      onAuthStateChanged(auth, (u) => {
-        setFbUser(u);
-        if (!u) setProfile(null);
-        setInitializing(false);
-      }),
-    []
+  const googleId = googleIdOf(fbUser);
+
+  const showOnlineRef = useRef(
+    settings.showOnline
   );
 
-  // create / load my profile document: users/{googleId}
+  showOnlineRef.current =
+    settings.showOnline;
+
+
+  /*
+   * Firebase authentication listener
+   */
   useEffect(() => {
-    if (!fbUser || !googleId) return undefined;
+    return onAuthStateChanged(
+      auth,
+      (u) => {
+        setFbUser(u);
+
+        if (!u) {
+          setProfile(null);
+        }
+
+        setInitializing(false);
+      }
+    );
+  }, []);
+
+
+  /*
+   * Load the Firestore profile.
+   *
+   * IMPORTANT:
+   * If the profile already exists,
+   * NEVER replace its:
+   *
+   * - photoURL
+   * - about
+   * - name
+   * - username
+   *
+   * with Google account data.
+   */
+  useEffect(() => {
+    if (!fbUser || !googleId) {
+      return undefined;
+    }
+
     let cancelled = false;
     let unsub = null;
-    const ref = doc(db, 'users', googleId);
+
+    const ref = doc(
+      db,
+      'users',
+      googleId
+    );
+
     const fallback = {
       id: googleId,
       name: fbUser.displayName || 'User',
       email: fbUser.email || '',
       photoURL: fbUser.photoURL || '',
-      username: (fbUser.email || 'user').split('@')[0],
+      username:
+        (fbUser.email || 'user')
+          .split('@')[0],
       about: '',
     };
-    (async () => {
+
+
+    const initProfile = async () => {
       try {
         const snap = await getDoc(ref);
+
+        /*
+         * ONLY create Google-based data
+         * when this is genuinely a new user.
+         */
         if (!snap.exists()) {
-          const email = fbUser.email || '';
+          const email =
+            fbUser.email || '';
+
           await setDoc(ref, {
             id: googleId,
             uid: fbUser.uid,
-            name: fbUser.displayName || email.split('@')[0] || 'User',
-            username: email.split('@')[0] || googleId,
+
+            name:
+              fbUser.displayName ||
+              email.split('@')[0] ||
+              'User',
+
+            username:
+              email.split('@')[0] ||
+              googleId,
+
             email,
-            emailLower: email.toLowerCase(),
-            photoURL: fbUser.photoURL || '',
-            about: 'Hey there! I am using Chat App.',
-            online: showOnlineRef.current,
-            lastSeen: serverTimestamp(),
-            createdAt: serverTimestamp(),
+
+            emailLower:
+              email.toLowerCase(),
+
+            photoURL:
+              fbUser.photoURL || '',
+
+            about:
+              'Hey there! I am using Chat App.',
+
+            online:
+              showOnlineRef.current,
+
+            lastSeen:
+              serverTimestamp(),
+
+            createdAt:
+              serverTimestamp(),
           });
-        } else {
-          await updateDoc(ref, { online: showOnlineRef.current, lastSeen: serverTimestamp() });
         }
+
       } catch (e) {
-        console.warn('profile init failed', e);
-        if (!cancelled) setProfile(fallback);
+        console.warn(
+          'profile init failed',
+          e
+        );
+
+        if (!cancelled) {
+          setProfile(fallback);
+        }
+
         return;
       }
-      if (cancelled) return;
+
+
+      if (cancelled) {
+        return;
+      }
+
+
+      /*
+       * Listen to the actual Firestore
+       * profile in realtime.
+       */
       unsub = onSnapshot(
         ref,
-        (s) => s.exists() && setProfile({ id: s.id, ...s.data() }),
-        () => {}
+
+        (snap) => {
+          if (!snap.exists()) {
+            return;
+          }
+
+          setProfile({
+            id: snap.id,
+            ...snap.data(),
+          });
+        },
+
+        (error) => {
+          console.warn(
+            'profile listener failed',
+            error
+          );
+        }
       );
-    })();
+    };
+
+
+    initProfile();
+
+
     return () => {
       cancelled = true;
-      unsub && unsub();
-    };
-  }, [fbUser?.uid, googleId]);
 
-  // online / last seen — updates on foreground/background, and a heartbeat
-  // every 25s while active so "Online" never gets stuck after the app closes
+      if (unsub) {
+        unsub();
+      }
+    };
+  }, [
+    fbUser?.uid,
+    googleId,
+  ]);
+
+
+  /*
+   * Online / last seen.
+   *
+   * This only updates the activity field.
+   * It does NOT touch:
+   *
+   * photoURL
+   * about
+   * name
+   * username
+   */
   useEffect(() => {
-    if (!googleId) return undefined;
-    const ping = () =>
-      updateDoc(doc(db, 'users', googleId), {
-        online: AppState.currentState === 'active' && showOnlineRef.current,
-        lastSeen: serverTimestamp(),
-      }).catch(() => {});
-    const sub = AppState.addEventListener('change', ping);
+    if (!googleId) {
+      return undefined;
+    }
+
+    const ping = () => {
+      updateDoc(
+        doc(db, 'users', googleId),
+        {
+          online:
+            AppState.currentState ===
+              'active' &&
+            showOnlineRef.current,
+
+          lastSeen:
+            serverTimestamp(),
+        }
+      ).catch(() => {});
+    };
+
+
+    const sub =
+      AppState.addEventListener(
+        'change',
+        ping
+      );
+
+
     ping();
-    const heartbeat = setInterval(() => {
-      if (AppState.currentState === 'active') ping();
-    }, 25000);
+
+
+    const heartbeat =
+      setInterval(() => {
+        if (
+          AppState.currentState ===
+          'active'
+        ) {
+          ping();
+        }
+      }, 25000);
+
+
     return () => {
       sub.remove();
       clearInterval(heartbeat);
     };
   }, [googleId]);
 
-  const signInWithGoogle = useCallback(async () => {
-    setBusy(true);
-    try {
-      await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
-      const res = await GoogleSignin.signIn();
-      if (res?.type === 'cancelled') return;
-      const data = res?.data ?? res; // works with old and new library versions
-      if (!data?.idToken) throw new Error('Google did not return an ID token. Check GOOGLE_WEB_CLIENT_ID.');
-      const result = await signInWithCredential(auth, GoogleAuthProvider.credential(data.idToken));
-      const gid = googleIdOf(result.user);
-      if (gid) {
-        addNotification(gid, { type: 'login', text: 'You logged in to your account' }).catch(() => {});
-      }
-    } catch (e) {
-      if (e?.code === statusCodes.SIGN_IN_CANCELLED || e?.code === statusCodes.IN_PROGRESS) return;
-      throw e;
-    } finally {
-      setBusy(false);
-    }
-  }, []);
 
-  const logout = useCallback(async () => {
-    try {
-      if (googleId) {
-        await addNotification(googleId, { type: 'logout', text: 'You logged out of your account' });
-        await updateDoc(doc(db, 'users', googleId), { online: false, lastSeen: serverTimestamp() });
+  /*
+   * Google login
+   */
+  const signInWithGoogle =
+    useCallback(async () => {
+      setBusy(true);
+
+      try {
+        await GoogleSignin.hasPlayServices({
+          showPlayServicesUpdateDialog: true,
+        });
+
+        const res =
+          await GoogleSignin.signIn();
+
+        if (
+          res?.type ===
+          'cancelled'
+        ) {
+          return;
+        }
+
+        const data =
+          res?.data ?? res;
+
+        if (!data?.idToken) {
+          throw new Error(
+            'Google did not return an ID token. Check GOOGLE_WEB_CLIENT_ID.'
+          );
+        }
+
+        const result =
+          await signInWithCredential(
+            auth,
+            GoogleAuthProvider.credential(
+              data.idToken
+            )
+          );
+
+
+        const gid =
+          googleIdOf(result.user);
+
+
+        if (gid) {
+          addNotification(
+            gid,
+            {
+              type: 'login',
+              text:
+                'You logged in to your account',
+            }
+          ).catch(() => {});
+        }
+
+      } catch (e) {
+        if (
+          e?.code ===
+            statusCodes.SIGN_IN_CANCELLED ||
+          e?.code ===
+            statusCodes.IN_PROGRESS
+        ) {
+          return;
+        }
+
+        throw e;
+
+      } finally {
+        setBusy(false);
       }
-    } catch {}
-    try {
-      await GoogleSignin.signOut();
-    } catch {}
-    await fbSignOut(auth);
-  }, [googleId]);
+    }, []);
+
+
+  /*
+   * Logout
+   */
+  const logout =
+    useCallback(async () => {
+      try {
+        if (googleId) {
+          await addNotification(
+            googleId,
+            {
+              type: 'logout',
+              text:
+                'You logged out of your account',
+            }
+          );
+
+          await updateDoc(
+            doc(db, 'users', googleId),
+            {
+              online: false,
+              lastSeen:
+                serverTimestamp(),
+            }
+          );
+        }
+      } catch {}
+
+
+      try {
+        await GoogleSignin.signOut();
+      } catch {}
+
+
+      await fbSignOut(auth);
+    }, [googleId]);
+
 
   const value = useMemo(
-    () => ({ fbUser, me: profile, googleId, initializing, busy, signInWithGoogle, logout }),
-    [fbUser, profile, googleId, initializing, busy, signInWithGoogle, logout]
+    () => ({
+      fbUser,
+      me: profile,
+      googleId,
+      initializing,
+      busy,
+      signInWithGoogle,
+      logout,
+    }),
+    [
+      fbUser,
+      profile,
+      googleId,
+      initializing,
+      busy,
+      signInWithGoogle,
+      logout,
+    ]
   );
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+
+
+  return (
+    <AuthContext.Provider
+      value={value}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
 }
 
-export const useAuth = () => useContext(AuthContext);
+
+export const useAuth = () =>
+  useContext(AuthContext);
