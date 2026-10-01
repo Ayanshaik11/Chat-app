@@ -41,8 +41,6 @@ import {
   addNotification,
 } from '../services/notifications';
 
-import { useSettings } from './SettingsContext';
-
 
 GoogleSignin.configure({
   webClientId: GOOGLE_WEB_CLIENT_ID,
@@ -64,21 +62,18 @@ export const googleIdOf = (fbUser) =>
 
 
 export function AuthProvider({ children }) {
-  const { settings } = useSettings();
-
   const [fbUser, setFbUser] = useState(null);
-  const [initializing, setInitializing] = useState(true);
-  const [profile, setProfile] = useState(null);
-  const [busy, setBusy] = useState(false);
+  const [initializing, setInitializing] =
+    useState(true);
 
-  const googleId = googleIdOf(fbUser);
+  const [profile, setProfile] =
+    useState(null);
 
-  const showOnlineRef = useRef(
-    settings.showOnline
-  );
+  const [busy, setBusy] =
+    useState(false);
 
-  showOnlineRef.current =
-    settings.showOnline;
+  const googleId =
+    googleIdOf(fbUser);
 
 
   /*
@@ -87,10 +82,10 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     return onAuthStateChanged(
       auth,
-      (u) => {
-        setFbUser(u);
+      (user) => {
+        setFbUser(user);
 
-        if (!u) {
+        if (!user) {
           setProfile(null);
         }
 
@@ -101,18 +96,16 @@ export function AuthProvider({ children }) {
 
 
   /*
-   * Load the Firestore profile.
+   * Create / load profile.
    *
    * IMPORTANT:
-   * If the profile already exists,
-   * NEVER replace its:
    *
-   * - photoURL
-   * - about
-   * - name
-   * - username
+   * Google photo/bio/default data is used
+   * ONLY when the Firestore profile does
+   * not exist.
    *
-   * with Google account data.
+   * Existing King X profile data is never
+   * replaced by Google data.
    */
   useEffect(() => {
     if (!fbUser || !googleId) {
@@ -120,7 +113,7 @@ export function AuthProvider({ children }) {
     }
 
     let cancelled = false;
-    let unsub = null;
+    let unsubscribe = null;
 
     const ref = doc(
       db,
@@ -128,25 +121,41 @@ export function AuthProvider({ children }) {
       googleId
     );
 
+
     const fallback = {
       id: googleId,
-      name: fbUser.displayName || 'User',
-      email: fbUser.email || '',
-      photoURL: fbUser.photoURL || '',
+
+      name:
+        fbUser.displayName ||
+        'User',
+
+      email:
+        fbUser.email ||
+        '',
+
+      photoURL:
+        fbUser.photoURL ||
+        '',
+
       username:
         (fbUser.email || 'user')
           .split('@')[0],
+
       about: '',
     };
 
 
     const initProfile = async () => {
       try {
-        const snap = await getDoc(ref);
+        const snap =
+          await getDoc(ref);
+
 
         /*
-         * ONLY create Google-based data
-         * when this is genuinely a new user.
+         * New user.
+         *
+         * Google information is used
+         * only here.
          */
         if (!snap.exists()) {
           const email =
@@ -154,6 +163,7 @@ export function AuthProvider({ children }) {
 
           await setDoc(ref, {
             id: googleId,
+
             uid: fbUser.uid,
 
             name:
@@ -171,13 +181,19 @@ export function AuthProvider({ children }) {
               email.toLowerCase(),
 
             photoURL:
-              fbUser.photoURL || '',
+              fbUser.photoURL ||
+              '',
 
             about:
               'Hey there! I am using Chat App.',
 
-            online:
-              showOnlineRef.current,
+            /*
+             * Activity Status defaults to ON
+             * only for a brand-new account.
+             */
+            showOnline: true,
+
+            online: true,
 
             lastSeen:
               serverTimestamp(),
@@ -207,10 +223,18 @@ export function AuthProvider({ children }) {
 
 
       /*
-       * Listen to the actual Firestore
-       * profile in realtime.
+       * Listen to the Firestore profile.
+       *
+       * This means changes to:
+       *
+       * photoURL
+       * about
+       * username
+       * showOnline
+       *
+       * arrive immediately.
        */
-      unsub = onSnapshot(
+      unsubscribe = onSnapshot(
         ref,
 
         (snap) => {
@@ -240,8 +264,8 @@ export function AuthProvider({ children }) {
     return () => {
       cancelled = true;
 
-      if (unsub) {
-        unsub();
+      if (unsubscribe) {
+        unsubscribe();
       }
     };
   }, [
@@ -251,29 +275,66 @@ export function AuthProvider({ children }) {
 
 
   /*
+   * Activity Status
+   *
+   * This is saved to Firestore.
+   *
+   * Therefore it survives:
+   *
+   * logout
+   * login
+   * app restart
+   * device restart
+   */
+  const setActivityStatus =
+    useCallback(
+      async (enabled) => {
+        if (!googleId) {
+          return;
+        }
+
+        await updateDoc(
+          doc(db, 'users', googleId),
+          {
+            showOnline: enabled,
+
+            online:
+              enabled &&
+              AppState.currentState ===
+                'active',
+
+            lastSeen:
+              serverTimestamp(),
+          }
+        );
+      },
+      [googleId]
+    );
+
+
+  /*
    * Online / last seen.
    *
-   * This only updates the activity field.
-   * It does NOT touch:
-   *
-   * photoURL
-   * about
-   * name
-   * username
+   * Reads showOnline from the Firestore
+   * profile instead of local settings.
    */
   useEffect(() => {
     if (!googleId) {
       return undefined;
     }
 
+
     const ping = () => {
+      const enabled =
+        profile?.showOnline !== false;
+
+
       updateDoc(
         doc(db, 'users', googleId),
         {
           online:
             AppState.currentState ===
-              'active' &&
-            showOnlineRef.current,
+              'active' && enabled,
 
           lastSeen:
             serverTimestamp(),
@@ -282,6 +343,9 @@ export function AuthProvider({ children }) {
     };
 
 
+    /*
+     * App foreground/background
+     */
     const sub =
       AppState.addEventListener(
         'change',
@@ -289,9 +353,15 @@ export function AuthProvider({ children }) {
       );
 
 
+    /*
+     * Initial status
+     */
     ping();
 
 
+    /*
+     * Heartbeat every 25 seconds.
+     */
     const heartbeat =
       setInterval(() => {
         if (
@@ -307,11 +377,14 @@ export function AuthProvider({ children }) {
       sub.remove();
       clearInterval(heartbeat);
     };
-  }, [googleId]);
+  }, [
+    googleId,
+    profile?.showOnline,
+  ]);
 
 
   /*
-   * Google login
+   * Google Login
    */
   const signInWithGoogle =
     useCallback(async () => {
@@ -322,8 +395,10 @@ export function AuthProvider({ children }) {
           showPlayServicesUpdateDialog: true,
         });
 
+
         const res =
           await GoogleSignin.signIn();
+
 
         if (
           res?.type ===
@@ -332,14 +407,21 @@ export function AuthProvider({ children }) {
           return;
         }
 
+
+        /*
+         * Supports both old and new
+         * Google Sign-In response formats.
+         */
         const data =
           res?.data ?? res;
+
 
         if (!data?.idToken) {
           throw new Error(
             'Google did not return an ID token. Check GOOGLE_WEB_CLIENT_ID.'
           );
         }
+
 
         const result =
           await signInWithCredential(
@@ -399,15 +481,18 @@ export function AuthProvider({ children }) {
             }
           );
 
+
           await updateDoc(
             doc(db, 'users', googleId),
             {
               online: false,
+
               lastSeen:
                 serverTimestamp(),
             }
           );
         }
+
       } catch {}
 
 
@@ -423,12 +508,20 @@ export function AuthProvider({ children }) {
   const value = useMemo(
     () => ({
       fbUser,
+
       me: profile,
+
       googleId,
+
       initializing,
+
       busy,
+
       signInWithGoogle,
+
       logout,
+
+      setActivityStatus,
     }),
     [
       fbUser,
@@ -438,6 +531,7 @@ export function AuthProvider({ children }) {
       busy,
       signInWithGoogle,
       logout,
+      setActivityStatus,
     ]
   );
 
