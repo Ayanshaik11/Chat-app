@@ -15,19 +15,18 @@ import { pairId } from '../utils/helpers';
 
 
 // --------------------------------------------------
-// Push notification
+// Push notification helper
 // --------------------------------------------------
 
-function notifyNewMessage(
-  me,
-  other,
-  text
-) {
+function sendPushNotification({
+  toUserId,
+  title,
+  body,
+  data,
+}) {
   if (
     !PROXY_BASE_URL ||
-    PROXY_BASE_URL.includes(
-      'YOUR-PROJECT'
-    )
+    PROXY_BASE_URL.includes('YOUR-PROJECT')
   ) {
     return;
   }
@@ -38,33 +37,142 @@ function notifyNewMessage(
       method: 'POST',
 
       headers: {
-        'Content-Type':
-          'application/json',
+        'Content-Type': 'application/json',
       },
 
       body: JSON.stringify({
-        toUserId: other.id,
-
-        title:
-          me.name ||
-          'New message',
-
-        body: text,
-
-        data: {
-          type: 'message',
-
-          fromId: me.id,
-
-          fromName:
-            me.name || '',
-
-          fromPhoto:
-            me.photoURL || '',
-        },
+        toUserId,
+        title,
+        body,
+        data,
       }),
     }
   ).catch(() => {});
+}
+
+
+// --------------------------------------------------
+// New message notification
+// --------------------------------------------------
+
+function notifyNewMessage(
+  me,
+  other,
+  text
+) {
+  sendPushNotification({
+    toUserId: other.id,
+
+    title:
+      me.name ||
+      'New message',
+
+    body: text,
+
+    data: {
+      type: 'message',
+
+      fromId: me.id,
+
+      fromName:
+        me.name || '',
+
+      fromPhoto:
+        me.photoURL || '',
+    },
+  });
+}
+
+
+// --------------------------------------------------
+// Reaction notification
+// --------------------------------------------------
+
+function notifyReaction(
+  me,
+  message,
+  reaction
+) {
+  /*
+   * Don't notify when reacting
+   * to your own message.
+   */
+  if (
+    !message.senderId ||
+    message.senderId === me.id
+  ) {
+    return;
+  }
+
+
+  let action = 'reacted to';
+
+
+  if (reaction === '❤️') {
+    action = 'liked';
+  }
+
+
+  const messagePreview =
+    message.text
+      ? `"${message.text.slice(0, 80)}${
+          message.text.length > 80
+            ? '…'
+            : ''
+        }"`
+      : 'your message';
+
+
+  let body;
+
+
+  if (reaction === '❤️') {
+    body =
+      `${me.name || 'Someone'} liked your message`;
+  } else {
+    body =
+      `${me.name || 'Someone'} reacted ${reaction} to your message`;
+  }
+
+
+  /*
+   * Add the message preview as
+   * notification data.
+   *
+   * The current push body stays clean.
+   */
+  sendPushNotification({
+    toUserId: message.senderId,
+
+    title:
+      reaction === '❤️'
+        ? '❤️ Message liked'
+        : `${reaction} Message reaction`,
+
+    body,
+
+    data: {
+      type: 'reaction',
+
+      reaction,
+
+      messageId:
+        message.id,
+
+      messageText:
+        message.text || '',
+
+      messagePreview,
+
+      fromId: me.id,
+
+      fromName:
+        me.name || '',
+
+      fromPhoto:
+        me.photoURL || '',
+    },
+  });
 }
 
 
@@ -91,6 +199,7 @@ export async function sendMessage(
       other.id
     );
 
+
   const msgRef = doc(
     collection(
       db,
@@ -111,7 +220,6 @@ export async function sendMessage(
   };
 
 
-  // Add reply information
   if (replyTo) {
     message.replyTo = {
       id: replyTo.id,
@@ -153,9 +261,11 @@ export async function sendMessage(
         other.id,
       ],
 
-      lastMessage: text,
+      lastMessage:
+        text,
 
-      lastSender: me.id,
+      lastSender:
+        me.id,
 
       lastMessageAt:
         serverTimestamp(),
@@ -174,6 +284,7 @@ export async function sendMessage(
   await batch.commit();
 
 
+  // Existing message notification
   notifyNewMessage(
     me,
     other,
@@ -248,8 +359,8 @@ export const setTyping = (
 
 export async function reactToMessage(
   chatId,
-  messageId,
-  userId,
+  message,
+  me,
   reaction
 ) {
   const ref = doc(
@@ -257,15 +368,27 @@ export async function reactToMessage(
     'chats',
     chatId,
     'messages',
-    messageId
+    message.id
   );
 
 
-  if (!reaction) {
+  const oldReaction =
+    message.reactions?.[
+      me.id
+    ] || null;
+
+
+  /*
+   * Tapping the same reaction
+   * removes the reaction.
+   */
+  if (
+    oldReaction === reaction
+  ) {
     await updateDoc(
       ref,
       {
-        [`reactions.${userId}`]:
+        [`reactions.${me.id}`]:
           deleteField(),
       }
     );
@@ -274,13 +397,35 @@ export async function reactToMessage(
   }
 
 
+  /*
+   * Save the new reaction.
+   */
   await updateDoc(
     ref,
     {
-      [`reactions.${userId}`]:
+      [`reactions.${me.id}`]:
         reaction,
     }
   );
+
+
+  /*
+   * Only notify for a new reaction.
+   *
+   * If user changes:
+   *
+   * ❤️ → 😂
+   *
+   * this sends the new reaction
+   * notification.
+   */
+  if (reaction) {
+    notifyReaction(
+      me,
+      message,
+      reaction
+    );
+  }
 }
 
 
@@ -305,6 +450,7 @@ export async function unsendMessage(
     ref,
     {
       text: '',
+
       unsent: true,
 
       reactions:
