@@ -3,7 +3,8 @@ name: Build Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
   build:
@@ -11,15 +12,27 @@ jobs:
 
     steps:
 
+      # --------------------------------------------------
+      # 1. Checkout
+      # --------------------------------------------------
+
       - name: Checkout
         uses: actions/checkout@v4
 
+
+      # --------------------------------------------------
+      # 2. Node
+      # --------------------------------------------------
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: 20
 
+
+      # --------------------------------------------------
+      # 3. Java
+      # --------------------------------------------------
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -28,13 +41,25 @@ jobs:
           java-version: 17
 
 
+      # --------------------------------------------------
+      # 4. Install dependencies
+      # --------------------------------------------------
+
       - name: Install dependencies
         run: npm install
 
 
+      # --------------------------------------------------
+      # 5. Generate Android project
+      # --------------------------------------------------
+
       - name: Generate Android project
         run: npx expo prebuild --platform android --no-install
 
+
+      # --------------------------------------------------
+      # 6. Restore release keystore
+      # --------------------------------------------------
 
       - name: Restore King X release keystore
         env:
@@ -42,9 +67,9 @@ jobs:
           STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
         run: |
-          printf '%s' "$KEYSTORE_BASE64" |
-            base64 --decode >
-            android/app/kingx-release.keystore
+          mkdir -p android/app
+
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/app/kingx-release.keystore
 
           test -s android/app/kingx-release.keystore
 
@@ -56,21 +81,83 @@ jobs:
             -storepass "$STORE_PASSWORD"
 
 
+      # --------------------------------------------------
+      # 7. Configure release signing
+      # --------------------------------------------------
+
       - name: Configure King X release signing
-        env:
-          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           python3 <<'PY'
           from pathlib import Path
+          import re
 
           path = Path("android/app/build.gradle")
           text = path.read_text()
 
-          marker = "signingConfigs {"
+          signing_block = '''
+              release {
+                  storeFile file("kingx-release.keystore")
+                  storePassword System.getenv("KINGX_STORE_PASSWORD")
+                  keyAlias System.getenv("KINGX_KEY_ALIAS")
+                  keyPassword System.getenv("KINGX_KEY_PASSWORD")
+              }
+          '''
 
-          signing = '''
+          # Remove an existing release signing block if present.
+          text = re.sub(
+              r'\n\s*release\s*\{\s*'
+              r'storeFile\s+.*?'
+              r'keyPassword\s+.*?'
+              r'\n\s*\}',
+              '',
+              text,
+              flags=re.DOTALL
+          )
+
+          # Find signingConfigs block.
+          match = re.search(
+              r'signingConfigs\s*\{',
+              text
+          )
+
+          if match:
+              start = match.start()
+
+              depth = 0
+              end = None
+              opening = text.find("{", start)
+
+              for i in range(opening, len(text)):
+                  if text[i] == "{":
+                      depth += 1
+                  elif text[i] == "}":
+                      depth -= 1
+
+                      if depth == 0:
+                          end = i + 1
+                          break
+
+              if end:
+                  old_block = text[start:end]
+
+                  if "release {" in old_block:
+                      old_block = re.sub(
+                          r'release\s*\{.*?\}',
+                          signing_block.strip(),
+                          old_block,
+                          flags=re.DOTALL
+                      )
+                  else:
+                      old_block = old_block[:-1] + signing_block + "\n}"
+
+                  text = text[:start] + old_block + text[end:]
+
+          else:
+              # No signingConfigs block.
+              text = text.replace(
+                  "android {",
+                  """android {
+
               signingConfigs {
                   release {
                       storeFile file("kingx-release.keystore")
@@ -79,44 +166,42 @@ jobs:
                       keyPassword System.getenv("KINGX_KEY_PASSWORD")
                   }
               }
-          '''
-
-          if marker not in text:
-              text = text.replace(
-                  "android {",
-                  "android {" + signing,
+              """,
                   1
               )
 
+          # Use release signing.
           text = text.replace(
               "signingConfig signingConfigs.debug",
               "signingConfig signingConfigs.release"
           )
 
           path.write_text(text)
+
+          print("Release signing configuration configured.")
           PY
 
-          echo "Release signing configuration added."
 
+      # --------------------------------------------------
+      # 8. Verify signing configuration
+      # --------------------------------------------------
 
       - name: Verify signing configuration
-        env:
-          KINGX_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KINGX_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KINGX_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          echo "Checking signing configuration..."
-
-          grep -n "kingx-release.keystore" \
-            android/app/build.gradle
-
-          grep -n "signingConfigs.release" \
-            android/app/build.gradle
+          echo "Checking release signing configuration..."
 
           test -f android/app/kingx-release.keystore
 
+          grep -n "kingx-release.keystore" android/app/build.gradle
+
+          grep -n "signingConfigs.release" android/app/build.gradle
+
           echo "Signing configuration looks good."
 
+
+      # --------------------------------------------------
+      # 9. Check release SHA-1
+      # --------------------------------------------------
 
       - name: Check release SHA-1
         env:
@@ -126,9 +211,12 @@ jobs:
           keytool -list -v \
             -keystore android/app/kingx-release.keystore \
             -alias "$KEY_ALIAS" \
-            -storepass "$STORE_PASSWORD" |
-            grep -E "SHA1:|SHA256:"
+            -storepass "$STORE_PASSWORD" | grep -E "SHA1:|SHA256:"
 
+
+      # --------------------------------------------------
+      # 10. Check Expo bundle
+      # --------------------------------------------------
 
       - name: Check Expo bundle
         run: |
@@ -136,6 +224,10 @@ jobs:
             --platform android \
             --output-dir /tmp/expo-check
 
+
+      # --------------------------------------------------
+      # 11. Build release APK
+      # --------------------------------------------------
 
       - name: Build release APK
         env:
@@ -150,11 +242,18 @@ jobs:
           ./gradlew assembleRelease --no-daemon
 
 
+      # --------------------------------------------------
+      # 12. Verify APK
+      # --------------------------------------------------
+
       - name: Verify APK exists
         run: |
-          ls -lh \
-            android/app/build/outputs/apk/release/*.apk
+          ls -lh android/app/build/outputs/apk/release/*.apk
 
+
+      # --------------------------------------------------
+      # 13. Upload APK
+      # --------------------------------------------------
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -162,6 +261,10 @@ jobs:
           name: king-x-release-apk
           path: android/app/build/outputs/apk/release/*.apk
 
+
+      # --------------------------------------------------
+      # 14. Cleanup
+      # --------------------------------------------------
 
       - name: Cleanup signing key
         if: always()
