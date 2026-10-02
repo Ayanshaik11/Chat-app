@@ -1,5 +1,5 @@
 import React from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator } from 'react-native';
 
 import {
   NavigationContainer,
@@ -7,13 +7,7 @@ import {
   DefaultTheme,
 } from '@react-navigation/native';
 
-import {
-  createNativeStackNavigator,
-} from '@react-navigation/native-stack';
-
-import {
-  createBottomTabNavigator,
-} from '@react-navigation/bottom-tabs';
+import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -22,7 +16,6 @@ import { useTheme } from '../context/SettingsContext';
 
 import LoginScreen from '../screens/LoginScreen';
 import HomeScreen from '../screens/HomeScreen';
-import ProfileScreen from '../screens/ProfileScreen';
 
 import ChatScreen from '../screens/ChatScreen';
 import UserProfileScreen from '../screens/UserProfileScreen';
@@ -35,55 +28,17 @@ import StoryViewerScreen from '../screens/StoryViewerScreen';
 
 import { navigationRef } from './navigationRef';
 
-const Stack =
-  createNativeStackNavigator();
-
-const Tab =
-  createBottomTabNavigator();
-
-function Tabs() {
-  return (
-    <Tab.Navigator
-      screenOptions={{
-        headerShown: false,
-      }}
-    >
-      <Tab.Screen
-        name="Home"
-        component={HomeScreen}
-      />
-
-      <Tab.Screen
-        name="Profile"
-        component={ProfileScreen}
-      />
-    </Tab.Navigator>
-  );
-}
+const Stack = createNativeStackNavigator();
 
 export default function RootNavigator() {
-  const {
-    fbUser,
-    me,
-    initializing,
-  } = useAuth();
+  const { fbUser, me, initializing } = useAuth();
+  const { colors, isDark } = useTheme();
 
-  const {
-    colors,
-    isDark,
-  } = useTheme();
-
-  if (
-    initializing ||
-    (fbUser && !me)
-  ) {
+  // Firebase/auth is still initializing
+  if (initializing || (fbUser && !me)) {
     return (
       <LinearGradient
-        colors={[
-          '#050505',
-          '#1a0505',
-          '#E11D2A',
-        ]}
+        colors={['#050505', '#1a0505', '#E11D2A']}
         style={{
           flex: 1,
           alignItems: 'center',
@@ -98,10 +53,9 @@ export default function RootNavigator() {
     );
   }
 
-  const baseTheme =
-    isDark
-      ? DarkTheme
-      : DefaultTheme;
+  const baseTheme = isDark
+    ? DarkTheme
+    : DefaultTheme;
 
   const navTheme = {
     ...baseTheme,
@@ -128,9 +82,13 @@ export default function RootNavigator() {
       >
         {fbUser ? (
           <>
+            {/* TEMPORARY TEST:
+                Home is opened directly.
+                BottomTabNavigator is completely removed.
+            */}
             <Stack.Screen
               name="Main"
-              component={Tabs}
+              component={HomeScreen}
             />
 
             <Stack.Screen
@@ -172,8 +130,7 @@ export default function RootNavigator() {
               name="StoryViewer"
               component={StoryViewerScreen}
               options={{
-                presentation:
-                  'fullScreenModal',
+                presentation: 'fullScreenModal',
                 animation: 'fade',
               }}
             />
