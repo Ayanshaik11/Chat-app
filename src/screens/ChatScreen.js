@@ -675,7 +675,7 @@ export default function ChatScreen({
         await reactToMessage(
           chatId,
           message.id,
-          me.id,
+          me,
           current === reaction
             ? null
             : reaction
