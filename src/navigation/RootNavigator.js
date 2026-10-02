@@ -1,12 +1,16 @@
-import React, { useCallback, useMemo } from 'react';
+import React from 'react';
 import { ActivityIndicator, View } from 'react-native';
 import {
   NavigationContainer,
   DarkTheme,
   DefaultTheme,
 } from '@react-navigation/native';
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import {
+  createNativeStackNavigator,
+} from '@react-navigation/native-stack';
+import {
+  createBottomTabNavigator,
+} from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -30,66 +34,192 @@ import CreateScreen from '../screens/CreateScreen';
 import StoryViewerScreen from '../screens/StoryViewerScreen';
 import ReelsScreen from '../screens/ReelsScreen';
 
-import { navigationRef } from './navigationRef';
+const Stack =
+  createNativeStackNavigator();
 
-const Stack = createNativeStackNavigator();
-const Tab = createBottomTabNavigator();
+const Tab =
+  createBottomTabNavigator();
+
+
+/* =======================================================
+   TAB ICONS
+======================================================= */
 
 const TAB_ICONS = {
-  Home: ['home', 'home-outline'],
-  Find: ['search', 'search-outline'],
-  Reels: ['film', 'film-outline'],
-  Messages: ['chatbubbles', 'chatbubbles-outline'],
-  Notifications: ['notifications', 'notifications-outline'],
-  Profile: ['person', 'person-outline'],
+  Home: [
+    'home',
+    'home-outline',
+  ],
+
+  Find: [
+    'search',
+    'search-outline',
+  ],
+
+  Videos: [
+    'play-circle',
+    'play-circle-outline',
+  ],
+
+  Messages: [
+    'chatbubbles',
+    'chatbubbles-outline',
+  ],
+
+  Notifications: [
+    'notifications',
+    'notifications-outline',
+  ],
+
+  Profile: [
+    'person',
+    'person-outline',
+  ],
 };
 
+
+/* =======================================================
+   BOTTOM TABS
+======================================================= */
+
 function Tabs() {
-  const { colors, fonts } = useTheme();
-  const { unreadNotifs, unreadMessages } = useAppData();
+  const {
+    colors,
+    fonts,
+  } = useTheme();
 
-  // IMPORTANT: screenOptions and each screen's options must stay referentially
-  // stable across renders. A brand-new function/object on every render makes
-  // React Navigation think the options changed every time, which triggers an
-  // internal state update, which re-renders this component, which creates new
-  // literals again — an infinite loop that crashes with "Maximum call stack
-  // size exceeded". Only rebuild these when the values they depend on change.
-  const screenOptions = useCallback(
-    ({ route }) => {
-      const icons = TAB_ICONS[route.name];
-      return {
-        headerShown: false,
-        tabBarActiveTintColor: colors.primary,
-        tabBarInactiveTintColor: colors.subtext,
-        tabBarStyle: route.name === 'Reels' ? { display: 'none' } : { backgroundColor: colors.tabBar, borderTopColor: colors.border },
-        tabBarLabelStyle: { fontFamily: fonts.medium, fontSize: 10 },
-        tabBarBadgeStyle: { backgroundColor: colors.accent, color: '#fff', fontFamily: fonts.semibold, fontSize: 10 },
-        tabBarIcon: ({ color, focused }) => <Ionicons name={icons[focused ? 0 : 1]} size={24} color={color} />,
-      };
-    },
-    [colors, fonts]
-  );
-
-  const messagesOptions = useMemo(
-    () => ({ tabBarBadge: unreadMessages > 0 ? unreadMessages : undefined }),
-    [unreadMessages]
-  );
-  const notificationsOptions = useMemo(
-    () => ({ tabBarBadge: unreadNotifs > 0 ? unreadNotifs : undefined }),
-    [unreadNotifs]
-  );
+  const {
+    unreadNotifs,
+    unreadMessages,
+  } = useAppData();
 
   return (
-    <Tab.Navigator screenOptions={screenOptions}>
-      <Tab.Screen name="Home" component={HomeScreen} />
-      <Tab.Screen name="Find" component={FindScreen} />
-      <Tab.Screen name="Reels" component={ReelsScreen} />
-      <Tab.Screen name="Messages" component={MessagesScreen} options={messagesOptions} />
-      <Tab.Screen name="Notifications" component={NotificationsScreen} options={notificationsOptions} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+    <Tab.Navigator
+      screenOptions={({
+        route,
+      }) => ({
+        headerShown: false,
+
+        tabBarActiveTintColor:
+          colors.primary,
+
+        tabBarInactiveTintColor:
+          colors.subtext,
+
+        /*
+         * Videos is full-screen.
+         * Hide the bottom navigation while
+         * watching videos.
+         */
+        tabBarStyle:
+          route.name === 'Videos'
+            ? {
+                display: 'none',
+              }
+            : {
+                backgroundColor:
+                  colors.tabBar,
+
+                borderTopColor:
+                  colors.border,
+              },
+
+        tabBarLabelStyle: {
+          fontFamily:
+            fonts.medium,
+
+          fontSize: 10,
+        },
+
+        tabBarBadgeStyle: {
+          backgroundColor:
+            colors.accent,
+
+          color: '#fff',
+
+          fontFamily:
+            fonts.semibold,
+
+          fontSize: 10,
+        },
+
+        tabBarIcon: ({
+          color,
+          focused,
+        }) => (
+          <Ionicons
+            name={
+              TAB_ICONS[
+                route.name
+              ][
+                focused
+                  ? 0
+                  : 1
+              ]
+            }
+            size={24}
+            color={color}
+          />
+        ),
+      })}
+    >
+
+      <Tab.Screen
+        name="Home"
+        component={HomeScreen}
+      />
+
+      <Tab.Screen
+        name="Find"
+        component={FindScreen}
+      />
+
+      <Tab.Screen
+        name="Videos"
+        component={ReelsScreen}
+      />
+
+      <Tab.Screen
+        name="Messages"
+        component={
+          MessagesScreen
+        }
+        options={{
+          tabBarBadge:
+            unreadMessages > 0
+              ? unreadMessages
+              : undefined,
+        }}
+      />
+
+      <Tab.Screen
+        name="Notifications"
+        component={
+          NotificationsScreen
+        }
+        options={{
+          tabBarBadge:
+            unreadNotifs > 0
+              ? unreadNotifs
+              : undefined,
+        }}
+      />
+
+      <Tab.Screen
+        name="Profile"
+        component={
+          ProfileScreen
+        }
+      />
+
     </Tab.Navigator>
   );
 }
+
+
+/* =======================================================
+   ROOT NAVIGATOR
+======================================================= */
 
 export default function RootNavigator() {
   const {
@@ -102,6 +232,42 @@ export default function RootNavigator() {
     colors,
     isDark,
   } = useTheme();
+
+  const base =
+    isDark
+      ? DarkTheme
+      : DefaultTheme;
+
+  const navTheme = {
+    ...base,
+
+    colors: {
+      ...base.colors,
+
+      primary:
+        colors.primary,
+
+      background:
+        colors.bg,
+
+      card:
+        colors.card,
+
+      text:
+        colors.text,
+
+      border:
+        colors.border,
+
+      notification:
+        colors.accent,
+    },
+  };
+
+
+  /* -------------------------------------------------------
+     AUTH LOADING
+  ------------------------------------------------------- */
 
   if (
     initializing ||
@@ -116,8 +282,10 @@ export default function RootNavigator() {
         ]}
         style={{
           flex: 1,
-          alignItems: 'center',
-          justifyContent: 'center',
+          alignItems:
+            'center',
+          justifyContent:
+            'center',
         }}
       >
         <ActivityIndicator
@@ -128,28 +296,13 @@ export default function RootNavigator() {
     );
   }
 
-  const baseTheme = isDark
-    ? DarkTheme
-    : DefaultTheme;
 
-  const navTheme = {
-    ...baseTheme,
-
-    colors: {
-      ...baseTheme.colors,
-
-      primary: colors.primary,
-      background: colors.bg,
-      card: colors.card,
-      text: colors.text,
-      border: colors.border,
-      notification: colors.accent,
-    },
-  };
+  /* -------------------------------------------------------
+     NAVIGATION
+  ------------------------------------------------------- */
 
   return (
     <NavigationContainer
-      ref={navigationRef}
       theme={navTheme}
     >
       <Stack.Navigator
@@ -157,6 +310,7 @@ export default function RootNavigator() {
           headerShown: false,
         }}
       >
+
         {fbUser ? (
           <>
             <Stack.Screen
@@ -171,49 +325,69 @@ export default function RootNavigator() {
 
             <Stack.Screen
               name="UserProfile"
-              component={UserProfileScreen}
+              component={
+                UserProfileScreen
+              }
             />
 
             <Stack.Screen
               name="FriendsList"
-              component={FriendsListScreen}
+              component={
+                FriendsListScreen
+              }
             />
 
             <Stack.Screen
               name="PostDetail"
-              component={PostDetailScreen}
+              component={
+                PostDetailScreen
+              }
             />
 
             <Stack.Screen
               name="EditProfile"
-              component={EditProfileScreen}
+              component={
+                EditProfileScreen
+              }
             />
 
             <Stack.Screen
               name="Settings"
-              component={SettingsScreen}
+              component={
+                SettingsScreen
+              }
             />
 
             <Stack.Screen
               name="Create"
-              component={CreateScreen}
+              component={
+                CreateScreen
+              }
             />
 
             <Stack.Screen
               name="StoryViewer"
-              component={StoryViewerScreen}
+              component={
+                StoryViewerScreen
+              }
               options={{
-                presentation: 'fullScreenModal',
-                animation: 'fade',
+                presentation:
+                  'fullScreenModal',
+
+                animation:
+                  'fade',
               }}
             />
           </>
         ) : (
           <Stack.Screen
             name="Login"
-            component={LoginScreen}
+            component={
+              LoginScreen
+            }
           />
         )}
+
       </Stack.Navigator>
     </NavigationContainer>
   );
