@@ -4,7 +4,6 @@ import React, {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from 'react';
 
@@ -63,6 +62,7 @@ export const googleIdOf = (fbUser) =>
 
 export function AuthProvider({ children }) {
   const [fbUser, setFbUser] = useState(null);
+
   const [initializing, setInitializing] =
     useState(true);
 
@@ -96,16 +96,14 @@ export function AuthProvider({ children }) {
 
 
   /*
-   * Create / load profile.
+   * Load/create the Firestore profile.
    *
-   * IMPORTANT:
-   *
-   * Google photo/bio/default data is used
+   * Google account information is used
    * ONLY when the Firestore profile does
    * not exist.
    *
-   * Existing King X profile data is never
-   * replaced by Google data.
+   * Existing King X profile information
+   * is never replaced by Google data.
    */
   useEffect(() => {
     if (!fbUser || !googleId) {
@@ -152,10 +150,10 @@ export function AuthProvider({ children }) {
 
 
         /*
-         * New user.
+         * NEW ACCOUNT
          *
          * Google information is used
-         * only here.
+         * only during first creation.
          */
         if (!snap.exists()) {
           const email =
@@ -188,8 +186,8 @@ export function AuthProvider({ children }) {
               'Hey there! I am using Chat App.',
 
             /*
-             * Activity Status defaults to ON
-             * only for a brand-new account.
+             * Activity Status default
+             * for a brand-new account.
              */
             showOnline: true,
 
@@ -223,16 +221,17 @@ export function AuthProvider({ children }) {
 
 
       /*
-       * Listen to the Firestore profile.
+       * Realtime Firestore profile listener.
        *
-       * This means changes to:
+       * This keeps:
        *
        * photoURL
        * about
        * username
+       * name
        * showOnline
        *
-       * arrive immediately.
+       * synchronized with Firestore.
        */
       unsubscribe = onSnapshot(
         ref,
@@ -275,16 +274,12 @@ export function AuthProvider({ children }) {
 
 
   /*
-   * Activity Status
+   * Change Activity Status.
    *
-   * This is saved to Firestore.
+   * This is stored in Firestore instead
+   * of only AsyncStorage.
    *
-   * Therefore it survives:
-   *
-   * logout
-   * login
-   * app restart
-   * device restart
+   * Therefore it survives logout/login.
    */
   const setActivityStatus =
     useCallback(
@@ -315,8 +310,8 @@ export function AuthProvider({ children }) {
   /*
    * Online / last seen.
    *
-   * Reads showOnline from the Firestore
-   * profile instead of local settings.
+   * Activity Status is controlled by
+   * profile.showOnline from Firestore.
    */
   useEffect(() => {
     if (!googleId) {
@@ -325,7 +320,7 @@ export function AuthProvider({ children }) {
 
 
     const ping = () => {
-      const enabled =
+      const activityEnabled =
         profile?.showOnline !== false;
 
 
@@ -334,7 +329,8 @@ export function AuthProvider({ children }) {
         {
           online:
             AppState.currentState ===
-              'active' && enabled,
+              'active' &&
+            activityEnabled,
 
           lastSeen:
             serverTimestamp(),
@@ -344,7 +340,7 @@ export function AuthProvider({ children }) {
 
 
     /*
-     * App foreground/background
+     * Detect foreground/background.
      */
     const sub =
       AppState.addEventListener(
@@ -354,7 +350,7 @@ export function AuthProvider({ children }) {
 
 
     /*
-     * Initial status
+     * Update immediately.
      */
     ping();
 
@@ -384,7 +380,7 @@ export function AuthProvider({ children }) {
 
 
   /*
-   * Google Login
+   * Google Sign In
    */
   const signInWithGoogle =
     useCallback(async () => {
@@ -423,12 +419,16 @@ export function AuthProvider({ children }) {
         }
 
 
+        const credential =
+          GoogleAuthProvider.credential(
+            data.idToken
+          );
+
+
         const result =
           await signInWithCredential(
             auth,
-            GoogleAuthProvider.credential(
-              data.idToken
-            )
+            credential
           );
 
 
@@ -482,6 +482,12 @@ export function AuthProvider({ children }) {
           );
 
 
+          /*
+           * Do NOT change showOnline.
+           *
+           * The user's Activity Status
+           * preference must survive logout.
+           */
           await updateDoc(
             doc(db, 'users', googleId),
             {
@@ -492,15 +498,20 @@ export function AuthProvider({ children }) {
             }
           );
         }
-
       } catch {}
 
 
+      /*
+       * Sign out from Google.
+       */
       try {
         await GoogleSignin.signOut();
       } catch {}
 
 
+      /*
+       * Sign out from Firebase.
+       */
       await fbSignOut(auth);
     }, [googleId]);
 
