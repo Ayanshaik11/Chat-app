@@ -28,6 +28,7 @@ const KEY = 'chatapp.settings.v1';
 const defaults = {
   themeMode: 'dark',
   vibration: true,
+  showOnline: true,
 };
 
 
@@ -48,7 +49,7 @@ export function SettingsProvider({
 
 
   /*
-   * Load local settings
+   * Load local settings.
    */
   useEffect(() => {
     AsyncStorage
@@ -76,13 +77,14 @@ export function SettingsProvider({
 
 
   /*
-   * Change local settings.
+   * Local settings.
    *
-   * Theme and vibration are stored
-   * on this device.
+   * Used for:
+   * - theme
+   * - vibration
    *
-   * Activity Status is NOT stored here.
-   * It is stored in Firestore by AuthContext.
+   * Activity status is handled by
+   * AuthContext + Firestore.
    */
   const setSetting = useCallback(
     (key, value) => {
@@ -92,14 +94,18 @@ export function SettingsProvider({
           [key]: value,
         };
 
-
-        AsyncStorage
-          .setItem(
-            KEY,
-            JSON.stringify(next)
-          )
-          .catch(() => {});
-
+        /*
+         * Don't use local storage as the
+         * source of truth for activity status.
+         */
+        if (key !== 'showOnline') {
+          AsyncStorage
+            .setItem(
+              KEY,
+              JSON.stringify(next)
+            )
+            .catch(() => {});
+        }
 
         return next;
       });
@@ -108,18 +114,34 @@ export function SettingsProvider({
   );
 
 
-  /*
-   * Theme
-   */
+  const setLocalSetting = useCallback(
+    (key, value) => {
+      setSettings((previous) => {
+        const next = {
+          ...previous,
+          [key]: value,
+        };
+
+        AsyncStorage
+          .setItem(
+            KEY,
+            JSON.stringify(next)
+          )
+          .catch(() => {});
+
+        return next;
+      });
+    },
+    []
+  );
+
+
   const isDark =
     settings.themeMode === 'system'
       ? system === 'dark'
       : settings.themeMode === 'dark';
 
 
-  /*
-   * Vibration
-   */
   const vibrate = useCallback(
     (pattern = 40) => {
       if (settings.vibration) {
@@ -130,33 +152,26 @@ export function SettingsProvider({
   );
 
 
-  /*
-   * Theme object
-   */
   const theme = useMemo(
     () => ({
       isDark,
-
       colors: isDark
         ? darkColors
         : lightColors,
-
       fonts,
-
       gradient,
     }),
     [isDark]
   );
 
 
-  /*
-   * Context value
-   */
   const value = useMemo(
     () => ({
       settings,
 
       setSetting,
+
+      setLocalSetting,
 
       vibrate,
 
@@ -165,15 +180,13 @@ export function SettingsProvider({
     [
       settings,
       setSetting,
+      setLocalSetting,
       vibrate,
       theme,
     ]
   );
 
 
-  /*
-   * Wait until AsyncStorage has loaded.
-   */
   if (!loaded) {
     return null;
   }
