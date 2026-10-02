@@ -60,16 +60,44 @@ jobs:
 
 
       # ==================================================
-      # 6. VERIFY EXPO
+      # 6. SHOW INSTALLED VERSIONS
       # ==================================================
 
-      - name: Check Expo dependencies (report only — doesn't fail the build)
+      - name: Show installed React Navigation versions
+        run: |
+          echo "=========================================="
+          echo "React Navigation versions"
+          echo "=========================================="
+
+          npm ls @react-navigation/native \
+            @react-navigation/bottom-tabs \
+            @react-navigation/native-stack \
+            react-native-screens \
+            react-native-safe-area-context \
+            --depth=0 || true
+
+          echo ""
+          echo "=========================================="
+          echo "Expo / React / React Native versions"
+          echo "=========================================="
+
+          npm ls expo \
+            react \
+            react-native \
+            --depth=0 || true
+
+
+      # ==================================================
+      # 7. VERIFY EXPO
+      # ==================================================
+
+      - name: Check Expo dependencies
         run: |
           npx expo-doctor || echo "expo-doctor reported warnings above — continuing anyway."
 
 
       # ==================================================
-      # 7. GENERATE ANDROID PROJECT
+      # 8. GENERATE ANDROID PROJECT
       # ==================================================
 
       - name: Generate Android project
@@ -80,7 +108,7 @@ jobs:
 
 
       # ==================================================
-      # 8. RESTORE RELEASE KEYSTORE
+      # 9. RESTORE RELEASE KEYSTORE
       # ==================================================
 
       - name: Restore King X release keystore
@@ -104,7 +132,7 @@ jobs:
 
 
       # ==================================================
-      # 9. CONFIGURE RELEASE SIGNING
+      # 10. CONFIGURE RELEASE SIGNING
       # ==================================================
 
       - name: Configure King X release signing
@@ -220,7 +248,7 @@ jobs:
 
 
       # ==================================================
-      # 10. VERIFY SIGNING
+      # 11. VERIFY SIGNING
       # ==================================================
 
       - name: Verify signing configuration
@@ -241,7 +269,7 @@ jobs:
 
 
       # ==================================================
-      # 11. CHECK SHA-1
+      # 12. CHECK SHA-1
       # ==================================================
 
       - name: Check release SHA-1
@@ -257,7 +285,7 @@ jobs:
 
 
       # ==================================================
-      # 12. CHECK EXPO BUNDLE
+      # 13. CHECK EXPO BUNDLE
       # ==================================================
 
       - name: Check Expo bundle
@@ -268,7 +296,7 @@ jobs:
 
 
       # ==================================================
-      # 13. BUILD RELEASE APK
+      # 14. BUILD RELEASE APK
       # ==================================================
 
       - name: Build release APK
@@ -286,7 +314,7 @@ jobs:
 
 
       # ==================================================
-      # 14. VERIFY APK
+      # 15. VERIFY APK
       # ==================================================
 
       - name: Verify APK exists
@@ -298,7 +326,7 @@ jobs:
 
 
       # ==================================================
-      # 15. UPLOAD APK
+      # 16. UPLOAD APK
       # ==================================================
 
       - name: Upload APK
@@ -309,7 +337,7 @@ jobs:
 
 
       # ==================================================
-      # 16. CLEANUP
+      # 17. CLEANUP
       # ==================================================
 
       - name: Cleanup signing key
