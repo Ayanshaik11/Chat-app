@@ -1,12 +1,15 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { ActivityIndicator, View } from 'react-native';
+
 import {
   NavigationContainer,
   DarkTheme,
   DefaultTheme,
 } from '@react-navigation/native';
+
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+
 import { Ionicons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 
@@ -46,54 +49,70 @@ const TAB_ICONS = {
 
 function Tabs() {
   const { colors, fonts } = useTheme();
+
   const {
     unreadNotifs,
     unreadMessages,
   } = useAppData();
 
+  const screenOptions = useMemo(() => {
+    return ({ route }) => {
+      const icons =
+        TAB_ICONS[route.name] || ['ellipse', 'ellipse-outline'];
+
+      const hidden =
+        route.name === 'Reels';
+
+      return {
+        headerShown: false,
+
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.subtext,
+
+        tabBarStyle: hidden
+          ? {
+              display: 'none',
+            }
+          : {
+              backgroundColor: colors.tabBar,
+              borderTopColor: colors.border,
+            },
+
+        tabBarLabelStyle: {
+          fontFamily: fonts.medium,
+          fontSize: 10,
+        },
+
+        tabBarBadgeStyle: {
+          backgroundColor: colors.accent,
+          color: '#fff',
+          fontFamily: fonts.semibold,
+          fontSize: 10,
+        },
+
+        tabBarIcon: ({ color, focused }) => {
+          return (
+            <Ionicons
+              name={icons[focused ? 0 : 1]}
+              size={24}
+              color={color}
+            />
+          );
+        },
+      };
+    };
+  }, [
+    colors.primary,
+    colors.subtext,
+    colors.tabBar,
+    colors.border,
+    colors.accent,
+    fonts.medium,
+    fonts.semibold,
+  ]);
+
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => {
-        const icons = TAB_ICONS[route.name];
-
-        return {
-          headerShown: false,
-
-          tabBarActiveTintColor: colors.primary,
-          tabBarInactiveTintColor: colors.subtext,
-
-          tabBarStyle:
-            route.name === 'Reels'
-              ? { display: 'none' }
-              : {
-                  backgroundColor: colors.tabBar,
-                  borderTopColor: colors.border,
-                },
-
-          tabBarLabelStyle: {
-            fontFamily: fonts.medium,
-            fontSize: 10,
-          },
-
-          tabBarBadgeStyle: {
-            backgroundColor: colors.accent,
-            color: '#fff',
-            fontFamily: fonts.semibold,
-            fontSize: 10,
-          },
-
-          tabBarIcon: ({ color, focused }) => {
-            return (
-              <Ionicons
-                name={icons[focused ? 0 : 1]}
-                size={24}
-                color={color}
-              />
-            );
-          },
-        };
-      }}
-    >
+    <Tab.Navigator screenOptions={screenOptions}>
       <Tab.Screen
         name="Home"
         component={HomeScreen}
@@ -151,6 +170,36 @@ export default function RootNavigator() {
     isDark,
   } = useTheme();
 
+  const navTheme = useMemo(() => {
+    const baseTheme =
+      isDark
+        ? DarkTheme
+        : DefaultTheme;
+
+    return {
+      ...baseTheme,
+
+      colors: {
+        ...baseTheme.colors,
+
+        primary: colors.primary,
+        background: colors.bg,
+        card: colors.card,
+        text: colors.text,
+        border: colors.border,
+        notification: colors.accent,
+      },
+    };
+  }, [
+    isDark,
+    colors.primary,
+    colors.bg,
+    colors.card,
+    colors.text,
+    colors.border,
+    colors.accent,
+  ]);
+
   if (
     initializing ||
     (fbUser && !me)
@@ -175,25 +224,6 @@ export default function RootNavigator() {
       </LinearGradient>
     );
   }
-
-  const baseTheme = isDark
-    ? DarkTheme
-    : DefaultTheme;
-
-  const navTheme = {
-    ...baseTheme,
-
-    colors: {
-      ...baseTheme.colors,
-
-      primary: colors.primary,
-      background: colors.bg,
-      card: colors.card,
-      text: colors.text,
-      border: colors.border,
-      notification: colors.accent,
-    },
-  };
 
   return (
     <NavigationContainer
