@@ -1,197 +1,52 @@
-import React, {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useMemo,
-  useState,
-} from 'react';
-
-import {
-  Vibration,
-  useColorScheme,
-} from 'react-native';
-
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { Vibration, useColorScheme } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-import {
-  darkColors,
-  fonts,
-  gradient,
-  lightColors,
-} from '../theme';
-
+import { darkColors, fonts, gradient, lightColors } from '../theme';
 
 const KEY = 'chatapp.settings.v1';
+const defaults = { themeMode: 'dark', vibration: true, showOnline: true }; // King X reads best in dark+gold — light mode is still there in Settings
 
+const SettingsContext = createContext(null);
 
-const defaults = {
-  themeMode: 'dark',
-  vibration: true,
-};
-
-
-const SettingsContext =
-  createContext(null);
-
-
-export function SettingsProvider({
-  children,
-}) {
+export function SettingsProvider({ children }) {
   const system = useColorScheme();
+  const [settings, setSettings] = useState(defaults);
+  const [loaded, setLoaded] = useState(false);
 
-  const [settings, setSettings] =
-    useState(defaults);
-
-  const [loaded, setLoaded] =
-    useState(false);
-
-
-  /*
-   * Load local settings
-   */
   useEffect(() => {
-    AsyncStorage
-      .getItem(KEY)
-      .then((value) => {
-        if (!value) {
-          return;
-        }
-
-        try {
-          const saved =
-            JSON.parse(value);
-
-          setSettings({
-            ...defaults,
-            ...saved,
-          });
-        } catch {}
-      })
+    AsyncStorage.getItem(KEY)
+      .then((v) => v && setSettings({ ...defaults, ...JSON.parse(v) }))
       .catch(() => {})
-      .finally(() => {
-        setLoaded(true);
-      });
+      .finally(() => setLoaded(true));
   }, []);
 
+  const setSetting = useCallback((key, value) => {
+    setSettings((prev) => {
+      const next = { ...prev, [key]: value };
+      AsyncStorage.setItem(KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, []);
 
-  /*
-   * Change local settings.
-   *
-   * Theme and vibration are stored
-   * on this device.
-   *
-   * Activity Status is NOT stored here.
-   * It is stored in Firestore by AuthContext.
-   */
-  const setSetting = useCallback(
-    (key, value) => {
-      setSettings((previous) => {
-        const next = {
-          ...previous,
-          [key]: value,
-        };
+  const isDark = settings.themeMode === 'system' ? system === 'dark' : settings.themeMode === 'dark';
 
-
-        AsyncStorage
-          .setItem(
-            KEY,
-            JSON.stringify(next)
-          )
-          .catch(() => {});
-
-
-        return next;
-      });
-    },
-    []
-  );
-
-
-  /*
-   * Theme
-   */
-  const isDark =
-    settings.themeMode === 'system'
-      ? system === 'dark'
-      : settings.themeMode === 'dark';
-
-
-  /*
-   * Vibration
-   */
   const vibrate = useCallback(
     (pattern = 40) => {
-      if (settings.vibration) {
-        Vibration.vibrate(pattern);
-      }
+      if (settings.vibration) Vibration.vibrate(pattern);
     },
     [settings.vibration]
   );
 
-
-  /*
-   * Theme object
-   */
   const theme = useMemo(
-    () => ({
-      isDark,
-
-      colors: isDark
-        ? darkColors
-        : lightColors,
-
-      fonts,
-
-      gradient,
-    }),
+    () => ({ isDark, colors: isDark ? darkColors : lightColors, fonts, gradient }),
     [isDark]
   );
 
+  const value = useMemo(() => ({ settings, setSetting, vibrate, theme }), [settings, setSetting, vibrate, theme]);
 
-  /*
-   * Context value
-   */
-  const value = useMemo(
-    () => ({
-      settings,
-
-      setSetting,
-
-      vibrate,
-
-      theme,
-    }),
-    [
-      settings,
-      setSetting,
-      vibrate,
-      theme,
-    ]
-  );
-
-
-  /*
-   * Wait until AsyncStorage has loaded.
-   */
-  if (!loaded) {
-    return null;
-  }
-
-
-  return (
-    <SettingsContext.Provider
-      value={value}
-    >
-      {children}
-    </SettingsContext.Provider>
-  );
+  if (!loaded) return null;
+  return <SettingsContext.Provider value={value}>{children}</SettingsContext.Provider>;
 }
 
-
-export const useSettings = () =>
-  useContext(SettingsContext);
-
-
-export const useTheme = () =>
-  useContext(SettingsContext).theme;
+export const useSettings = () => useContext(SettingsContext);
+export const useTheme = () => useContext(SettingsContext).theme;
