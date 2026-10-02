@@ -8,9 +8,9 @@ import React, {
 import {
   Alert,
   Animated,
+  Clipboard,
   Easing,
   FlatList,
-  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -30,8 +30,6 @@ import {
 import {
   LinearGradient,
 } from 'expo-linear-gradient';
-
-import * as Clipboard from 'expo-clipboard';
 
 import {
   collection,
@@ -85,7 +83,8 @@ import Avatar from '../components/Avatar';
 import T from '../components/T';
 
 
-const TYPING_STOP_DELAY_MS = 2500;
+const TYPING_STOP_DELAY_MS =
+  2500;
 
 
 const QUICK_REACTIONS = [
@@ -98,74 +97,9 @@ const QUICK_REACTIONS = [
 ];
 
 
-// ==================================================
-// Hidden native emoji keyboard input
-// ==================================================
-
-function EmojiReactionInput({
-  inputRef,
-  onEmoji,
-}) {
-  const handleChange = (value) => {
-    if (!value) return;
-
-    /*
-     * Because the input is cleared after every selection,
-     * the complete value is the newly selected emoji.
-     *
-     * This is important for emojis such as:
-     * ❤️
-     * 👍🏽
-     * 👨‍👩‍👧‍👦
-     * 🥹
-     */
-
-    const emoji = value.trim();
-
-    if (!emoji) return;
-
-    onEmoji(emoji);
-
-    inputRef.current?.clear();
-
-    Keyboard.dismiss();
-  };
-
-
-  return (
-    <TextInput
-      ref={inputRef}
-      value=""
-      onChangeText={handleChange}
-
-      style={{
-        position: 'absolute',
-        width: 1,
-        height: 1,
-        opacity: 0,
-        left: -100,
-        bottom: 0,
-      }}
-
-      autoCorrect={false}
-      autoCapitalize="none"
-
-      showSoftInputOnFocus={true}
-
-      keyboardType="default"
-
-      blurOnSubmit={false}
-    />
-  );
-}
-
-
-// ==================================================
-// Typing dots
-// ==================================================
-
 function TypingDots() {
-  const { colors } = useTheme();
+  const { colors } =
+    useTheme();
 
   const dots = [
     useRef(
@@ -266,7 +200,6 @@ function TypingDots() {
         (value, index) => (
           <Animated.View
             key={index}
-
             style={{
               width: 7,
 
@@ -315,42 +248,36 @@ function TypingDots() {
 }
 
 
-// ==================================================
-// Reaction bar
-// ==================================================
-
 function ReactionBar({
-  message,
-  me,
-  chatId,
-  onMore,
+  item,
+  meId,
 }) {
-  const { colors } = useTheme();
+  const { colors } =
+    useTheme();
 
-  const currentReaction =
-    message.reactions?.[me.id] ||
-    null;
+  const reactions =
+    item.reactions || {};
+
+  const counts = {};
 
 
-  const react = async (
-    reaction
-  ) => {
-    try {
-      await reactToMessage(
-        chatId,
-        message,
-        me,
-        currentReaction === reaction
-          ? null
-          : reaction
-      );
-    } catch (error) {
-      Alert.alert(
-        'Reaction failed',
-        'Could not update the reaction.'
-      );
-    }
-  };
+  Object.values(
+    reactions
+  ).forEach((reaction) => {
+    if (!reaction) return;
+
+    counts[reaction] =
+      (counts[reaction] || 0) + 1;
+  });
+
+
+  const entries =
+    Object.entries(counts);
+
+
+  if (!entries.length) {
+    return null;
+  }
 
 
   return (
@@ -358,99 +285,50 @@ function ReactionBar({
       style={{
         flexDirection: 'row',
 
-        alignItems: 'center',
+        alignSelf:
+          item.senderId === meId
+            ? 'flex-end'
+            : 'flex-start',
 
-        alignSelf: 'flex-start',
+        marginTop: -3,
 
-        marginTop: 4,
+        marginHorizontal: 8,
 
         backgroundColor:
           colors.card,
-
-        borderRadius: 22,
 
         borderWidth: 1,
 
         borderColor:
           colors.border,
 
-        paddingHorizontal: 5,
+        borderRadius: 12,
 
-        paddingVertical: 4,
+        paddingHorizontal: 6,
+
+        paddingVertical: 2,
       }}
     >
-
-      {QUICK_REACTIONS.map(
-        (reaction) => (
-          <Pressable
+      {entries.map(
+        ([reaction, count]) => (
+          <T
             key={reaction}
-
-            onPress={() =>
-              react(reaction)
-            }
-
+            size={12}
             style={{
-              width: 36,
-
-              height: 36,
-
-              alignItems:
-                'center',
-
-              justifyContent:
-                'center',
-
-              borderRadius: 18,
-
-              backgroundColor:
-                currentReaction ===
-                reaction
-                  ? colors.inputBg
-                  : 'transparent',
+              marginHorizontal: 2,
             }}
           >
-            <T size={19}>
-              {reaction}
-            </T>
-          </Pressable>
+            {reaction}
+            {count > 1
+              ? ` ${count}`
+              : ''}
+          </T>
         )
       )}
-
-
-      {/* + = native Android emoji keyboard */}
-
-      <Pressable
-        onPress={onMore}
-
-        style={{
-          width: 36,
-
-          height: 36,
-
-          alignItems:
-            'center',
-
-          justifyContent:
-            'center',
-
-          borderRadius: 18,
-        }}
-      >
-        <Ionicons
-          name="add"
-          size={22}
-          color={colors.subtext}
-        />
-      </Pressable>
-
     </View>
   );
 }
 
-
-// ==================================================
-// Chat Screen
-// ==================================================
 
 export default function ChatScreen({
   route,
@@ -507,17 +385,6 @@ export default function ChatScreen({
   ] = useState(null);
 
 
-  /*
-   * Message currently receiving
-   * a custom emoji reaction.
-   */
-
-  const [
-    emojiMessage,
-    setEmojiMessage,
-  ] = useState(null);
-
-
   const amTypingRef =
     useRef(false);
 
@@ -526,18 +393,9 @@ export default function ChatScreen({
     useRef(null);
 
 
-  /*
-   * Hidden TextInput used to open
-   * the Android emoji keyboard.
-   */
-
-  const emojiInputRef =
-    useRef(null);
-
-
-  // ==================================================
+  // --------------------------------------------------
   // Messages listener
-  // ==================================================
+  // --------------------------------------------------
 
   useEffect(() => {
     const unsubscribe =
@@ -560,12 +418,11 @@ export default function ChatScreen({
 
         (snap) => {
           setMessages(
-            snap.docs.map(
-              (doc) => ({
+            snap.docs
+              .map((doc) => ({
                 id: doc.id,
                 ...doc.data(),
-              })
-            )
+              }))
           );
         },
 
@@ -577,9 +434,9 @@ export default function ChatScreen({
   }, [chatId]);
 
 
-  // ==================================================
+  // --------------------------------------------------
   // Mark read
-  // ==================================================
+  // --------------------------------------------------
 
   useFocusEffect(
     useCallback(() => {
@@ -612,9 +469,9 @@ export default function ChatScreen({
   ]);
 
 
-  // ==================================================
-  // Clear typing
-  // ==================================================
+  // --------------------------------------------------
+  // Clear typing when leaving
+  // --------------------------------------------------
 
   useEffect(
     () => {
@@ -645,9 +502,9 @@ export default function ChatScreen({
   );
 
 
-  // ==================================================
+  // --------------------------------------------------
   // Seen
-  // ==================================================
+  // --------------------------------------------------
 
   const lastMine =
     messages[0]?.senderId === me.id
@@ -672,9 +529,9 @@ export default function ChatScreen({
       );
 
 
-  // ==================================================
+  // --------------------------------------------------
   // Typing
-  // ==================================================
+  // --------------------------------------------------
 
   const otherTyping =
     !!chats[chatId]
@@ -682,9 +539,9 @@ export default function ChatScreen({
       ?.[user.id];
 
 
-  // ==================================================
+  // --------------------------------------------------
   // Text input
-  // ==================================================
+  // --------------------------------------------------
 
   const onChangeText = (
     value
@@ -741,9 +598,9 @@ export default function ChatScreen({
   };
 
 
-  // ==================================================
-  // Send message
-  // ==================================================
+  // --------------------------------------------------
+  // Send
+  // --------------------------------------------------
 
   const send = async () => {
     const message =
@@ -798,9 +655,9 @@ export default function ChatScreen({
   };
 
 
-  // ==================================================
-  // Quick reaction
-  // ==================================================
+  // --------------------------------------------------
+  // Reaction
+  // --------------------------------------------------
 
   const handleReaction =
     async (
@@ -811,13 +668,14 @@ export default function ChatScreen({
         const current =
           message.reactions?.[
             me.id
-          ] || null;
+          ];
 
 
+        // Tap same reaction = remove
         await reactToMessage(
           chatId,
-          message,
-          me,
+          message.id,
+          me.id,
           current === reaction
             ? null
             : reaction
@@ -832,76 +690,11 @@ export default function ChatScreen({
     };
 
 
-  // ==================================================
-  // Open Android emoji keyboard
-  // ==================================================
-
-  const openEmojiKeyboard =
-    (message) => {
-      setEmojiMessage(message);
-
-      /*
-       * Wait until React has rendered
-       * the hidden input.
-       */
-
-      setTimeout(() => {
-        emojiInputRef.current?.focus();
-      }, 150);
-    };
-
-
-  // ==================================================
-  // Custom emoji reaction
-  // ==================================================
-
-  const handleEmojiReaction =
-    async (emoji) => {
-      const message =
-        emojiMessage;
-
-
-      if (
-        !message ||
-        !emoji
-      ) {
-        return;
-      }
-
-
-      try {
-        const current =
-          message.reactions?.[
-            me.id
-          ] || null;
-
-
-        await reactToMessage(
-          chatId,
-          message,
-          me,
-          current === emoji
-            ? null
-            : emoji
-        );
-
-      } catch {
-        Alert.alert(
-          'Reaction failed',
-          'Could not add this reaction.'
-        );
-      }
-
-
-      setEmojiMessage(null);
-    };
-
-
-  // ==================================================
+  // --------------------------------------------------
   // Copy
-  // ==================================================
+  // --------------------------------------------------
 
-  const copyMessage = async (
+  const copyMessage = (
     message
   ) => {
     if (
@@ -912,22 +705,15 @@ export default function ChatScreen({
     }
 
 
-    try {
-      await Clipboard.setStringAsync(
-        message.text
-      );
-    } catch {
-      Alert.alert(
-        'Copy failed',
-        'Could not copy the message.'
-      );
-    }
+    Clipboard.setString(
+      message.text
+    );
   };
 
 
-  // ==================================================
+  // --------------------------------------------------
   // Reply
-  // ==================================================
+  // --------------------------------------------------
 
   const replyMessage = (
     message
@@ -943,16 +729,15 @@ export default function ChatScreen({
   };
 
 
-  // ==================================================
+  // --------------------------------------------------
   // Unsend
-  // ==================================================
+  // --------------------------------------------------
 
   const confirmUnsend =
     (message) => {
       Alert.alert(
         'Unsend message?',
         'This message will be removed for everyone.',
-
         [
           {
             text: 'Cancel',
@@ -982,16 +767,15 @@ export default function ChatScreen({
     };
 
 
-  // ==================================================
+  // --------------------------------------------------
   // Delete for me
-  // ==================================================
+  // --------------------------------------------------
 
   const confirmDeleteForMe =
     (message) => {
       Alert.alert(
         'Delete for you?',
         'This message will disappear from your chat.',
-
         [
           {
             text: 'Cancel',
@@ -1022,9 +806,9 @@ export default function ChatScreen({
     };
 
 
-  // ==================================================
-  // Long press message menu
-  // ==================================================
+  // --------------------------------------------------
+  // Long press menu
+  // --------------------------------------------------
 
   const showMessageMenu =
     (message) => {
@@ -1061,7 +845,6 @@ export default function ChatScreen({
 
         {
           text: 'Reply',
-
           onPress: () =>
             replyMessage(
               message
@@ -1076,7 +859,6 @@ export default function ChatScreen({
       ) {
         actions.push({
           text: 'Copy',
-
           onPress: () =>
             copyMessage(
               message
@@ -1088,7 +870,6 @@ export default function ChatScreen({
       if (mine) {
         actions.push({
           text: 'Unsend',
-
           style: 'destructive',
 
           onPress: () =>
@@ -1101,7 +882,6 @@ export default function ChatScreen({
 
       actions.push({
         text: 'Delete for you',
-
         style: 'destructive',
 
         onPress: () =>
@@ -1113,7 +893,6 @@ export default function ChatScreen({
 
       actions.push({
         text: 'Cancel',
-
         style: 'cancel',
       });
 
@@ -1126,9 +905,9 @@ export default function ChatScreen({
     };
 
 
-  // ==================================================
+  // --------------------------------------------------
   // Render message
-  // ==================================================
+  // --------------------------------------------------
 
   const renderItem = ({
     item,
@@ -1212,7 +991,6 @@ export default function ChatScreen({
               maxWidth: 260,
             }}
           >
-
             <T
               size={10}
               color="primary"
@@ -1221,7 +999,6 @@ export default function ChatScreen({
               {item.replyTo.senderName}
             </T>
 
-
             <T
               size={11}
               color="subtext"
@@ -1229,12 +1006,9 @@ export default function ChatScreen({
             >
               {item.replyTo.text}
             </T>
-
           </View>
         ) : null}
 
-
-        {/* Message bubble */}
 
         <Pressable
           onLongPress={() =>
@@ -1275,7 +1049,6 @@ export default function ChatScreen({
             <T
               color="subtext"
               size={14}
-
               style={{
                 fontStyle:
                   'italic',
@@ -1322,147 +1095,11 @@ export default function ChatScreen({
         </Pressable>
 
 
-        {/* Reactions */}
+        <ReactionBar
+          item={item}
+          meId={me.id}
+        />
 
-        {item.reactions &&
-        Object.keys(
-          item.reactions
-        ).length > 0 ? (
-          <View
-            style={{
-              flexDirection:
-                'row',
-
-              alignSelf:
-                mine
-                  ? 'flex-end'
-                  : 'flex-start',
-
-              marginTop: -3,
-
-              marginHorizontal: 8,
-
-              backgroundColor:
-                colors.card,
-
-              borderWidth: 1,
-
-              borderColor:
-                colors.border,
-
-              borderRadius: 12,
-
-              paddingHorizontal: 6,
-
-              paddingVertical: 2,
-            }}
-          >
-
-            {Object.entries(
-              item.reactions
-            ).map(
-              ([
-                reaction,
-                userId,
-              ]) => {
-                /*
-                 * Count identical reactions.
-                 */
-
-                const count =
-                  Object.values(
-                    item.reactions
-                  ).filter(
-                    (value) =>
-                      value ===
-                      reaction
-                  ).length;
-
-
-                /*
-                 * Only render the first
-                 * occurrence of each emoji.
-                 */
-
-                const firstIndex =
-                  Object.values(
-                    item.reactions
-                  ).indexOf(
-                    reaction
-                  );
-
-                const currentIndex =
-                  Object.values(
-                    item.reactions
-                  ).indexOf(
-                    userId
-                  );
-
-
-                if (
-                  firstIndex !==
-                  currentIndex
-                ) {
-                  return null;
-                }
-
-
-                return (
-                  <Pressable
-                    key={
-                      reaction
-                    }
-
-                    onPress={() =>
-                      handleReaction(
-                        item,
-                        reaction
-                      )
-                    }
-                  >
-                    <T
-                      size={12}
-
-                      style={{
-                        marginHorizontal:
-                          2,
-                      }}
-                    >
-                      {reaction}
-
-                      {count > 1
-                        ? ` ${count}`
-                        : ''}
-                    </T>
-                  </Pressable>
-                );
-              }
-            )}
-
-          </View>
-        ) : null}
-
-
-        {/* Reaction bar */}
-
-        {!unsent ? (
-          <ReactionBar
-            message={item}
-
-            me={me}
-
-            chatId={chatId}
-
-            onMore={() =>
-              openEmojiKeyboard(
-                item
-              )
-            }
-          />
-        ) : null}
-
-
-        {/* Seen */}
 
         {seenLabel ? (
           <T
@@ -1487,9 +1124,9 @@ export default function ChatScreen({
   };
 
 
-  // ==================================================
+  // --------------------------------------------------
   // Screen
-  // ==================================================
+  // --------------------------------------------------
 
   return (
     <Screen
@@ -1561,7 +1198,6 @@ export default function ChatScreen({
 
             <T
               size={11}
-
               color={
                 otherTyping
                   ? 'primary'
@@ -1607,9 +1243,7 @@ export default function ChatScreen({
 
             data={messages}
 
-            keyExtractor={(
-              message
-            ) =>
+            keyExtractor={(message) =>
               message.id
             }
 
@@ -1619,7 +1253,6 @@ export default function ChatScreen({
 
             contentContainerStyle={{
               padding: 12,
-
               flexGrow: 1,
             }}
 
@@ -1661,7 +1294,6 @@ export default function ChatScreen({
 
               <T
                 color="subtext"
-
                 style={{
                   textAlign:
                     'center',
@@ -1696,11 +1328,9 @@ export default function ChatScreen({
               borderTopColor:
                 colors.border,
 
-              paddingHorizontal:
-                12,
+              paddingHorizontal: 12,
 
-              paddingVertical:
-                8,
+              paddingVertical: 8,
             }}
           >
 
@@ -1719,9 +1349,7 @@ export default function ChatScreen({
 
               <T
                 size={11}
-
                 color="primary"
-
                 weight="semibold"
               >
                 Replying to{' '}
@@ -1734,9 +1362,7 @@ export default function ChatScreen({
 
               <T
                 size={12}
-
                 color="subtext"
-
                 numberOfLines={1}
               >
                 {replyTo.text}
@@ -1754,9 +1380,7 @@ export default function ChatScreen({
             >
               <Ionicons
                 name="close-circle"
-
                 size={24}
-
                 color={
                   colors.subtext
                 }
@@ -1871,9 +1495,7 @@ export default function ChatScreen({
 
               <Ionicons
                 name="send"
-
                 size={19}
-
                 color="#fff"
 
                 style={{
@@ -1888,21 +1510,6 @@ export default function ChatScreen({
         </View>
 
       </KeyboardAvoidingView>
-
-
-      {/* ==========================================
-          Hidden native emoji keyboard
-          ========================================== */}
-
-      <EmojiReactionInput
-        inputRef={
-          emojiInputRef
-        }
-
-        onEmoji={
-          handleEmojiReaction
-        }
-      />
 
     </Screen>
   );
