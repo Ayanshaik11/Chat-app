@@ -1,70 +1,52 @@
 import React from 'react';
-import { Ionicons } from '@expo/vector-icons';
-import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
+import {
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
 
-import HomeScreen from '../screens/HomeScreen';
-import ReelsScreen from '../screens/ReelsScreen';
-import ProfileScreen from '../screens/ProfileScreen';
-
-const Tab = createBottomTabNavigator();
-
-export default function MainTabs() {
+export default function HomeScreen() {
   return (
-    <Tab.Navigator
-      screenOptions={({ route }) => ({
-        headerShown: false,
+    <View style={styles.container}>
+      <Text style={styles.title}>
+        KING X
+      </Text>
 
-        tabBarActiveTintColor: '#ffffff',
-        tabBarInactiveTintColor: '#777777',
+      <Text style={styles.subtitle}>
+        Home
+      </Text>
 
-        tabBarIcon: ({ color, size }) => {
-          let icon = 'ellipse-outline';
-
-          if (route.name === 'Home') {
-            icon = 'home-outline';
-          }
-
-          if (route.name === 'Reels') {
-            icon = 'videocam-outline';
-          }
-
-          if (route.name === 'Profile') {
-            icon = 'person-outline';
-          }
-
-          return (
-            <Ionicons
-              name={icon}
-              size={size}
-              color={color}
-            />
-          );
-        },
-      })}
-    >
-      <Tab.Screen
-        name="Home"
-        component={HomeScreen}
-        options={{
-          title: 'Home',
-        }}
-      />
-
-      <Tab.Screen
-        name="Reels"
-        component={ReelsScreen}
-        options={{
-          title: 'Videos',
-        }}
-      />
-
-      <Tab.Screen
-        name="Profile"
-        component={ProfileScreen}
-        options={{
-          title: 'Profile',
-        }}
-      />
-    </Tab.Navigator>
+      <Text style={styles.text}>
+        Welcome to King X
+      </Text>
+    </View>
   );
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#0A0A0A',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  title: {
+    color: '#E11D2A',
+    fontSize: 36,
+    fontWeight: '800',
+  },
+
+  subtitle: {
+    color: '#FFFFFF',
+    fontSize: 22,
+    fontWeight: '700',
+    marginTop: 10,
+  },
+
+  text: {
+    color: '#888888',
+    fontSize: 14,
+    marginTop: 8,
+  },
+});
