@@ -5,11 +5,19 @@ import {
   NavigationContainer,
 } from '@react-navigation/native';
 
+import {
+  createNativeStackNavigator,
+} from '@react-navigation/native-stack';
+
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { useAuth } from '../context/AuthContext';
 
+import HomeScreen from '../screens/HomeScreen';
+
 import { navigationRef } from './navigationRef';
+
+const Stack = createNativeStackNavigator();
 
 export default function RootNavigator() {
   const { fbUser, me, initializing } = useAuth();
@@ -43,34 +51,23 @@ export default function RootNavigator() {
 
   return (
     <NavigationContainer ref={navigationRef}>
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: '#0A0A0A',
-          alignItems: 'center',
-          justifyContent: 'center',
+      <Stack.Navigator
+        screenOptions={{
+          headerShown: false,
         }}
       >
-        <Text
-          style={{
-            color: '#E11D2A',
-            fontSize: 32,
-            fontWeight: '800',
-          }}
-        >
-          KING X
-        </Text>
-
-        <Text
-          style={{
-            color: '#fff',
-            marginTop: 12,
-            fontSize: 16,
-          }}
-        >
-          NavigationContainer test
-        </Text>
-      </View>
+        {fbUser ? (
+          <Stack.Screen
+            name="Main"
+            component={HomeScreen}
+          />
+        ) : (
+          <Stack.Screen
+            name="Login"
+            component={View}
+          />
+        )}
+      </Stack.Navigator>
     </NavigationContainer>
   );
 }
