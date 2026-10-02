@@ -1,5 +1,9 @@
 import React from 'react';
-import { ActivityIndicator, Text, View } from 'react-native';
+import {
+  ActivityIndicator,
+  Text,
+  View,
+} from 'react-native';
 
 import {
   NavigationContainer,
@@ -13,11 +17,52 @@ import { LinearGradient } from 'expo-linear-gradient';
 
 import { useAuth } from '../context/AuthContext';
 
-import HomeScreen from '../screens/HomeScreen';
-
 import { navigationRef } from './navigationRef';
 
 const Stack = createNativeStackNavigator();
+
+function TestScreen() {
+  return (
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: '#0A0A0A',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Text
+        style={{
+          color: '#E11D2A',
+          fontSize: 32,
+          fontWeight: '800',
+        }}
+      >
+        KING X
+      </Text>
+
+      <Text
+        style={{
+          color: '#FFFFFF',
+          marginTop: 12,
+          fontSize: 17,
+        }}
+      >
+        Stack test
+      </Text>
+
+      <Text
+        style={{
+          color: '#777777',
+          marginTop: 8,
+          fontSize: 13,
+        }}
+      >
+        No HomeScreen • No Tabs
+      </Text>
+    </View>
+  );
+}
 
 export default function RootNavigator() {
   const { fbUser, me, initializing } = useAuth();
@@ -33,13 +78,13 @@ export default function RootNavigator() {
         }}
       >
         <ActivityIndicator
-          color="#fff"
+          color="#FFFFFF"
           size="large"
         />
 
         <Text
           style={{
-            color: '#fff',
+            color: '#FFFFFF',
             marginTop: 15,
           }}
         >
@@ -56,17 +101,10 @@ export default function RootNavigator() {
           headerShown: false,
         }}
       >
-        {fbUser ? (
-          <Stack.Screen
-            name="Main"
-            component={HomeScreen}
-          />
-        ) : (
-          <Stack.Screen
-            name="Login"
-            component={View}
-          />
-        )}
+        <Stack.Screen
+          name="Main"
+          component={TestScreen}
+        />
       </Stack.Navigator>
     </NavigationContainer>
   );
