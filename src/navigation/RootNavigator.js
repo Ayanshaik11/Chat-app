@@ -1,40 +1,17 @@
 import React from 'react';
-import { ActivityIndicator } from 'react-native';
-
 import {
-  NavigationContainer,
-  DarkTheme,
-  DefaultTheme,
-} from '@react-navigation/native';
-
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
+  ActivityIndicator,
+  Text,
+  View,
+} from 'react-native';
 
 import { LinearGradient } from 'expo-linear-gradient';
 
 import { useAuth } from '../context/AuthContext';
-import { useTheme } from '../context/SettingsContext';
-
-import LoginScreen from '../screens/LoginScreen';
-import HomeScreen from '../screens/HomeScreen';
-
-import ChatScreen from '../screens/ChatScreen';
-import UserProfileScreen from '../screens/UserProfileScreen';
-import FriendsListScreen from '../screens/FriendsListScreen';
-import PostDetailScreen from '../screens/PostDetailScreen';
-import EditProfileScreen from '../screens/EditProfileScreen';
-import SettingsScreen from '../screens/SettingsScreen';
-import CreateScreen from '../screens/CreateScreen';
-import StoryViewerScreen from '../screens/StoryViewerScreen';
-
-import { navigationRef } from './navigationRef';
-
-const Stack = createNativeStackNavigator();
 
 export default function RootNavigator() {
   const { fbUser, me, initializing } = useAuth();
-  const { colors, isDark } = useTheme();
 
-  // Firebase/auth is still initializing
   if (initializing || (fbUser && !me)) {
     return (
       <LinearGradient
@@ -49,99 +26,61 @@ export default function RootNavigator() {
           color="#fff"
           size="large"
         />
+
+        <Text
+          style={{
+            color: '#fff',
+            marginTop: 15,
+            fontSize: 16,
+          }}
+        >
+          Loading King X...
+        </Text>
       </LinearGradient>
     );
   }
 
-  const baseTheme = isDark
-    ? DarkTheme
-    : DefaultTheme;
-
-  const navTheme = {
-    ...baseTheme,
-    colors: {
-      ...baseTheme.colors,
-      primary: colors.primary,
-      background: colors.bg,
-      card: colors.card,
-      text: colors.text,
-      border: colors.border,
-      notification: colors.accent,
-    },
-  };
-
   return (
-    <NavigationContainer
-      ref={navigationRef}
-      theme={navTheme}
+    <View
+      style={{
+        flex: 1,
+        backgroundColor: '#0A0A0A',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 20,
+      }}
     >
-      <Stack.Navigator
-        screenOptions={{
-          headerShown: false,
+      <Text
+        style={{
+          color: '#E11D2A',
+          fontSize: 32,
+          fontWeight: '800',
         }}
       >
-        {fbUser ? (
-          <>
-            {/* TEMPORARY TEST:
-                Home is opened directly.
-                BottomTabNavigator is completely removed.
-            */}
-            <Stack.Screen
-              name="Main"
-              component={HomeScreen}
-            />
+        KING X
+      </Text>
 
-            <Stack.Screen
-              name="Chat"
-              component={ChatScreen}
-            />
+      <Text
+        style={{
+          color: '#fff',
+          marginTop: 12,
+          fontSize: 16,
+          textAlign: 'center',
+        }}
+      >
+        Navigation diagnostic test
+      </Text>
 
-            <Stack.Screen
-              name="UserProfile"
-              component={UserProfileScreen}
-            />
-
-            <Stack.Screen
-              name="FriendsList"
-              component={FriendsListScreen}
-            />
-
-            <Stack.Screen
-              name="PostDetail"
-              component={PostDetailScreen}
-            />
-
-            <Stack.Screen
-              name="EditProfile"
-              component={EditProfileScreen}
-            />
-
-            <Stack.Screen
-              name="Settings"
-              component={SettingsScreen}
-            />
-
-            <Stack.Screen
-              name="Create"
-              component={CreateScreen}
-            />
-
-            <Stack.Screen
-              name="StoryViewer"
-              component={StoryViewerScreen}
-              options={{
-                presentation: 'fullScreenModal',
-                animation: 'fade',
-              }}
-            />
-          </>
-        ) : (
-          <Stack.Screen
-            name="Login"
-            component={LoginScreen}
-          />
-        )}
-      </Stack.Navigator>
-    </NavigationContainer>
+      <Text
+        style={{
+          color: '#888',
+          marginTop: 8,
+          fontSize: 13,
+          textAlign: 'center',
+        }}
+      >
+        Bottom tabs and React Navigation are completely disabled.
+      </Text>
+    </View>
   );
 }
