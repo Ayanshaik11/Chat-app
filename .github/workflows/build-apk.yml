@@ -12,17 +12,17 @@ jobs:
 
     steps:
 
-      # --------------------------------------------------
-      # 1. Checkout
-      # --------------------------------------------------
+      # ==================================================
+      # 1. CHECKOUT
+      # ==================================================
 
       - name: Checkout
         uses: actions/checkout@v4
 
 
-      # --------------------------------------------------
-      # 2. Node
-      # --------------------------------------------------
+      # ==================================================
+      # 2. NODE
+      # ==================================================
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -30,9 +30,9 @@ jobs:
           node-version: 20
 
 
-      # --------------------------------------------------
-      # 3. Java
-      # --------------------------------------------------
+      # ==================================================
+      # 3. JAVA
+      # ==================================================
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -41,25 +41,47 @@ jobs:
           java-version: 17
 
 
-      # --------------------------------------------------
-      # 4. Install dependencies
-      # --------------------------------------------------
+      # ==================================================
+      # 4. INSTALL NPM DEPENDENCIES
+      # ==================================================
 
-      - name: Install dependencies
-        run: npm install
+      - name: Install npm dependencies
+        run: |
+          npm install
 
 
-      # --------------------------------------------------
-      # 5. Generate Android project
-      # --------------------------------------------------
+      # ==================================================
+      # 5. ALIGN EXPO DEPENDENCIES
+      # ==================================================
+
+      - name: Fix Expo dependency versions
+        run: |
+          npx expo install --fix
+
+
+      # ==================================================
+      # 6. VERIFY EXPO
+      # ==================================================
+
+      - name: Check Expo dependencies
+        run: |
+          npx expo-doctor
+
+
+      # ==================================================
+      # 7. GENERATE ANDROID PROJECT
+      # ==================================================
 
       - name: Generate Android project
-        run: npx expo prebuild --platform android --no-install
+        run: |
+          npx expo prebuild \
+            --platform android \
+            --no-install
 
 
-      # --------------------------------------------------
-      # 6. Restore release keystore
-      # --------------------------------------------------
+      # ==================================================
+      # 8. RESTORE RELEASE KEYSTORE
+      # ==================================================
 
       - name: Restore King X release keystore
         env:
@@ -81,9 +103,9 @@ jobs:
             -storepass "$STORE_PASSWORD"
 
 
-      # --------------------------------------------------
-      # 7. Configure release signing
-      # --------------------------------------------------
+      # ==================================================
+      # 9. CONFIGURE RELEASE SIGNING
+      # ==================================================
 
       - name: Configure King X release signing
         run: |
@@ -94,42 +116,35 @@ jobs:
           path = Path("android/app/build.gradle")
           text = path.read_text()
 
-          signing_block = '''
-              release {
-                  storeFile file("kingx-release.keystore")
-                  storePassword System.getenv("KINGX_STORE_PASSWORD")
-                  keyAlias System.getenv("KINGX_KEY_ALIAS")
-                  keyPassword System.getenv("KINGX_KEY_PASSWORD")
-              }
-          '''
+          release_config = """
+                  release {
+                      storeFile file("kingx-release.keystore")
+                      storePassword System.getenv("KINGX_STORE_PASSWORD")
+                      keyAlias System.getenv("KINGX_KEY_ALIAS")
+                      keyPassword System.getenv("KINGX_KEY_PASSWORD")
+                  }
+          """
 
-          # Remove an existing release signing block if present.
-          text = re.sub(
-              r'\n\s*release\s*\{\s*'
-              r'storeFile\s+.*?'
-              r'keyPassword\s+.*?'
-              r'\n\s*\}',
-              '',
-              text,
-              flags=re.DOTALL
-          )
+          # ------------------------------------------------
+          # Find signingConfigs
+          # ------------------------------------------------
 
-          # Find signingConfigs block.
           match = re.search(
-              r'signingConfigs\s*\{',
+              r'\bsigningConfigs\s*\{',
               text
           )
 
           if match:
               start = match.start()
+              opening = text.find("{", start)
 
               depth = 0
               end = None
-              opening = text.find("{", start)
 
               for i in range(opening, len(text)):
                   if text[i] == "{":
                       depth += 1
+
                   elif text[i] == "}":
                       depth -= 1
 
@@ -137,26 +152,41 @@ jobs:
                           end = i + 1
                           break
 
-              if end:
-                  old_block = text[start:end]
+              if end is None:
+                  raise RuntimeError(
+                      "Could not find end of signingConfigs block"
+                  )
 
-                  if "release {" in old_block:
-                      old_block = re.sub(
-                          r'release\s*\{.*?\}',
-                          signing_block.strip(),
-                          old_block,
-                          flags=re.DOTALL
-                      )
-                  else:
-                      old_block = old_block[:-1] + signing_block + "\n}"
+              block = text[start:end]
 
-                  text = text[:start] + old_block + text[end:]
+              # Remove existing release block.
+              block = re.sub(
+                  r'\brelease\s*\{.*?\}',
+                  '',
+                  block,
+                  flags=re.DOTALL
+              )
+
+              # Add our release block.
+              block = block[:-1] + release_config + "\n}"
+
+              text = text[:start] + block + text[end:]
 
           else:
-              # No signingConfigs block.
-              text = text.replace(
-                  "android {",
-                  """android {
+              # No signingConfigs block exists.
+              android_match = re.search(
+                  r'\bandroid\s*\{',
+                  text
+              )
+
+              if not android_match:
+                  raise RuntimeError(
+                      "Could not find android block"
+                  )
+
+              insert_at = android_match.end()
+
+              signing = """
 
               signingConfigs {
                   release {
@@ -166,11 +196,18 @@ jobs:
                       keyPassword System.getenv("KINGX_KEY_PASSWORD")
                   }
               }
-              """,
-                  1
+              """
+
+              text = (
+                  text[:insert_at]
+                  + signing
+                  + text[insert_at:]
               )
 
-          # Use release signing.
+          # ------------------------------------------------
+          # Use release signing
+          # ------------------------------------------------
+
           text = text.replace(
               "signingConfig signingConfigs.debug",
               "signingConfig signingConfigs.release"
@@ -178,30 +215,34 @@ jobs:
 
           path.write_text(text)
 
-          print("Release signing configuration configured.")
+          print("King X release signing configured.")
           PY
 
 
-      # --------------------------------------------------
-      # 8. Verify signing configuration
-      # --------------------------------------------------
+      # ==================================================
+      # 10. VERIFY SIGNING
+      # ==================================================
 
       - name: Verify signing configuration
         run: |
-          echo "Checking release signing configuration..."
+          echo "Checking keystore..."
 
           test -f android/app/kingx-release.keystore
 
-          grep -n "kingx-release.keystore" android/app/build.gradle
+          echo "Checking signing configuration..."
 
-          grep -n "signingConfigs.release" android/app/build.gradle
+          grep -n "kingx-release.keystore" \
+            android/app/build.gradle
+
+          grep -n "signingConfigs.release" \
+            android/app/build.gradle
 
           echo "Signing configuration looks good."
 
 
-      # --------------------------------------------------
-      # 9. Check release SHA-1
-      # --------------------------------------------------
+      # ==================================================
+      # 11. CHECK SHA-1
+      # ==================================================
 
       - name: Check release SHA-1
         env:
@@ -211,12 +252,13 @@ jobs:
           keytool -list -v \
             -keystore android/app/kingx-release.keystore \
             -alias "$KEY_ALIAS" \
-            -storepass "$STORE_PASSWORD" | grep -E "SHA1:|SHA256:"
+            -storepass "$STORE_PASSWORD" \
+            | grep -E "SHA1:|SHA256:"
 
 
-      # --------------------------------------------------
-      # 10. Check Expo bundle
-      # --------------------------------------------------
+      # ==================================================
+      # 12. CHECK EXPO BUNDLE
+      # ==================================================
 
       - name: Check Expo bundle
         run: |
@@ -225,9 +267,9 @@ jobs:
             --output-dir /tmp/expo-check
 
 
-      # --------------------------------------------------
-      # 11. Build release APK
-      # --------------------------------------------------
+      # ==================================================
+      # 13. BUILD RELEASE APK
+      # ==================================================
 
       - name: Build release APK
         env:
@@ -239,21 +281,25 @@ jobs:
 
           chmod +x gradlew
 
-          ./gradlew assembleRelease --no-daemon
+          ./gradlew assembleRelease \
+            --no-daemon
 
 
-      # --------------------------------------------------
-      # 12. Verify APK
-      # --------------------------------------------------
+      # ==================================================
+      # 14. VERIFY APK
+      # ==================================================
 
       - name: Verify APK exists
         run: |
-          ls -lh android/app/build/outputs/apk/release/*.apk
+          echo "Searching for APK..."
+
+          ls -lh \
+            android/app/build/outputs/apk/release/*.apk
 
 
-      # --------------------------------------------------
-      # 13. Upload APK
-      # --------------------------------------------------
+      # ==================================================
+      # 15. UPLOAD APK
+      # ==================================================
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -262,11 +308,13 @@ jobs:
           path: android/app/build/outputs/apk/release/*.apk
 
 
-      # --------------------------------------------------
-      # 14. Cleanup
-      # --------------------------------------------------
+      # ==================================================
+      # 16. CLEANUP
+      # ==================================================
 
       - name: Cleanup signing key
         if: always()
         run: |
           rm -f android/app/kingx-release.keystore
+
+          echo "Signing key cleaned up."
