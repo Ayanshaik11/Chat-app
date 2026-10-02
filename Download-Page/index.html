@@ -133,9 +133,10 @@
         }
 
         #btn:disabled {
-            opacity: 0.6;
+            opacity: 0.65;
             cursor: not-allowed;
             transform: none;
+            box-shadow: 0 0 15px rgba(0, 99, 255, 0.3);
         }
 
         /* NOTES */
@@ -194,6 +195,7 @@
 </head>
 
 <body>
+
     <!-- NAVBAR -->
 
     <nav class="top-nav">
@@ -201,6 +203,7 @@
 
         <div class="by-king">by Aiyan</div>
     </nav>
+
 
     <!-- MAIN -->
 
@@ -214,28 +217,36 @@
             alt="King X app icon"
         />
 
+
         <!-- APP NAME -->
 
         <h1 class="title">King X</h1>
 
         <p class="subtitle">Official APK Download</p>
 
+
         <!-- VERSION -->
 
-        <p id="version">Checking latest version...</p>
+        <p id="version">
+            Checking latest release...
+        </p>
+
 
         <!-- DOWNLOAD BUTTON -->
 
         <button id="btn" disabled>
-            Checking latest APK...
+            Checking latest release...
         </button>
+
 
         <!-- INSTALLATION NOTES -->
 
         <div class="notes">
+
             <h2>📌 Before installing</h2>
 
             <ul>
+
                 <li>
                     <strong>Use Chrome</strong> to download the APK for the
                     best experience.
@@ -261,9 +272,13 @@
                 <li class="warning">
                     ⚠️ Only install the APK if you trust its source.
                 </li>
+
             </ul>
+
         </div>
+
     </main>
+
 
     <!-- DOWNLOAD SOUND -->
 
@@ -273,78 +288,151 @@
         preload="auto">
     </audio>
 
+
     <script>
-        const button = document.getElementById("btn");
-        const sound = document.getElementById("notify");
-        const versionText = document.getElementById("version");
+
+        const button =
+            document.getElementById("btn");
+
+        const sound =
+            document.getElementById("notify");
+
+        const versionText =
+            document.getElementById("version");
+
 
         const API =
             "https://api.github.com/repos/Ayanshaik11/Chat-app/releases/latest";
 
+
         let downloadURL = null;
 
+
         async function getLatestRelease() {
+
             try {
-                const response = await fetch(API);
+
+                /* Ask GitHub for the latest published release */
+
+                const response =
+                    await fetch(API, {
+                        cache: "no-store"
+                    });
+
 
                 if (!response.ok) {
                     throw new Error("GitHub API error");
                 }
 
-                const release = await response.json();
 
-                /* Get latest release tag */
-                const version = release.tag_name;
+                const release =
+                    await response.json();
 
-                /* Find APK asset */
-                const apk = release.assets.find(asset =>
-                    asset.name.toLowerCase().endsWith(".apk")
-                );
+
+                /* Get release version */
+
+                const version =
+                    release.tag_name;
+
+
+                /* Find APK inside release assets */
+
+                const apk =
+                    release.assets.find(asset =>
+                        asset.name
+                            .toLowerCase()
+                            .endsWith(".apk")
+                    );
+
+
+                /*
+                 * Release exists,
+                 * but APK has not been uploaded yet.
+                 */
 
                 if (!apk) {
-                    throw new Error("No APK found in latest release");
+
+                    versionText.textContent =
+                        "Latest release: " + version;
+
+                    button.disabled = true;
+
+                    button.textContent =
+                        "Preparing latest release...";
+
+                    return;
                 }
 
-                downloadURL = apk.browser_download_url;
 
-                /* Show version */
+                /* APK found */
+
+                downloadURL =
+                    apk.browser_download_url;
+
+
                 versionText.textContent =
                     "Latest version: " + version;
 
-                /* Enable button */
-                button.disabled = false;
-                button.textContent = "Download " + version + " ↓";
 
-            } catch (error) {
+                button.disabled = false;
+
+                button.textContent =
+                    "Download " + version + " ↓";
+
+            }
+
+            catch (error) {
 
                 console.error(error);
 
+
                 versionText.textContent =
-                    "Unable to check latest version";
+                    "Checking latest release...";
+
 
                 button.disabled = true;
-                button.textContent = "APK unavailable";
+
+                button.textContent =
+                    "Preparing latest release...";
             }
+
         }
+
+
+        /* DOWNLOAD BUTTON */
 
         button.addEventListener("click", () => {
 
-            if (!downloadURL) return;
+            if (!downloadURL) {
+                return;
+            }
+
 
             /* Play download sound */
+
             sound.currentTime = 0;
 
             sound.play().catch(() => {});
 
+
             /* Start APK download */
+
             setTimeout(() => {
-                window.location.href = downloadURL;
+
+                window.location.href =
+                    downloadURL;
+
             }, 150);
+
         });
 
-        /* Get latest GitHub release */
+
+        /* Check GitHub */
+
         getLatestRelease();
+
     </script>
+
 </body>
 
 </html>
