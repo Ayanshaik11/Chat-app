@@ -12,25 +12,38 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
+
+      # 1. Checkout
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # 2. Node.js
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: npm
 
+      # 3. Java 17
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
+      # 4. Install dependencies
       - name: Install dependencies
-        run: npm install
+        run: npm ci
 
+      # 5. Verify versions
       - name: Verify Expo dependencies
         run: |
+          echo "===== Node ====="
+          node --version
+
+          echo "===== NPM ====="
+          npm --version
+
           echo "===== Expo ====="
           node -p "require('expo/package.json').version"
 
@@ -40,7 +53,7 @@ jobs:
           echo "===== Expo Modules Core ====="
           node -p "require('expo-modules-core/package.json').version"
 
-          echo "===== Screen Orientation ====="
+          echo "===== Expo Screen Orientation ====="
           node -p "require('expo-screen-orientation/package.json').version"
 
           echo "===== Expo AV ====="
@@ -49,6 +62,7 @@ jobs:
           echo "===== Vector Icons ====="
           node -p "require('@expo/vector-icons/package.json').version"
 
+          echo "===== Dependency Tree ====="
           npm ls \
             expo \
             @expo/vector-icons \
@@ -57,9 +71,11 @@ jobs:
             expo-av \
             react-native
 
+      # 6. Expo Doctor
       - name: Run Expo Doctor
         run: npx expo-doctor
 
+      # 7. Restore Firebase configuration
       - name: Restore Firebase configuration
         env:
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
@@ -76,6 +92,9 @@ jobs:
             exit 1
           fi
 
+          echo "Firebase configuration restored successfully."
+
+      # 8. Generate Android project
       - name: Generate Android project
         run: |
           npx expo prebuild \
@@ -83,14 +102,27 @@ jobs:
             --clean \
             --no-install
 
+      # 9. Verify Android project
       - name: Verify Android project
         run: |
-          test -f android/gradlew
-          test -f android/app/build.gradle
+          if [ ! -f android/gradlew ]; then
+            echo "ERROR: android/gradlew not found."
+            exit 1
+          fi
 
+          if [ ! -f android/app/build.gradle ]; then
+            echo "ERROR: android/app/build.gradle not found."
+            exit 1
+          fi
+
+          echo "Android project generated successfully."
+
+      # 10. Remove Firebase source file
       - name: Remove Firebase source file
-        run: rm -f google-services.json
+        run: |
+          rm -f google-services.json
 
+      # 11. Restore release keystore
       - name: Restore release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -105,8 +137,14 @@ jobs:
           echo "$KEYSTORE_BASE64" | base64 --decode \
             > android/app/kingx-release.keystore
 
-          test -s android/app/kingx-release.keystore
+          if [ ! -s android/app/kingx-release.keystore ]; then
+            echo "ERROR: Keystore was not restored."
+            exit 1
+          fi
 
+          echo "Release keystore restored successfully."
+
+      # 12. Configure signing properties
       - name: Configure signing properties
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -136,6 +174,9 @@ jobs:
           MYAPP_UPLOAD_KEY_PASSWORD=$KEY_PASSWORD
           EOF
 
+          echo "Signing properties configured."
+
+      # 13. Configure release signing
       - name: Configure release signing
         run: |
           python3 <<'PY'
@@ -144,7 +185,8 @@ jobs:
           path = Path("android/app/build.gradle")
           text = path.read_text()
 
-          signing_block = """
+          if "MYAPP_UPLOAD_STORE_FILE" not in text:
+              signing_block = """
           signingConfigs {
               release {
                   if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
@@ -158,7 +200,6 @@ jobs:
 
           """
 
-          if "MYAPP_UPLOAD_STORE_FILE" not in text:
               if "buildTypes {" not in text:
                   raise SystemExit("ERROR: buildTypes block not found.")
 
@@ -169,8 +210,11 @@ jobs:
               )
 
           path.write_text(text)
+
+          print("Release signing configuration added.")
           PY
 
+      # 14. Set release signing
       - name: Set release signing
         run: |
           python3 <<'PY'
@@ -213,19 +257,36 @@ jobs:
           )
 
           path.write_text(text)
+
+          print("Release build configured for King X keystore.")
           PY
 
+      # 15. Prepare Gradle
       - name: Prepare Gradle
         working-directory: android
-        run: chmod +x gradlew
+        run: |
+          chmod +x gradlew
 
+      # 16. Test JavaScript bundle BEFORE Gradle
+      - name: Test JavaScript bundle
+        run: |
+          echo "======================================"
+          echo "       TESTING ANDROID JS BUNDLE"
+          echo "======================================"
+
+          npx expo export \
+            --platform android
+
+      # 17. Build release APK
       - name: Build release APK
         working-directory: android
         run: |
           ./gradlew assembleRelease \
             --no-daemon \
-            --stacktrace
+            --stacktrace \
+            --info
 
+      # 18. Verify APK
       - name: Verify APK
         run: |
           APK="android/app/build/outputs/apk/release/app-release.apk"
@@ -235,12 +296,15 @@ jobs:
             exit 1
           fi
 
+          echo ""
           echo "======================================"
           echo "       KING X APK GENERATED"
           echo "======================================"
+          echo ""
 
           ls -lh "$APK"
 
+      # 19. Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
