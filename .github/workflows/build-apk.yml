@@ -13,26 +13,16 @@ jobs:
 
     steps:
 
-      # --------------------------------------------------
-      # 1. Checkout
-      # --------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
 
-      # --------------------------------------------------
-      # 2. Node.js
-      # Expo SDK 52 is kept on Node 20
-      # --------------------------------------------------
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
 
 
-      # --------------------------------------------------
-      # 3. Java 17
-      # --------------------------------------------------
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
@@ -40,51 +30,71 @@ jobs:
           java-version: "17"
 
 
-      # --------------------------------------------------
-      # 4. Install npm dependencies
-      # No npm cache because the repo has no lockfile
-      # --------------------------------------------------
-      - name: Install dependencies
-        run: npm install
-
-
-      # --------------------------------------------------
-      # 5. Verify Expo dependency tree
-      # --------------------------------------------------
-      - name: Verify Expo versions
+      # IMPORTANT:
+      # Install the exact Expo SDK used by King X first.
+      - name: Install Expo SDK 52
         run: |
-          echo "Expo CLI:"
-          npx expo --version
+          npm install expo@52.0.46 --save-exact
+
+
+      - name: Install project dependencies
+        run: |
+          npm install
+
+
+      # --------------------------------------------------
+      # Diagnose the Expo installation BEFORE prebuild
+      # --------------------------------------------------
+      - name: Verify Expo installation
+        run: |
+          echo "===== Expo ====="
+          node -p "require('expo/package.json').version"
 
           echo ""
-          echo "Installed Expo packages:"
-          npm ls expo expo-modules-core expo-screen-orientation expo-av react-native || true
+          echo "===== React Native ====="
+          node -p "require('react-native/package.json').version"
+
+          echo ""
+          echo "===== Expo Modules Autolinking ====="
+          node -p "require('expo-modules-autolinking/package.json').version"
+
+          echo ""
+          echo "===== Expo Modules Core ====="
+          node -p "require('expo-modules-core/package.json').version"
+
+          echo ""
+          echo "===== Screen Orientation ====="
+          node -p "require('expo-screen-orientation/package.json').version"
+
+          echo ""
+          echo "===== Expo Gradle Plugin ====="
+          PLUGIN="node_modules/expo-modules-autolinking/android/expo-gradle-plugin"
+
+          if [ -d "$PLUGIN" ]; then
+            echo "FOUND: $PLUGIN"
+            ls -la "$PLUGIN"
+          else
+            echo "ERROR: Expo Gradle plugin was NOT found."
+            exit 1
+          fi
 
 
       # --------------------------------------------------
-      # 6. Restore Firebase google-services.json
+      # Restore Firebase
       # --------------------------------------------------
       - name: Restore Firebase configuration
         env:
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
         run: |
-          if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then
-            echo "ERROR: GOOGLE_SERVICES_JSON_BASE64 is missing."
-            exit 1
-          fi
+          test -n "$GOOGLE_SERVICES_JSON_BASE64"
 
           echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > google-services.json
 
-          if [ ! -s google-services.json ]; then
-            echo "ERROR: google-services.json is empty."
-            exit 1
-          fi
-
-          echo "Firebase configuration restored."
+          test -s google-services.json
 
 
       # --------------------------------------------------
-      # 7. Generate clean Android project
+      # Generate native Android project
       # --------------------------------------------------
       - name: Generate Android project
         run: |
@@ -95,56 +105,51 @@ jobs:
 
 
       # --------------------------------------------------
-      # 8. Verify generated Android project
+      # Verify Expo Gradle plugin was linked
       # --------------------------------------------------
-      - name: Verify Android project
+      - name: Verify generated Gradle configuration
         run: |
-          test -f android/gradlew
-          test -f android/app/build.gradle
+          echo "===== settings.gradle ====="
+          cat android/settings.gradle
 
-          echo "Android project generated successfully."
+          echo ""
+          echo "===== Expo Gradle plugin references ====="
+
+          if grep -R "expo-gradle-plugin" android/settings.gradle; then
+            echo "Expo Gradle plugin is linked."
+          else
+            echo "ERROR: Expo Gradle plugin is NOT linked."
+            exit 1
+          fi
 
 
       # --------------------------------------------------
-      # 9. Remove Firebase source secret
+      # Remove Firebase secret source
       # --------------------------------------------------
       - name: Remove Firebase source file
         run: |
           rm -f google-services.json
 
-          if [ -f google-services.json ]; then
-            echo "ERROR: Firebase source file was not removed."
-            exit 1
-          fi
-
 
       # --------------------------------------------------
-      # 10. Restore release keystore
+      # Restore signing keystore
       # --------------------------------------------------
       - name: Restore release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "ERROR: KEYSTORE_BASE64 is missing."
-            exit 1
-          fi
+          test -n "$KEYSTORE_BASE64"
 
           mkdir -p android/app
 
           echo "$KEYSTORE_BASE64" | base64 --decode \
             > android/app/kingx-release.keystore
 
-          if [ ! -s android/app/kingx-release.keystore ]; then
-            echo "ERROR: Keystore was not restored."
-            exit 1
-          fi
-
-          echo "Release keystore restored."
+          test -s android/app/kingx-release.keystore
 
 
       # --------------------------------------------------
-      # 11. Configure signing properties
+      # Configure signing
       # --------------------------------------------------
       - name: Configure signing properties
         env:
@@ -162,7 +167,7 @@ jobs:
 
 
       # --------------------------------------------------
-      # 12. Configure release signing
+      # Configure release signing
       # --------------------------------------------------
       - name: Configure release signing
         run: |
@@ -172,10 +177,8 @@ jobs:
           path = Path("android/app/build.gradle")
           text = path.read_text()
 
-          # Add release signing configuration if it does not exist.
           if "MYAPP_UPLOAD_STORE_FILE" not in text:
-
-              signing_block = """
+              signing = """
           signingConfigs {
               release {
                   if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
@@ -189,74 +192,63 @@ jobs:
 
           """
 
-              if "buildTypes {" not in text:
-                  raise SystemExit(
-                      "ERROR: Could not find buildTypes in android/app/build.gradle"
-                  )
-
               text = text.replace(
                   "buildTypes {",
-                  signing_block + "buildTypes {",
+                  signing + "buildTypes {",
                   1
               )
 
-          # Make only the release build use the release key.
-          old_release = """release {
-                  signingConfig signingConfigs.debug"""
+          # Only modify the release configuration.
+          release_marker = "release {"
 
-          new_release = """release {
-                  signingConfig signingConfigs.release"""
+          start = text.find(release_marker)
 
-          if old_release in text:
-              text = text.replace(
-                  old_release,
-                  new_release,
-                  1
-              )
+          if start != -1:
+              end = text.find("}", start)
+
+              if end != -1:
+                  block = text[start:end]
+
+                  if "signingConfig signingConfigs.debug" in block:
+                      block = block.replace(
+                          "signingConfig signingConfigs.debug",
+                          "signingConfig signingConfigs.release"
+                      )
+
+                      text = text[:start] + block + text[end:]
 
           path.write_text(text)
-
-          print("Release signing configuration prepared.")
           PY
 
 
       # --------------------------------------------------
-      # 13. Make Gradle executable
-      # --------------------------------------------------
-      - name: Prepare Gradle
-        working-directory: android
-        run: chmod +x gradlew
-
-
-      # --------------------------------------------------
-      # 14. Build signed release APK
+      # Build
       # --------------------------------------------------
       - name: Build release APK
         working-directory: android
         run: |
+          chmod +x gradlew
+
           ./gradlew assembleRelease \
             --no-daemon \
             --stacktrace
 
 
       # --------------------------------------------------
-      # 15. Verify APK
+      # Verify APK
       # --------------------------------------------------
       - name: Verify APK
         run: |
           APK="android/app/build/outputs/apk/release/app-release.apk"
 
-          if [ ! -f "$APK" ]; then
-            echo "ERROR: APK was not generated."
-            exit 1
-          fi
+          test -f "$APK"
 
-          echo "APK successfully generated:"
+          echo "APK generated successfully:"
           ls -lh "$APK"
 
 
       # --------------------------------------------------
-      # 16. Upload APK artifact
+      # Upload APK
       # --------------------------------------------------
       - name: Upload APK
         uses: actions/upload-artifact@v4
