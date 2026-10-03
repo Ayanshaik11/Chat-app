@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -28,26 +28,31 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Expo CLI
-        run: npm install -g expo-cli
-
+      # Expo reads this file DURING prebuild,
+      # so it must exist before expo prebuild runs.
       - name: Restore Firebase configuration
         env:
-          GOOGLE_SERVICES_JSON_BASE64: $         {{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
+          GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
         run: |
           echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > google-services.json
-    test -s google-services.json
+          test -s google-services.json
 
-- name: Generate Android project
-  run: npx expo prebuild --platform android --no-install
+      - name: Generate Android project
+        run: npx expo prebuild --platform android --no-install
 
-      - name: Restore signing keystore
+      # Remove the temporary root Firebase file.
+      # Expo has already copied it into android/app.
+      - name: Remove Firebase source file
+        run: rm -f google-services.json
+
+      - name: Restore release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
           echo "$KEYSTORE_BASE64" | base64 --decode > android/app/kingx-release.keystore
+          test -s android/app/kingx-release.keystore
 
-      - name: Configure signing
+      - name: Configure signing properties
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
@@ -61,7 +66,7 @@ jobs:
           MYAPP_UPLOAD_KEY_PASSWORD=$KEY_PASSWORD
           EOF
 
-      - name: Configure Gradle signing
+      - name: Configure release signing
         run: |
           python3 <<'PY'
           from pathlib import Path
@@ -69,7 +74,7 @@ jobs:
           path = Path("android/app/build.gradle")
           text = path.read_text()
 
-          if "signingConfigs" not in text:
+          if "MYAPP_UPLOAD_STORE_FILE" not in text:
               text = text.replace(
                   "buildTypes {",
                   """signingConfigs {
@@ -87,20 +92,7 @@ jobs:
                   1
               )
 
-          old = """release {
-              // TODO: Add your own signing config for the release build.
-              // Signing with the debug keys for now,
-              // so `gradlew assembleRelease` works.
-              signingConfig signingConfigs.debug
-          }"""
-
-          new = """release {
-              signingConfig signingConfigs.release
-          }"""
-
-          if old in text:
-              text = text.replace(old, new, 1)
-          elif "signingConfig signingConfigs.debug" in text:
+          if "signingConfig signingConfigs.release" not in text:
               text = text.replace(
                   "signingConfig signingConfigs.debug",
                   "signingConfig signingConfigs.release",
