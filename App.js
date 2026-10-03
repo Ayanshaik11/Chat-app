@@ -3,7 +3,13 @@ import { ScrollView, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
-import { useFonts, Poppins_400Regular, Poppins_500Medium, Poppins_600SemiBold, Poppins_700Bold } from '@expo-google-fonts/poppins';
+import {
+  useFonts,
+  Poppins_400Regular,
+  Poppins_500Medium,
+  Poppins_600SemiBold,
+  Poppins_700Bold,
+} from '@expo-google-fonts/poppins';
 import { BebasNeue_400Regular } from '@expo-google-fonts/bebas-neue';
 
 import * as Notifications from 'expo-notifications';
@@ -87,7 +93,6 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-
 /*
  * Root application component
  */
@@ -134,7 +139,6 @@ function Root() {
         );
       });
   }, [me?.id]);
-
 
   /*
    * Handle notification taps.
@@ -186,7 +190,6 @@ function Root() {
     };
   }, []);
 
-
   /*
    * Handle notifications received while
    * the app is already open.
@@ -210,7 +213,6 @@ function Root() {
     };
   }, []);
 
-
   return (
     <View style={{ flex: 1 }}>
       <StatusBar
@@ -223,7 +225,6 @@ function Root() {
     </View>
   );
 }
-
 
 /*
  * Main App
@@ -242,7 +243,6 @@ export default function App() {
 
   const [timedOut, setTimedOut] = useState(false);
 
-
   /*
    * Prevent the splash screen from staying forever
    * if fonts fail to load.
@@ -257,12 +257,10 @@ export default function App() {
     };
   }, []);
 
-
   const ready =
     fontsLoaded ||
     !!fontError ||
     timedOut;
-
 
   /*
    * Hide splash screen once the app is ready.
@@ -273,29 +271,21 @@ export default function App() {
     }
   }, [ready]);
 
-
   if (!ready) {
     return null;
   }
 
-
   return (
     <ErrorBoundary>
       <SafeAreaProvider>
-
         <SettingsProvider>
           <AuthProvider>
             <AppDataProvider>
-
               <Root />
-
             </AppDataProvider>
           </AuthProvider>
         </SettingsProvider>
-
       </SafeAreaProvider>
     </ErrorBoundary>
   );
 }
-
-This version keeps your existing navigation/auth/update system intact, but it stops silently swallowing push-registration errors and logs both received notifications and notification taps.
