@@ -32,7 +32,6 @@
     "expo-keep-awake": "~14.0.3",
     "expo-linear-gradient": "~14.0.2",
     "expo-media-library": "~17.0.3",
-    "expo-modules-core": "~2.2.3",
     "expo-notifications": "~0.29.14",
     "expo-screen-orientation": "~8.0.4",
     "expo-splash-screen": "~0.29.24",
