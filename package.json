@@ -48,5 +48,16 @@
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "firebase-admin": "^12.6.0"
+  },
+  "expo": {
+    "doctor": {
+      "reactNativeDirectoryCheck": {
+        "exclude": [
+          "expo-av",
+          "firebase"
+        ],
+        "listUnknownPackages": false
+      }
+    }
   }
 }
