@@ -28,8 +28,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      # Expo reads this file DURING prebuild,
-      # so it must exist before expo prebuild runs.
       - name: Restore Firebase configuration
         env:
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
@@ -37,11 +35,13 @@ jobs:
           echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > google-services.json
           test -s google-services.json
 
-      - name: Generate Android project
-        run: npx expo prebuild --platform android --no-install
+      # Align Expo packages with the Expo SDK in package.json
+      - name: Align Expo dependencies
+        run: npx expo install --fix
 
-      # Remove the temporary root Firebase file.
-      # Expo has already copied it into android/app.
+      - name: Generate Android project
+        run: npx expo prebuild --platform android --clean --no-install
+
       - name: Remove Firebase source file
         run: rm -f google-services.json
 
