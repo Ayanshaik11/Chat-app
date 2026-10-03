@@ -8,53 +8,144 @@ on:
 
 jobs:
   build:
+    name: Build Android APK
     runs-on: ubuntu-24.04
 
     steps:
+
+      # --------------------------------------------------
+      # 1. Checkout
+      # --------------------------------------------------
       - name: Checkout repository
         uses: actions/checkout@v4
 
+
+      # --------------------------------------------------
+      # 2. Node.js
+      # Expo SDK 52 is kept on Node 20
+      # --------------------------------------------------
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: "20"
 
+
+      # --------------------------------------------------
+      # 3. Java 17
+      # --------------------------------------------------
       - name: Setup Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
 
+
+      # --------------------------------------------------
+      # 4. Install npm dependencies
+      # No npm cache because the repo has no lockfile
+      # --------------------------------------------------
       - name: Install dependencies
         run: npm install
 
-      - name: Check Expo versions
-        run: |
-          npx expo --version
-          npm ls expo expo-modules-core expo-screen-orientation expo-av react-native
 
+      # --------------------------------------------------
+      # 5. Verify Expo dependency tree
+      # --------------------------------------------------
+      - name: Verify Expo versions
+        run: |
+          echo "Expo CLI:"
+          npx expo --version
+
+          echo ""
+          echo "Installed Expo packages:"
+          npm ls expo expo-modules-core expo-screen-orientation expo-av react-native || true
+
+
+      # --------------------------------------------------
+      # 6. Restore Firebase google-services.json
+      # --------------------------------------------------
       - name: Restore Firebase configuration
         env:
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
         run: |
-          echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > google-services.json
-          test -s google-services.json
+          if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "ERROR: GOOGLE_SERVICES_JSON_BASE64 is missing."
+            exit 1
+          fi
 
+          echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > google-services.json
+
+          if [ ! -s google-services.json ]; then
+            echo "ERROR: google-services.json is empty."
+            exit 1
+          fi
+
+          echo "Firebase configuration restored."
+
+
+      # --------------------------------------------------
+      # 7. Generate clean Android project
+      # --------------------------------------------------
       - name: Generate Android project
         run: |
-          npx expo prebuild --platform android --clean --no-install
+          npx expo prebuild \
+            --platform android \
+            --clean \
+            --no-install
 
+
+      # --------------------------------------------------
+      # 8. Verify generated Android project
+      # --------------------------------------------------
+      - name: Verify Android project
+        run: |
+          test -f android/gradlew
+          test -f android/app/build.gradle
+
+          echo "Android project generated successfully."
+
+
+      # --------------------------------------------------
+      # 9. Remove Firebase source secret
+      # --------------------------------------------------
       - name: Remove Firebase source file
-        run: rm -f google-services.json
+        run: |
+          rm -f google-services.json
 
+          if [ -f google-services.json ]; then
+            echo "ERROR: Firebase source file was not removed."
+            exit 1
+          fi
+
+
+      # --------------------------------------------------
+      # 10. Restore release keystore
+      # --------------------------------------------------
       - name: Restore release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          mkdir -p android/app
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/kingx-release.keystore
-          test -s android/app/kingx-release.keystore
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "ERROR: KEYSTORE_BASE64 is missing."
+            exit 1
+          fi
 
+          mkdir -p android/app
+
+          echo "$KEYSTORE_BASE64" | base64 --decode \
+            > android/app/kingx-release.keystore
+
+          if [ ! -s android/app/kingx-release.keystore ]; then
+            echo "ERROR: Keystore was not restored."
+            exit 1
+          fi
+
+          echo "Release keystore restored."
+
+
+      # --------------------------------------------------
+      # 11. Configure signing properties
+      # --------------------------------------------------
       - name: Configure signing properties
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -69,6 +160,10 @@ jobs:
           MYAPP_UPLOAD_KEY_PASSWORD=$KEY_PASSWORD
           EOF
 
+
+      # --------------------------------------------------
+      # 12. Configure release signing
+      # --------------------------------------------------
       - name: Configure release signing
         run: |
           python3 <<'PY'
@@ -77,10 +172,11 @@ jobs:
           path = Path("android/app/build.gradle")
           text = path.read_text()
 
+          # Add release signing configuration if it does not exist.
           if "MYAPP_UPLOAD_STORE_FILE" not in text:
-              marker = "buildTypes {"
 
-              signing = """signingConfigs {
+              signing_block = """
+          signingConfigs {
               release {
                   if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
                       storeFile file(MYAPP_UPLOAD_STORE_FILE)
@@ -93,27 +189,75 @@ jobs:
 
           """
 
-              text = text.replace(marker, signing + marker, 1)
+              if "buildTypes {" not in text:
+                  raise SystemExit(
+                      "ERROR: Could not find buildTypes in android/app/build.gradle"
+                  )
 
-          # Only modify the RELEASE block.
-          old = """release {
+              text = text.replace(
+                  "buildTypes {",
+                  signing_block + "buildTypes {",
+                  1
+              )
+
+          # Make only the release build use the release key.
+          old_release = """release {
                   signingConfig signingConfigs.debug"""
 
-          new = """release {
+          new_release = """release {
                   signingConfig signingConfigs.release"""
 
-          if old in text:
-              text = text.replace(old, new, 1)
+          if old_release in text:
+              text = text.replace(
+                  old_release,
+                  new_release,
+                  1
+              )
 
           path.write_text(text)
+
+          print("Release signing configuration prepared.")
           PY
 
+
+      # --------------------------------------------------
+      # 13. Make Gradle executable
+      # --------------------------------------------------
+      - name: Prepare Gradle
+        working-directory: android
+        run: chmod +x gradlew
+
+
+      # --------------------------------------------------
+      # 14. Build signed release APK
+      # --------------------------------------------------
       - name: Build release APK
         working-directory: android
         run: |
-          chmod +x gradlew
-          ./gradlew assembleRelease --no-daemon --stacktrace
+          ./gradlew assembleRelease \
+            --no-daemon \
+            --stacktrace
 
+
+      # --------------------------------------------------
+      # 15. Verify APK
+      # --------------------------------------------------
+      - name: Verify APK
+        run: |
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: APK was not generated."
+            exit 1
+          fi
+
+          echo "APK successfully generated:"
+          ls -lh "$APK"
+
+
+      # --------------------------------------------------
+      # 16. Upload APK artifact
+      # --------------------------------------------------
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
