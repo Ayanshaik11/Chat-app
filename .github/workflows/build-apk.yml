@@ -8,7 +8,6 @@ on:
 
 jobs:
   build:
-<<<<<<< HEAD
     name: Build Android APK
     runs-on: ubuntu-24.04
 
@@ -32,67 +31,50 @@ jobs:
 
       - name: Verify Expo dependencies
         run: |
-          echo "Expo:"
+          echo "===== Expo ====="
           node -p "require('expo/package.json').version"
 
-          echo "React Native:"
+          echo "===== React Native ====="
           node -p "require('react-native/package.json').version"
 
-          echo "Expo Modules Core:"
+          echo "===== Expo Modules Core ====="
           node -p "require('expo-modules-core/package.json').version"
 
-          echo "Screen Orientation:"
+          echo "===== Screen Orientation ====="
           node -p "require('expo-screen-orientation/package.json').version"
 
-          echo "Expo AV:"
+          echo "===== Expo AV ====="
           node -p "require('expo-av/package.json').version"
 
-          echo "Vector Icons:"
+          echo "===== Vector Icons ====="
           node -p "require('@expo/vector-icons/package.json').version"
 
-          npm ls expo @expo/vector-icons expo-modules-core expo-screen-orientation expo-av react-native
+          npm ls \
+            expo \
+            @expo/vector-icons \
+            expo-modules-core \
+            expo-screen-orientation \
+            expo-av \
+            react-native
 
       - name: Run Expo Doctor
         run: npx expo-doctor
-=======
-    runs-on: ubuntu-24.04
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: npm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Install Expo CLI
-        run: npm install -g expo-cli
-
-      - name: Generate Android project
-        run: npx expo prebuild --platform android --no-install
->>>>>>> 38de97d (Fix Expo SDK 52 Android build)
 
       - name: Restore Firebase configuration
         env:
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
         run: |
-<<<<<<< HEAD
-          test -n "$GOOGLE_SERVICES_JSON_BASE64"
+          if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "ERROR: GOOGLE_SERVICES_JSON_BASE64 secret is missing."
+            exit 1
+          fi
 
           echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > google-services.json
 
-          test -s google-services.json
+          if [ ! -s google-services.json ]; then
+            echo "ERROR: google-services.json was not created."
+            exit 1
+          fi
 
       - name: Generate Android project
         run: |
@@ -107,14 +89,16 @@ jobs:
           test -f android/app/build.gradle
 
       - name: Remove Firebase source file
-        run: |
-          rm -f google-services.json
+        run: rm -f google-services.json
 
       - name: Restore release keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
         run: |
-          test -n "$KEYSTORE_BASE64"
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "ERROR: KEYSTORE_BASE64 secret is missing."
+            exit 1
+          fi
 
           mkdir -p android/app
 
@@ -124,22 +108,26 @@ jobs:
           test -s android/app/kingx-release.keystore
 
       - name: Configure signing properties
-=======
-          echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 --decode > android/app/google-services.json
-
-      - name: Restore signing keystore
-        env:
-          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
-        run: |
-          echo "$KEYSTORE_BASE64" | base64 --decode > android/app/kingx-release.keystore
-
-      - name: Configure signing
->>>>>>> 38de97d (Fix Expo SDK 52 Android build)
         env:
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          if [ -z "$KEYSTORE_PASSWORD" ]; then
+            echo "ERROR: KEYSTORE_PASSWORD is missing."
+            exit 1
+          fi
+
+          if [ -z "$KEY_ALIAS" ]; then
+            echo "ERROR: KEY_ALIAS is missing."
+            exit 1
+          fi
+
+          if [ -z "$KEY_PASSWORD" ]; then
+            echo "ERROR: KEY_PASSWORD is missing."
+            exit 1
+          fi
+
           cat >> android/gradle.properties <<EOF
 
           MYAPP_UPLOAD_STORE_FILE=kingx-release.keystore
@@ -148,11 +136,7 @@ jobs:
           MYAPP_UPLOAD_KEY_PASSWORD=$KEY_PASSWORD
           EOF
 
-<<<<<<< HEAD
       - name: Configure release signing
-=======
-      - name: Configure Gradle signing
->>>>>>> 38de97d (Fix Expo SDK 52 Android build)
         run: |
           python3 <<'PY'
           from pathlib import Path
@@ -160,16 +144,8 @@ jobs:
           path = Path("android/app/build.gradle")
           text = path.read_text()
 
-<<<<<<< HEAD
-          if "MYAPP_UPLOAD_STORE_FILE" not in text:
-              signing_block = """
+          signing_block = """
           signingConfigs {
-=======
-          if "signingConfigs" not in text:
-              text = text.replace(
-                  "buildTypes {",
-                  """signingConfigs {
->>>>>>> 38de97d (Fix Expo SDK 52 Android build)
               release {
                   if (project.hasProperty('MYAPP_UPLOAD_STORE_FILE')) {
                       storeFile file(MYAPP_UPLOAD_STORE_FILE)
@@ -180,6 +156,94 @@ jobs:
               }
           }
 
-<<<<<<< HEAD
           """
 
+          if "MYAPP_UPLOAD_STORE_FILE" not in text:
+              if "buildTypes {" not in text:
+                  raise SystemExit("ERROR: buildTypes block not found.")
+
+              text = text.replace(
+                  "buildTypes {",
+                  signing_block + "buildTypes {",
+                  1
+              )
+
+          path.write_text(text)
+          PY
+
+      - name: Set release signing
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path("android/app/build.gradle")
+          text = path.read_text()
+
+          build_types = text.find("buildTypes {")
+
+          if build_types == -1:
+              raise SystemExit("ERROR: buildTypes block not found.")
+
+          release_start = text.find("release {", build_types)
+
+          if release_start == -1:
+              raise SystemExit("ERROR: release block not found.")
+
+          release_end = text.find("}", release_start)
+
+          if release_end == -1:
+              raise SystemExit("ERROR: release block could not be parsed.")
+
+          release_block = text[release_start:release_end]
+
+          release_block = release_block.replace(
+              "signingConfig signingConfigs.debug",
+              "signingConfig signingConfigs.release"
+          )
+
+          if "signingConfig signingConfigs.release" not in release_block:
+              release_block += """
+                  signingConfig signingConfigs.release
+              """
+
+          text = (
+              text[:release_start]
+              + release_block
+              + text[release_end:]
+          )
+
+          path.write_text(text)
+          PY
+
+      - name: Prepare Gradle
+        working-directory: android
+        run: chmod +x gradlew
+
+      - name: Build release APK
+        working-directory: android
+        run: |
+          ./gradlew assembleRelease \
+            --no-daemon \
+            --stacktrace
+
+      - name: Verify APK
+        run: |
+          APK="android/app/build/outputs/apk/release/app-release.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: APK was not generated."
+            exit 1
+          fi
+
+          echo "======================================"
+          echo "       KING X APK GENERATED"
+          echo "======================================"
+
+          ls -lh "$APK"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: King-X-release
+          path: android/app/build/outputs/apk/release/app-release.apk
+          if-no-files-found: error
