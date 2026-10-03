@@ -32,7 +32,8 @@
         "CAMERA",
         "REQUEST_INSTALL_PACKAGES",
         "POST_NOTIFICATIONS"
-      ]
+      ],
+      "googleServicesFile": "./google-services.json"
     },
     "plugins": [
       [
