@@ -27,6 +27,7 @@ jobs:
         with:
           node-version: 20
           cache: npm
+      
 
       # ---------------------------------------------------------
       # 3. Java 17
@@ -36,7 +37,7 @@ jobs:
         with:
           distribution: temurin
           java-version: 17
-          cache: gradle
+         
 
       # ---------------------------------------------------------
       # 4. Install dependencies
