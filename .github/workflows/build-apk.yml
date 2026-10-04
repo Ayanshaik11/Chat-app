@@ -210,7 +210,7 @@ jobs:
           if "kingxRelease" not in text:
               text = text.replace(
                   android_marker,
-                  android_marker + "\\n" + signing_block,
+                  android_marker + "\n" + signing_block,
                   1
               )
 
