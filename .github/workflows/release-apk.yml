@@ -1,7 +1,5 @@
 name: Publish Release APK
 
-# Runs ONLY when you publish a GitHub Release — never on ordinary pushes/small
-# changes. That is what notifies existing users an update is available.
 on:
   release:
     types: [published]
@@ -12,154 +10,877 @@ permissions:
 
 jobs:
   build-and-publish:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
+    name: Build and Publish King X Release
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
 
-      - uses: actions/setup-node@v4
+    steps:
+
+      # ============================================================
+      # CHECKOUT
+      # ============================================================
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+
+      # ============================================================
+      # NODE
+      # ============================================================
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
         with:
           node-version: 20
+          cache: npm
 
-      - uses: actions/setup-java@v4
+
+      # ============================================================
+      # JAVA
+      # ============================================================
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: 17
 
-      - name: Read release version from the tag (e.g. v1.1.0 -> 1.1.0)
+
+      # ============================================================
+      # READ RELEASE VERSION
+      # ============================================================
+
+      - name: Read release version from tag
         id: ver
         run: |
-          TAG="${GITHUB_REF_NAME:-${{ github.event.inputs.tag || '1.0.0' }}}"
+          set -e
+
+          TAG="${GITHUB_REF_NAME}"
+
+          if [ -z "$TAG" ] || [ "$TAG" = "main" ]; then
+            TAG="v1.0.0"
+          fi
+
           VERSION="${TAG#v}"
+
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "Building version $VERSION"
+
+          echo ""
+          echo "=========================================="
+          echo "       KING X RELEASE VERSION"
+          echo "=========================================="
+
+          echo "Tag: $TAG"
+          echo "Version: $VERSION"
+
+
+      # ============================================================
+      # STAMP VERSION
+      # ============================================================
 
       - name: Stamp this version into the app
         run: |
-          sed -i "s/CURRENT_VERSION = '.*'/CURRENT_VERSION = '${{ steps.ver.outputs.version }}'/" src/config/appVersion.js
-          sed -i "s/\"version\": \"[^\"]*\"/\"version\": \"${{ steps.ver.outputs.version }}\"/" app.json
+          set -e
 
-      - name: Install packages
+          VERSION="${{ steps.ver.outputs.version }}"
+
+          sed -i \
+            "s/CURRENT_VERSION = '.*'/CURRENT_VERSION = '${VERSION}'/" \
+            src/config/appVersion.js
+
+          sed -i \
+            "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" \
+            app.json
+
+          echo ""
+          echo "Version stamped into:"
+          echo "src/config/appVersion.js"
+          echo "app.json"
+
+          echo ""
+          grep -n "CURRENT_VERSION" src/config/appVersion.js || true
+          grep -n '"version"' app.json || true
+
+
+      # ============================================================
+      # INSTALL DEPENDENCIES
+      # ============================================================
+
+      - name: Install dependencies
         run: |
-          npm install
-          npx expo install --fix
+          set -e
 
-      - name: Restore google-services.json
+          npm ci
+
+          npx expo install --check
+
+
+      # ============================================================
+      # EXPO DOCTOR
+      # ============================================================
+
+      - name: Run Expo Doctor
+        run: |
+          npx expo-doctor
+
+
+      # ============================================================
+      # RESTORE FIREBASE CONFIGURATION
+      # ============================================================
+
+      - name: Restore Firebase configuration
         env:
           GOOGLE_SERVICES_JSON_BASE64: ${{ secrets.GOOGLE_SERVICES_JSON_BASE64 }}
-        run: echo "$GOOGLE_SERVICES_JSON_BASE64" | base64 -d > google-services.json
+
+        run: |
+          set -e
+
+          if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then
+            echo "ERROR: GOOGLE_SERVICES_JSON_BASE64 is empty."
+            exit 1
+          fi
+
+          printf '%s' "$GOOGLE_SERVICES_JSON_BASE64" \
+            | base64 --decode > google-services.json
+
+          echo ""
+          echo "Firebase file restored."
+
+          echo ""
+          echo "Validating Firebase JSON..."
+
+          python3 -m json.tool google-services.json > /dev/null
+
+          echo "Firebase JSON syntax: PASS"
+
+
+          python3 - <<'PY'
+          import json
+
+          path = "google-services.json"
+
+          with open(path, "r", encoding="utf-8") as f:
+              data = json.load(f)
+
+          if "client" not in data:
+              raise SystemExit(
+                  "ERROR: Missing client field."
+              )
+
+          if not isinstance(data["client"], list):
+              raise SystemExit(
+                  "ERROR: client is not an array."
+              )
+
+          if not data["client"]:
+              raise SystemExit(
+                  "ERROR: client array is empty."
+              )
+
+          print(
+              "Client entries:",
+              len(data["client"])
+          )
+
+          found = False
+
+          for client in data["client"]:
+
+              info = client.get(
+                  "client_info",
+                  {}
+              )
+
+              package_name = (
+                  info
+                  .get(
+                      "android_client_info",
+                      {}
+                  )
+                  .get(
+                      "package_name"
+                  )
+              )
+
+              print(
+                  "Firebase Android package:",
+                  package_name
+              )
+
+              if package_name == "com.chat.app":
+                  found = True
+
+          if not found:
+              raise SystemExit(
+                  "ERROR: Firebase JSON does not contain "
+                  "package com.chat.app"
+              )
+
+          print(
+              "Firebase package verification: PASS"
+          )
+          PY
+
+
+      # ============================================================
+      # GENERATE NATIVE ANDROID PROJECT
+      # ============================================================
 
       - name: Generate native Android project
-        run: npx expo prebuild --platform android --no-install
+        run: |
+          set -e
 
-      # Same real King X keystore as the dev builds (build-apk.yml) — this
-      # must match exactly, or a release install conflicts with a dev
-      # install instead of updating it, and Google Sign-In only works for
-      # whichever one's SHA-1 is actually registered in Firebase.
+          npx expo prebuild \
+            --platform android \
+            --clean \
+            --no-install
+
+
+      # ============================================================
+      # VERIFY ANDROID PROJECT
+      # ============================================================
+
+      - name: Verify Android project
+        run: |
+          set -e
+
+          test -f android/gradlew
+
+          test -f android/app/build.gradle
+
+          test -f android/app/google-services.json
+
+          echo ""
+          echo "Android project verified."
+
+          echo "Firebase configuration copied successfully."
+
+
+      # ============================================================
+      # REMOVE ROOT FIREBASE FILE
+      # ============================================================
+
+      - name: Remove root Firebase source file
+        run: |
+          set -e
+
+          rm -f google-services.json
+
+          test ! -f google-services.json
+
+          echo "Root Firebase file removed."
+
+
+      # ============================================================
+      # RESTORE KING X RELEASE KEYSTORE
+      # ============================================================
+
       - name: Restore King X release keystore
         env:
-          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
-          STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+
         run: |
+          set -e
+
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "ERROR: KEYSTORE_BASE64 is empty."
+            exit 1
+          fi
+
           mkdir -p android/app
-          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > android/app/kingx-release.keystore
+
+          printf '%s' "$KEYSTORE_BASE64" \
+            | base64 --decode > android/app/kingx-release.keystore
+
           test -s android/app/kingx-release.keystore
-          keytool -list -keystore android/app/kingx-release.keystore -alias "$KEY_ALIAS" -storepass "$STORE_PASSWORD"
+
+          echo ""
+          echo "Release keystore restored."
+
+          ls -lh android/app/kingx-release.keystore
+
+
+      # ============================================================
+      # VERIFY RELEASE KEYSTORE
+      # ============================================================
+
+      - name: Verify King X release certificate
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+
+        run: |
+          set -e
+
+          echo ""
+          echo "=========================================="
+          echo "       KING X RELEASE CERTIFICATE"
+          echo "=========================================="
+
+          keytool -list -v \
+            -keystore android/app/kingx-release.keystore \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS"
+
+          echo ""
+          echo "Expected King X release SHA-1:"
+          echo "B8:65:D4:6C:C3:65:C7:B1:EE:66:03:0B:52:47:1E:33:D0:08:11:B7"
+
+
+      # ============================================================
+      # CONFIGURE RELEASE SIGNING
+      # ============================================================
 
       - name: Configure King X release signing
         run: |
-          python3 <<'PY'
+          python3 - <<'PY'
           from pathlib import Path
           import re
 
           path = Path("android/app/build.gradle")
+
           text = path.read_text()
 
-          release_config = """
-                  release {
-                      storeFile file("kingx-release.keystore")
-                      storePassword System.getenv("KINGX_STORE_PASSWORD")
-                      keyAlias System.getenv("KINGX_KEY_ALIAS")
-                      keyPassword System.getenv("KINGX_KEY_PASSWORD")
-                  }
-          """
+          print("Configuring Android release signing...")
 
-          match = re.search(r'\bsigningConfigs\s*\{', text)
 
-          if match:
-              start = match.start()
-              opening = text.find("{", start)
+          android_start = text.find("android {")
+
+          if android_start == -1:
+              raise SystemExit(
+                  "ERROR: android { block was not found."
+              )
+
+
+          def find_matching_brace(source, opening):
+
               depth = 0
-              end = None
-              for i in range(opening, len(text)):
-                  if text[i] == "{":
+
+              in_string = False
+
+              string_char = None
+
+              escape = False
+
+              for i in range(
+                  opening,
+                  len(source)
+              ):
+
+                  char = source[i]
+
+                  if in_string:
+
+                      if escape:
+                          escape = False
+
+                      elif char == "\\":
+                          escape = True
+
+                      elif char == string_char:
+                          in_string = False
+
+                      continue
+
+
+                  if char in ('"', "'"):
+
+                      in_string = True
+
+                      string_char = char
+
+                      continue
+
+
+                  if char == "{":
+
                       depth += 1
-                  elif text[i] == "}":
+
+
+                  elif char == "}":
+
                       depth -= 1
+
                       if depth == 0:
-                          end = i + 1
-                          break
-              if end is None:
-                  raise RuntimeError("Could not find end of signingConfigs block")
+                          return i
 
-              block = text[start:end]
-              block = re.sub(r'\brelease\s*\{.*?\}', '', block, flags=re.DOTALL)
-              block = block[:-1] + release_config + "\n}"
-              text = text[:start] + block + text[end:]
-          else:
-              android_match = re.search(r'\bandroid\s*\{', text)
-              if not android_match:
-                  raise RuntimeError("Could not find android block")
-              insert_at = android_match.end()
-              signing = """
 
+              return -1
+
+
+          android_end = find_matching_brace(
+              text,
+              android_start
+          )
+
+          if android_end == -1:
+              raise SystemExit(
+                  "ERROR: Could not determine end of android block."
+              )
+
+
+          android_block = text[
+              android_start:
+              android_end + 1
+          ]
+
+
+          # Remove any old King X signing configuration.
+          old_signing = re.compile(
+              r'\n\s*signingConfigs\s*\{\s*'
+              r'kingxRelease\s*\{.*?\}\s*'
+              r'\}\s*',
+              re.DOTALL
+          )
+
+          android_block = old_signing.sub(
+              "\n",
+              android_block
+          )
+
+
+          # Add the proven King X release configuration.
+          signing_config = '''
               signingConfigs {
-                  release {
+                  kingxRelease {
                       storeFile file("kingx-release.keystore")
-                      storePassword System.getenv("KINGX_STORE_PASSWORD")
+                      storePassword System.getenv("KINGX_KEYSTORE_PASSWORD")
                       keyAlias System.getenv("KINGX_KEY_ALIAS")
                       keyPassword System.getenv("KINGX_KEY_PASSWORD")
                   }
               }
-              """
-              text = text[:insert_at] + signing + text[insert_at:]
 
-          text = text.replace(
-              "signingConfig signingConfigs.debug",
-              "signingConfig signingConfigs.release"
+          '''
+
+
+          android_open_end = (
+              android_block.find("{") + 1
           )
 
+
+          android_block = (
+              android_block[:android_open_end]
+              + "\n"
+              + signing_config
+              + android_block[android_open_end:]
+          )
+
+
+          # Find buildTypes.
+          build_types_start = android_block.find(
+              "buildTypes {"
+          )
+
+          if build_types_start == -1:
+              raise SystemExit(
+                  "ERROR: buildTypes { block was not found."
+              )
+
+
+          build_types_end = find_matching_brace(
+              android_block,
+              build_types_start
+          )
+
+          if build_types_end == -1:
+              raise SystemExit(
+                  "ERROR: Could not determine end "
+                  "of buildTypes block."
+              )
+
+
+          build_types_block = android_block[
+              build_types_start:
+              build_types_end + 1
+          ]
+
+
+          # Find release block.
+          release_start = build_types_block.find(
+              "release {"
+          )
+
+          if release_start == -1:
+              raise SystemExit(
+                  "ERROR: release { block was not found."
+              )
+
+
+          release_end = find_matching_brace(
+              build_types_block,
+              release_start
+          )
+
+          if release_end == -1:
+              raise SystemExit(
+                  "ERROR: Could not determine end "
+                  "of release block."
+              )
+
+
+          release_block = build_types_block[
+              release_start:
+              release_end + 1
+          ]
+
+
+          # Remove any existing signingConfig.
+          release_block = re.sub(
+              r'^\s*signingConfig\s+.*$',
+              "",
+              release_block,
+              flags=re.MULTILINE
+          )
+
+
+          # Force King X release signing.
+          release_open_end = (
+              release_block.find("{") + 1
+          )
+
+
+          release_block = (
+              release_block[:release_open_end]
+              + '''
+                  signingConfig signingConfigs.kingxRelease
+              '''
+              + release_block[release_open_end:]
+          )
+
+
+          build_types_block = (
+              build_types_block[:release_start]
+              + release_block
+              + build_types_block[release_end + 1:]
+          )
+
+
+          android_block = (
+              android_block[:build_types_start]
+              + build_types_block
+              + android_block[build_types_end + 1:]
+          )
+
+
+          text = (
+              text[:android_start]
+              + android_block
+              + text[android_end + 1:]
+          )
+
+
           path.write_text(text)
-          print("King X release signing configured.")
+
+          print(
+              "King X release signing configured."
+          )
           PY
 
+
+          echo ""
+          echo "=========================================="
+          echo "       VERIFY SIGNING CONFIG"
+          echo "=========================================="
+
+
+          grep -n -A12 -B3 \
+            "kingxRelease" \
+            android/app/build.gradle || true
+
+
+          echo ""
+          echo "=========================================="
+          echo "       VERIFY RELEASE SIGNING"
+          echo "=========================================="
+
+
+          grep -n \
+            "signingConfig signingConfigs.kingxRelease" \
+            android/app/build.gradle
+
+
+      # ============================================================
+      # PREPARE GRADLE
+      # ============================================================
+
+      - name: Prepare Gradle
+        working-directory: android
+        run: |
+          set -e
+
+          chmod +x gradlew
+
+          ./gradlew --version
+
+
+      # ============================================================
+      # BUILD RELEASE APK
+      # ============================================================
+
       - name: Build release APK
+        working-directory: android
+
         env:
-          KINGX_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
-          KINGX_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
-          KINGX_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: cd android && chmod +x gradlew && ./gradlew assembleRelease --no-daemon
+          KINGX_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+
+          KINGX_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+
+          KINGX_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
+          GRADLE_OPTS: >-
+            -Dorg.gradle.daemon=false
+            -Dorg.gradle.parallel=true
+            -Dorg.gradle.caching=true
+            -Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g
+
+        run: |
+          set -e
+
+          set -o pipefail
+
+          echo ""
+          echo "=========================================="
+          echo "       BUILDING KING X RELEASE APK"
+          echo "=========================================="
+
+          ./gradlew assembleRelease \
+            --no-daemon \
+            --stacktrace \
+            --warning-mode all \
+            --max-workers=2 \
+            2>&1 | tee ../gradle-release.log
+
+
+      # ============================================================
+      # VERIFY ACTUAL APK SIGNATURE
+      # ============================================================
+
+      - name: Verify APK signing certificate
+        working-directory: android
+
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+
+        run: |
+          set -e
+
+          APK="app/build/outputs/apk/release/app-release.apk"
+
+          KEYSTORE="app/kingx-release.keystore"
+
+
+          echo ""
+          echo "=========================================="
+          echo "       CHECK RELEASE APK"
+          echo "=========================================="
+
+
+          if [ ! -f "$APK" ]; then
+
+            echo "ERROR: APK does not exist."
+
+            exit 1
+
+          fi
+
+
+          ls -lh "$APK"
+
+
+          echo ""
+          echo "=========================================="
+          echo "       FIND APKSIGNER"
+          echo "=========================================="
+
+
+          APKSIGNER=$(
+            find "$ANDROID_HOME/build-tools" \
+              -name apksigner \
+              -type f \
+              | sort -V \
+              | tail -1
+          )
+
+
+          if [ -z "$APKSIGNER" ]; then
+
+            echo "ERROR: apksigner not found."
+
+            exit 1
+
+          fi
+
+
+          echo "Using:"
+          echo "$APKSIGNER"
+
+
+          echo ""
+          echo "=========================================="
+          echo "       ACTUAL APK CERTIFICATE"
+          echo "=========================================="
+
+
+          CERT_OUTPUT=$(
+            "$APKSIGNER" verify \
+              --verbose \
+              --print-certs \
+              "$APK" 2>&1
+          )
+
+
+          echo "$CERT_OUTPUT"
+
+
+          echo ""
+          echo "=========================================="
+          echo "       RELEASE CERTIFICATE CHECK"
+          echo "=========================================="
+
+
+          EXPECTED_SHA1="b865d46cc365c7b1ee66030b52471e33d00811b7"
+
+
+          ACTUAL_SHA1=$(
+            echo "$CERT_OUTPUT" |
+            grep -i \
+              "certificate SHA-1 digest:" |
+            sed \
+              's/.*certificate SHA-1 digest: //' |
+            tr -d '[:space:]' |
+            tr '[:upper:]' '[:lower:]'
+          )
+
+
+          echo ""
+          echo "Expected SHA-1:"
+          echo "$EXPECTED_SHA1"
+
+
+          echo ""
+          echo "Actual APK SHA-1:"
+          echo "$ACTUAL_SHA1"
+
+
+          if [ -z "$ACTUAL_SHA1" ]; then
+
+            echo ""
+            echo "ERROR: Could not read APK SHA-1."
+
+            exit 1
+
+          fi
+
+
+          # Reject Android debug certificate.
+          if echo "$CERT_OUTPUT" |
+            grep -qi \
+            "certificate DN: CN=Android Debug"; then
+
+            echo ""
+            echo "ERROR: APK IS SIGNED WITH ANDROID DEBUG CERTIFICATE."
+
+            exit 1
+
+          fi
+
+
+          # Verify exact King X release certificate.
+          if [ "$ACTUAL_SHA1" != "$EXPECTED_SHA1" ]; then
+
+            echo ""
+            echo "ERROR: APK SHA-1 DOES NOT MATCH KING X RELEASE KEYSTORE."
+
+            echo ""
+            echo "Expected:"
+            echo "$EXPECTED_SHA1"
+
+            echo ""
+            echo "Actual:"
+            echo "$ACTUAL_SHA1"
+
+            exit 1
+
+          fi
+
+
+          echo ""
+          echo "=========================================="
+          echo "       SIGNING VERIFIED"
+          echo "=========================================="
+
+
+          echo ""
+          echo "SUCCESS!"
+
+          echo "King X release APK uses the correct release certificate."
+
+          echo ""
+          echo "SHA-1:"
+          echo "B8:65:D4:6C:C3:65:C7:B1:EE:66:03:0B:52:47:1E:33:D0:08:11:B7"
+
+
+      # ============================================================
+      # RENAME APK
+      # ============================================================
 
       - name: Rename APK
-        run: cp android/app/build/outputs/apk/release/app-release.apk chat-app-${{ steps.ver.outputs.version }}.apk
+        run: |
+          set -e
 
-      - name: Attach the APK to this GitHub Release
+          VERSION="${{ steps.ver.outputs.version }}"
+
+          cp \
+            android/app/build/outputs/apk/release/app-release.apk \
+            "chat-app-${VERSION}.apk"
+
+          ls -lh "chat-app-${VERSION}.apk"
+
+
+      # ============================================================
+      # ATTACH APK TO GITHUB RELEASE
+      # ============================================================
+
+      - name: Attach APK to GitHub Release
         if: github.event_name == 'release'
+
         uses: softprops/action-gh-release@v2
+
         with:
           files: chat-app-${{ steps.ver.outputs.version }}.apk
 
-      - name: Notify everyone in the app (Firestore config/appVersion)
+
+      # ============================================================
+      # NOTIFY APP USERS
+      # ============================================================
+
+      - name: Notify everyone in the app
         if: github.event_name == 'release'
+
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
           RELEASE_VERSION: ${{ steps.ver.outputs.version }}
+
           RELEASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/chat-app-${{ steps.ver.outputs.version }}.apk
+
           RELEASE_NOTES: ${{ github.event.release.body }}
+
         run: |
+          set -e
+
           npm install firebase-admin@12 --no-save
+
           node .github/scripts/publish-version.js
+
+
+      # ============================================================
+      # CLEANUP
+      # ============================================================
 
       - name: Cleanup signing key
         if: always()
-        run: rm -f android/app/kingx-release.keystore
+
+        run: |
+          rm -f android/app/kingx-release.keystore
