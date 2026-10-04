@@ -49,7 +49,7 @@ jobs:
 
 
       # =========================================================
-      # 5. Check Expo dependencies
+      # 5. Verify Expo dependencies
       # =========================================================
       - name: Verify Expo dependencies
         run: npx expo install --check
@@ -72,7 +72,7 @@ jobs:
           set -e
 
           if [ -z "$GOOGLE_SERVICES_JSON_BASE64" ]; then
-            echo "ERROR: GOOGLE_SERVICES_JSON_BASE64 secret is empty."
+            echo "ERROR: GOOGLE_SERVICES_JSON_BASE64 is empty."
             exit 1
           fi
 
@@ -81,8 +81,6 @@ jobs:
             > google-services.json
 
           echo "Firebase file restored."
-
-          echo "Validating Firebase JSON..."
 
           python3 -m json.tool \
             google-services.json \
@@ -115,6 +113,8 @@ jobs:
       # =========================================================
       - name: Generate Android project
         run: |
+          set -e
+
           npx expo prebuild \
             --platform android \
             --clean \
@@ -143,12 +143,9 @@ jobs:
         run: |
           rm -f google-services.json
 
-          if [ -f google-services.json ]; then
-            echo "ERROR: Firebase source file still exists."
-            exit 1
-          fi
+          test ! -f google-services.json
 
-          echo "Root Firebase file removed."
+          echo "Root Firebase source file removed."
 
 
       # =========================================================
@@ -161,7 +158,7 @@ jobs:
           set -e
 
           if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "ERROR: KEYSTORE_BASE64 secret is empty."
+            echo "ERROR: KEYSTORE_BASE64 is empty."
             exit 1
           fi
 
@@ -171,52 +168,17 @@ jobs:
             | base64 --decode \
             > android/app/kingx-release.keystore
 
-          if [ ! -s android/app/kingx-release.keystore ]; then
-            echo "ERROR: Keystore was not restored."
-            exit 1
-          fi
+          test -s android/app/kingx-release.keystore
 
           echo "Release keystore restored."
 
 
       # =========================================================
-      # 12. Configure signing properties
-      # =========================================================
-      - name: Configure signing properties
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
-        run: |
-          set -e
-
-          if [ -z "$KEYSTORE_PASSWORD" ]; then
-            echo "ERROR: KEYSTORE_PASSWORD is empty."
-            exit 1
-          fi
-
-          if [ -z "$KEY_ALIAS" ]; then
-            echo "ERROR: KEY_ALIAS is empty."
-            exit 1
-          fi
-
-          if [ -z "$KEY_PASSWORD" ]; then
-            echo "ERROR: KEY_PASSWORD is empty."
-            exit 1
-          fi
-
-          cat >> android/gradle.properties <<EOF
-          KINGX_UPLOAD_STORE_FILE=kingx-release.keystore
-          KINGX_UPLOAD_STORE_PASSWORD=${KEYSTORE_PASSWORD}
-          KINGX_UPLOAD_KEY_ALIAS=${KEY_ALIAS}
-          KINGX_UPLOAD_KEY_PASSWORD=${KEY_PASSWORD}
-          EOF
-
-          echo "Signing properties configured."
-
-
-      # =========================================================
-      # 13. Configure release signing
+      # 12. Configure release signing
+      #
+      # IMPORTANT:
+      # No KINGX_UPLOAD_* Gradle properties are used.
+      # Gradle reads signing values from environment variables.
       # =========================================================
       - name: Configure release signing
         run: |
@@ -226,46 +188,44 @@ jobs:
           path = Path("android/app/build.gradle")
           text = path.read_text()
 
-          marker = "android {"
+          android_marker = "android {"
 
-          if marker not in text:
+          if android_marker not in text:
               raise SystemExit(
-                  "ERROR: Could not find android block in build.gradle"
+                  "ERROR: Could not find android block."
               )
 
-          # Add signing configuration only once.
-          if "kingxRelease" not in text:
-              signing_block = '''
+          signing_block = '''
               signingConfigs {
                   kingxRelease {
-                      storeFile file(project.property("KINGX_UPLOAD_STORE_FILE"))
-                      storePassword project.property("KINGX_UPLOAD_STORE_PASSWORD")
-                      keyAlias project.property("KINGX_UPLOAD_KEY_ALIAS")
-                      keyPassword project.property("KINGX_UPLOAD_KEY_PASSWORD")
+                      storeFile file("kingx-release.keystore")
+                      storePassword System.getenv("KINGX_KEYSTORE_PASSWORD")
+                      keyAlias System.getenv("KINGX_KEY_ALIAS")
+                      keyPassword System.getenv("KINGX_KEY_PASSWORD")
                   }
               }
 
-              '''
+          '''
 
+          if "kingxRelease" not in text:
               text = text.replace(
-                  marker,
-                  marker + "\n" + signing_block,
+                  android_marker,
+                  android_marker + "\\n" + signing_block,
                   1
               )
 
-          # Attach signing configuration to release.
           release_marker = "release {"
 
           if release_marker not in text:
               raise SystemExit(
-                  "ERROR: Could not find release block in build.gradle"
+                  "ERROR: Could not find release block."
               )
 
           if "signingConfig signingConfigs.kingxRelease" not in text:
               text = text.replace(
                   release_marker,
-                  release_marker +
-                  "\n            signingConfig signingConfigs.kingxRelease",
+                  release_marker
+                  + "\n            signingConfig signingConfigs.kingxRelease",
                   1
               )
 
@@ -276,17 +236,18 @@ jobs:
 
 
       # =========================================================
-      # 14. Prepare Gradle
+      # 13. Prepare Gradle
       # =========================================================
       - name: Prepare Gradle
         working-directory: android
         run: |
           chmod +x gradlew
+
           ./gradlew --version
 
 
       # =========================================================
-      # 15. Test JavaScript bundle
+      # 14. Test JavaScript bundle
       # =========================================================
       - name: Test JavaScript bundle
         run: |
@@ -294,18 +255,26 @@ jobs:
 
 
       # =========================================================
-      # 16. Build release APK
+      # 15. Build release APK
       # =========================================================
       - name: Build release APK
         working-directory: android
         env:
+          KINGX_KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KINGX_KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KINGX_KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+
           GRADLE_OPTS: >-
             -Dorg.gradle.daemon=false
             -Dorg.gradle.parallel=true
             -Dorg.gradle.caching=true
             -Dorg.gradle.jvmargs=-Xmx4g -XX:MaxMetaspaceSize=1g
+
         run: |
+          set -e
           set -o pipefail
+
+          echo "Starting release APK build..."
 
           ./gradlew assembleRelease \
             --no-daemon \
@@ -316,7 +285,7 @@ jobs:
 
 
       # =========================================================
-      # 17. Verify APK
+      # 16. Verify APK
       # =========================================================
       - name: Verify APK
         run: |
@@ -325,7 +294,8 @@ jobs:
           if [ ! -f "$APK_PATH" ]; then
             echo "ERROR: APK was not generated."
 
-            echo "Available build outputs:"
+            echo ""
+            echo "Available output files:"
             find android/app/build/outputs \
               -type f \
               2>/dev/null || true
@@ -333,15 +303,17 @@ jobs:
             exit 1
           fi
 
-          echo "======================================"
-          echo "KING X APK SUCCESSFULLY GENERATED"
-          echo "======================================"
+          echo ""
+          echo "=========================================="
+          echo "       KING X APK BUILD SUCCESSFUL"
+          echo "=========================================="
+          echo ""
 
           ls -lh "$APK_PATH"
 
 
       # =========================================================
-      # 18. Upload APK
+      # 17. Upload APK
       # =========================================================
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -352,14 +324,12 @@ jobs:
 
 
       # =========================================================
-      # 19. Upload Gradle debug log on failure
+      # 18. Upload Gradle log if build fails
       # =========================================================
       - name: Upload Gradle debug log
         if: failure()
         uses: actions/upload-artifact@v4
         with:
           name: King-X-gradle-debug-log
-          path: |
-            gradle-build.log
-            android/app/build/outputs/**/*.log
+          path: gradle-build.log
           if-no-files-found: ignore
