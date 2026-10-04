@@ -201,6 +201,10 @@ jobs:
 
           echo "Release keystore restored."
 
+          echo ""
+          echo "Keystore size:"
+          ls -lh android/app/kingx-release.keystore
+
 
       # ==========================================
       # CONFIGURE RELEASE SIGNING
@@ -210,18 +214,88 @@ jobs:
         run: |
           python3 - <<'PY'
           from pathlib import Path
+          import re
 
           path = Path("android/app/build.gradle")
           text = path.read_text()
 
-          android_marker = "android {"
+          print("Configuring Android release signing...")
 
-          if android_marker not in text:
+          # ------------------------------------------
+          # Find android { block
+          # ------------------------------------------
+
+          android_start = text.find("android {")
+
+          if android_start == -1:
               raise SystemExit(
-                  "ERROR: Could not find android block."
+                  "ERROR: android { block was not found."
               )
 
-          signing_block = '''
+          # ------------------------------------------
+          # Find matching closing brace for android {}
+          # ------------------------------------------
+
+          def find_matching_brace(source, opening):
+              depth = 0
+              in_string = False
+              string_char = None
+              escape = False
+
+              for i in range(opening, len(source)):
+                  char = source[i]
+
+                  if in_string:
+                      if escape:
+                          escape = False
+                      elif char == "\\":
+                          escape = True
+                      elif char == string_char:
+                          in_string = False
+                      continue
+
+                  if char in ('"', "'"):
+                      in_string = True
+                      string_char = char
+                      continue
+
+                  if char == "{":
+                      depth += 1
+                  elif char == "}":
+                      depth -= 1
+
+                      if depth == 0:
+                          return i
+
+              return -1
+
+          android_end = find_matching_brace(text, android_start)
+
+          if android_end == -1:
+              raise SystemExit(
+                  "ERROR: Could not determine end of android block."
+              )
+
+          android_block = text[android_start:android_end + 1]
+
+          # ------------------------------------------
+          # Remove old kingxRelease block if present
+          # ------------------------------------------
+
+          old_signing = re.compile(
+              r'\n\s*signingConfigs\s*\{\s*'
+              r'kingxRelease\s*\{.*?\}\s*'
+              r'\}\s*',
+              re.DOTALL
+          )
+
+          android_block = old_signing.sub("\n", android_block)
+
+          # ------------------------------------------
+          # Create our signing configuration
+          # ------------------------------------------
+
+          signing_config = '''
               signingConfigs {
                   kingxRelease {
                       storeFile file("kingx-release.keystore")
@@ -233,32 +307,141 @@ jobs:
 
           '''
 
-          if "kingxRelease" not in text:
-              text = text.replace(
-                  android_marker,
-                  android_marker + "\n" + signing_block,
-                  1
-              )
+          android_open_end = android_block.find("{") + 1
 
-          release_marker = "release {"
+          android_block = (
+              android_block[:android_open_end]
+              + "\n"
+              + signing_config
+              + android_block[android_open_end:]
+          )
 
-          if release_marker not in text:
+          # ------------------------------------------
+          # Find buildTypes {}
+          # ------------------------------------------
+
+          build_types_start = android_block.find("buildTypes {")
+
+          if build_types_start == -1:
               raise SystemExit(
-                  "ERROR: Could not find release block."
+                  "ERROR: buildTypes { block was not found."
               )
 
-          if "signingConfig signingConfigs.kingxRelease" not in text:
-              text = text.replace(
-                  release_marker,
-                  release_marker
-                  + "\n            signingConfig signingConfigs.kingxRelease",
-                  1
+          build_types_end = find_matching_brace(
+              android_block,
+              build_types_start
+          )
+
+          if build_types_end == -1:
+              raise SystemExit(
+                  "ERROR: Could not determine end of buildTypes block."
               )
+
+          build_types_block = android_block[
+              build_types_start:build_types_end + 1
+          ]
+
+          # ------------------------------------------
+          # Find release {}
+          # ------------------------------------------
+
+          release_start = build_types_block.find("release {")
+
+          if release_start == -1:
+              raise SystemExit(
+                  "ERROR: release { block was not found."
+              )
+
+          release_end = find_matching_brace(
+              build_types_block,
+              release_start
+          )
+
+          if release_end == -1:
+              raise SystemExit(
+                  "ERROR: Could not determine end of release block."
+              )
+
+          release_block = build_types_block[
+              release_start:release_end + 1
+          ]
+
+          # ------------------------------------------
+          # Remove existing signingConfig lines
+          # ------------------------------------------
+
+          release_block = re.sub(
+              r'^\s*signingConfig\s+.*$',
+              "",
+              release_block,
+              flags=re.MULTILINE
+          )
+
+          # ------------------------------------------
+          # Force our signing configuration
+          # ------------------------------------------
+
+          release_open_end = release_block.find("{") + 1
+
+          release_block = (
+              release_block[:release_open_end]
+              + '''
+                  signingConfig signingConfigs.kingxRelease
+              '''
+              + release_block[release_open_end:]
+          )
+
+          # ------------------------------------------
+          # Replace release block
+          # ------------------------------------------
+
+          build_types_block = (
+              build_types_block[:release_start]
+              + release_block
+              + build_types_block[release_end + 1:]
+          )
+
+          # ------------------------------------------
+          # Replace buildTypes block
+          # ------------------------------------------
+
+          android_block = (
+              android_block[:build_types_start]
+              + build_types_block
+              + android_block[build_types_end + 1:]
+          )
+
+          # ------------------------------------------
+          # Replace android block in file
+          # ------------------------------------------
+
+          text = (
+              text[:android_start]
+              + android_block
+              + text[android_end + 1:]
+          )
 
           path.write_text(text)
 
           print("Release signing configuration completed.")
           PY
+
+          echo ""
+          echo "=========================================="
+          echo "       VERIFY GRADLE SIGNING CONFIG"
+          echo "=========================================="
+
+          grep -n -A12 -B3 "kingxRelease" \
+            android/app/build.gradle || true
+
+          echo ""
+          echo "=========================================="
+          echo "       VERIFY RELEASE SIGNING LINE"
+          echo "=========================================="
+
+          grep -n \
+            "signingConfig signingConfigs.kingxRelease" \
+            android/app/build.gradle
 
 
       # ==========================================
@@ -268,6 +451,8 @@ jobs:
       - name: Prepare Gradle
         working-directory: android
         run: |
+          set -e
+
           chmod +x gradlew
 
           ./gradlew --version
@@ -314,7 +499,7 @@ jobs:
 
 
       # ==========================================
-      # VERIFY APK SIGNATURE
+      # VERIFY APK + RELEASE CERTIFICATE
       # ==========================================
 
       - name: Verify APK signing certificate
@@ -341,31 +526,30 @@ jobs:
 
           ls -lh "$APK"
 
+
           echo ""
           echo "=========================================="
           echo "       CHECK KEYSTORE"
           echo "=========================================="
 
           if [ ! -f "$KEYSTORE" ]; then
-            echo "ERROR: Keystore does not exist:"
-            echo "$KEYSTORE"
+            echo "ERROR: Keystore does not exist."
             exit 1
           fi
 
           ls -lh "$KEYSTORE"
+
 
           echo ""
           echo "=========================================="
           echo "       KEYSTORE CERTIFICATE"
           echo "=========================================="
 
-          echo "Alias: $KEY_ALIAS"
-          echo "Reading keystore..."
-
           keytool -list -v \
             -keystore "$KEYSTORE" \
             -storepass "$KEYSTORE_PASSWORD" \
             -alias "$KEY_ALIAS"
+
 
           echo ""
           echo "=========================================="
@@ -386,20 +570,65 @@ jobs:
           echo "Using:"
           echo "$APKSIGNER"
 
+
           echo ""
           echo "=========================================="
           echo "       ACTUAL APK CERTIFICATE"
           echo "=========================================="
 
-          "$APKSIGNER" verify \
-            --verbose \
-            --print-certs \
-            "$APK"
+          CERT_OUTPUT=$(
+            "$APKSIGNER" verify \
+              --verbose \
+              --print-certs \
+              "$APK" 2>&1
+          )
+
+          echo "$CERT_OUTPUT"
+
 
           echo ""
           echo "=========================================="
-          echo "       SIGNATURE CHECK COMPLETE"
+          echo "       RELEASE CERTIFICATE CHECK"
           echo "=========================================="
+
+          if echo "$CERT_OUTPUT" | grep -qi \
+            "certificate DN: CN=Android Debug"; then
+
+            echo ""
+            echo "ERROR: APK IS SIGNED WITH ANDROID DEBUG CERTIFICATE."
+            echo ""
+            echo "The release signing configuration was NOT applied."
+            echo "Expected certificate:"
+            echo "B8:65:D4:6C:C3:65:C7:B1:EE:66:03:0B:52:47:1E:33:D0:08:11:B7"
+
+            exit 1
+          fi
+
+
+          if ! echo "$CERT_OUTPUT" | grep -qi \
+            "certificate SHA-1 digest: b8:65:d4:6c:c3:65:c7:b1:ee:66:03:0b:52:47:1e:33:d0:08:11:b7"; then
+
+            echo ""
+            echo "ERROR: APK SHA-1 DOES NOT MATCH KING X RELEASE KEYSTORE."
+            echo ""
+            echo "Expected:"
+            echo "B8:65:D4:6C:C3:65:C7:B1:EE:66:03:0B:52:47:1E:33:D0:08:11:B7"
+
+            exit 1
+          fi
+
+
+          echo ""
+          echo "=========================================="
+          echo "       SIGNING VERIFIED"
+          echo "=========================================="
+          echo ""
+          echo "SUCCESS!"
+          echo "The APK is signed with the King X release certificate."
+          echo ""
+          echo "SHA-1:"
+          echo "B8:65:D4:6C:C3:65:C7:B1:EE:66:03:0B:52:47:1E:33:D0:08:11:B7"
+          echo ""
 
 
       # ==========================================
@@ -408,13 +637,16 @@ jobs:
 
       - name: Verify APK
         run: |
+          set -e
+
           APK_PATH="android/app/build/outputs/apk/release/app-release.apk"
 
           if [ ! -f "$APK_PATH" ]; then
             echo "ERROR: APK was not generated."
-            echo ""
 
+            echo ""
             echo "Available output files:"
+
             find android/app/build/outputs \
               -type f 2>/dev/null || true
 
@@ -443,7 +675,7 @@ jobs:
 
 
       # ==========================================
-      # UPLOAD GRADLE LOG IF BUILD FAILS
+      # UPLOAD GRADLE LOG IF FAILED
       # ==========================================
 
       - name: Upload Gradle debug log
