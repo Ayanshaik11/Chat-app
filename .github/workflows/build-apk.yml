@@ -105,6 +105,17 @@ jobs:
 
           print("Firebase JSON validation: PASS")
           print("Client entries:", len(data["client"]))
+
+          for client in data["client"]:
+              info = client.get("client_info", {})
+              package_name = info.get(
+                  "android_client_info", {}
+              ).get("package_name")
+
+              print("Firebase Android package:", package_name)
+
+              if package_name == "com.chat.app":
+                  print("Firebase package verification: PASS")
           PY
 
 
@@ -175,10 +186,6 @@ jobs:
 
       # =========================================================
       # 12. Configure release signing
-      #
-      # IMPORTANT:
-      # No KINGX_UPLOAD_* Gradle properties are used.
-      # Gradle reads signing values from environment variables.
       # =========================================================
       - name: Configure release signing
         run: |
@@ -285,7 +292,65 @@ jobs:
 
 
       # =========================================================
-      # 16. Verify APK
+      # 16. Verify ACTUAL APK signing certificate
+      # =========================================================
+      - name: Verify APK signing certificate
+        working-directory: android
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+        run: |
+          set -e
+
+          APK="app/build/outputs/apk/release/app-release.apk"
+
+          if [ ! -f "$APK" ]; then
+            echo "ERROR: APK does not exist."
+            exit 1
+          fi
+
+          echo ""
+          echo "=========================================="
+          echo "       KEYSTORE CERTIFICATE"
+          echo "=========================================="
+
+          keytool -list -v \
+            -keystore app/kingx-release.keystore \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS" \
+            | grep -E "Alias name:|SHA1:|SHA256:"
+
+          echo ""
+          echo "=========================================="
+          echo "       ACTUAL APK CERTIFICATE"
+          echo "=========================================="
+
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" \
+            -name apksigner \
+            -type f \
+            | sort -V \
+            | tail -1)
+
+          if [ -z "$APKSIGNER" ]; then
+            echo "ERROR: apksigner not found."
+            exit 1
+          fi
+
+          echo "Using apksigner:"
+          echo "$APKSIGNER"
+
+          "$APKSIGNER" verify \
+            --print-certs \
+            "$APK"
+
+          echo ""
+          echo "=========================================="
+          echo " APK SIGNATURE VERIFICATION COMPLETE"
+          echo "=========================================="
+
+
+      # =========================================================
+      # 17. Verify APK exists
       # =========================================================
       - name: Verify APK
         run: |
@@ -313,7 +378,7 @@ jobs:
 
 
       # =========================================================
-      # 17. Upload APK
+      # 18. Upload APK
       # =========================================================
       - name: Upload APK
         uses: actions/upload-artifact@v4
@@ -324,7 +389,7 @@ jobs:
 
 
       # =========================================================
-      # 18. Upload Gradle log if build fails
+      # 19. Upload Gradle debug log if build fails
       # =========================================================
       - name: Upload Gradle debug log
         if: failure()
