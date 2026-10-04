@@ -34,7 +34,7 @@ jobs:
 
 
       # ==========================================
-      # JAVA
+      # JAVA 17
       # ==========================================
 
       - name: Setup Java 17
@@ -314,7 +314,7 @@ jobs:
 
 
       # ==========================================
-      # VERIFY APK + CERTIFICATE
+      # VERIFY APK SIGNATURE
       # ==========================================
 
       - name: Verify APK signing certificate
@@ -327,30 +327,49 @@ jobs:
           set -e
 
           APK="app/build/outputs/apk/release/app-release.apk"
+          KEYSTORE="app/kingx-release.keystore"
+
+          echo ""
+          echo "=========================================="
+          echo "       CHECK APK"
+          echo "=========================================="
 
           if [ ! -f "$APK" ]; then
             echo "ERROR: APK does not exist."
             exit 1
           fi
 
+          ls -lh "$APK"
+
+          echo ""
+          echo "=========================================="
+          echo "       CHECK KEYSTORE"
+          echo "=========================================="
+
+          if [ ! -f "$KEYSTORE" ]; then
+            echo "ERROR: Keystore does not exist:"
+            echo "$KEYSTORE"
+            exit 1
+          fi
+
+          ls -lh "$KEYSTORE"
+
           echo ""
           echo "=========================================="
           echo "       KEYSTORE CERTIFICATE"
           echo "=========================================="
 
-          keytool -list -v \
-            -keystore app/kingx-release.keystore \
-            -storepass "$KEYSTORE_PASSWORD" \
-            -alias "$KEY_ALIAS" \
-            > keystore-cert.txt
+          echo "Alias: $KEY_ALIAS"
+          echo "Reading keystore..."
 
-          grep -E \
-            "Alias name:|SHA1:|SHA256:" \
-            keystore-cert.txt || true
+          keytool -list -v \
+            -keystore "$KEYSTORE" \
+            -storepass "$KEYSTORE_PASSWORD" \
+            -alias "$KEY_ALIAS"
 
           echo ""
           echo "=========================================="
-          echo "       ACTUAL APK CERTIFICATE"
+          echo "       FIND APKSIGNER"
           echo "=========================================="
 
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" \
@@ -364,8 +383,13 @@ jobs:
             exit 1
           fi
 
-          echo "Using apksigner:"
+          echo "Using:"
           echo "$APKSIGNER"
+
+          echo ""
+          echo "=========================================="
+          echo "       ACTUAL APK CERTIFICATE"
+          echo "=========================================="
 
           "$APKSIGNER" verify \
             --verbose \
@@ -374,7 +398,7 @@ jobs:
 
           echo ""
           echo "=========================================="
-          echo " APK SIGNATURE VERIFICATION COMPLETE"
+          echo "       SIGNATURE CHECK COMPLETE"
           echo "=========================================="
 
 
@@ -419,7 +443,7 @@ jobs:
 
 
       # ==========================================
-      # UPLOAD GRADLE DEBUG LOG IF FAILED
+      # UPLOAD GRADLE LOG IF BUILD FAILS
       # ==========================================
 
       - name: Upload Gradle debug log
