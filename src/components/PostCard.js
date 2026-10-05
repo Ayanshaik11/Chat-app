@@ -2,85 +2,220 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Image, Pressable, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/SettingsContext';
-import { getCommentCount } from '../services/comments';
+import { subscribeComments } from '../services/comments';
 import { timeAgo } from '../utils/helpers';
 import Avatar from './Avatar';
 import T from './T';
 
-export default function PostCard({ post, author, meId, onLike, onDelete, onOpenAuthor, onComment }) {
+export default function PostCard({
+  post,
+  author,
+  meId,
+  onLike,
+  onDelete,
+  onOpenAuthor,
+  onComment,
+}) {
   const { colors } = useTheme();
   const { width } = useWindowDimensions();
+
   const scale = useRef(new Animated.Value(1)).current;
+
   const likes = post.likes || [];
   const liked = likes.includes(meId);
   const name = author?.name || 'User';
+
   const [commentCount, setCommentCount] = useState(null);
 
+  // 🔥 LIVE COMMENT COUNT
   useEffect(() => {
-    let alive = true;
-    getCommentCount(post.id).then((n) => alive && setCommentCount(n));
-    return () => {
-      alive = false;
-    };
-  }, [post.id]);
+    if (!post?.id) return;
+
+    const unsubscribe = subscribeComments(post.id, (comments) => {
+      setCommentCount(comments.length);
+    });
+
+    return unsubscribe;
+  }, [post?.id]);
 
   const like = () => {
     Animated.sequence([
-      Animated.timing(scale, { toValue: 1.35, duration: 110, useNativeDriver: true }),
-      Animated.timing(scale, { toValue: 1, duration: 110, useNativeDriver: true }),
+      Animated.timing(scale, {
+        toValue: 1.35,
+        duration: 110,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scale, {
+        toValue: 1,
+        duration: 110,
+        useNativeDriver: true,
+      }),
     ]).start();
+
     onLike && onLike(post);
   };
 
   return (
     <View style={{ marginBottom: 18 }}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8, gap: 10 }}>
-        <Pressable onPress={() => onOpenAuthor && onOpenAuthor(post.authorId)} style={{ flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 }}>
-          <Avatar uri={author?.photoURL} name={name} size={36} />
+      {/* HEADER */}
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          paddingHorizontal: 12,
+          paddingVertical: 8,
+          gap: 10,
+        }}
+      >
+        <Pressable
+          onPress={() => onOpenAuthor && onOpenAuthor(post.authorId)}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+            flex: 1,
+          }}
+        >
+          <Avatar
+            uri={author?.photoURL}
+            name={name}
+            size={36}
+          />
+
           <View style={{ flex: 1 }}>
-            <T weight="semibold" size={14} numberOfLines={1}>{author?.username || name}</T>
-            <T size={11} color="subtext">{timeAgo(post.createdAt)}</T>
+            <T
+              weight="semibold"
+              size={14}
+              numberOfLines={1}
+            >
+              {author?.username || name}
+            </T>
+
+            <T size={11} color="subtext">
+              {timeAgo(post.createdAt)}
+            </T>
           </View>
         </Pressable>
+
         {post.authorId === meId && onDelete ? (
-          <Pressable onPress={() => onDelete(post)} hitSlop={10}>
-            <Ionicons name="trash-outline" size={20} color={colors.subtext} />
+          <Pressable
+            onPress={() => onDelete(post)}
+            hitSlop={10}
+          >
+            <Ionicons
+              name="trash-outline"
+              size={20}
+              color={colors.subtext}
+            />
           </Pressable>
         ) : null}
       </View>
 
-      <Image source={{ uri: post.imageURL }} style={{ width, height: width, backgroundColor: colors.inputBg }} />
+      {/* IMAGE */}
+      <Image
+        source={{ uri: post.imageURL }}
+        style={{
+          width,
+          height: width,
+          backgroundColor: colors.inputBg,
+        }}
+      />
 
-      <View style={{ paddingHorizontal: 12, paddingTop: 10 }}>
-        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 16 }}>
-          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Pressable onPress={like} hitSlop={10}>
-              <Animated.View style={{ transform: [{ scale }] }}>
-                <Ionicons name={liked ? 'heart' : 'heart-outline'} size={28} color={liked ? '#F43F5E' : colors.text} />
+      {/* ACTIONS */}
+      <View
+        style={{
+          paddingHorizontal: 12,
+          paddingTop: 10,
+        }}
+      >
+        <View
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 16,
+          }}
+        >
+          {/* LIKE */}
+          <View
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+            }}
+          >
+            <Pressable
+              onPress={like}
+              hitSlop={10}
+            >
+              <Animated.View
+                style={{
+                  transform: [{ scale }],
+                }}
+              >
+                <Ionicons
+                  name={liked ? 'heart' : 'heart-outline'}
+                  size={28}
+                  color={liked ? '#F43F5E' : colors.text}
+                />
               </Animated.View>
             </Pressable>
-            <T weight="medium" size={14}>{likes.length}</T>
+
+            <T weight="medium" size={14}>
+              {likes.length}
+            </T>
           </View>
 
+          {/* COMMENTS */}
           <Pressable
             onPress={() => onComment && onComment(post)}
             disabled={!onComment}
-            style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}
+            style={{
+              flexDirection: 'row',
+              alignItems: 'center',
+              gap: 8,
+            }}
             hitSlop={10}
           >
-            <Ionicons name="chatbubble-outline" size={24} color={colors.text} />
-            {commentCount ? <T weight="medium" size={14}>{commentCount}</T> : null}
+            <Ionicons
+              name="chatbubble-outline"
+              size={24}
+              color={colors.text}
+            />
+
+            {commentCount !== null ? (
+              <T weight="medium" size={14}>
+                {commentCount}
+              </T>
+            ) : null}
           </Pressable>
         </View>
+
+        {/* CAPTION */}
         {post.caption ? (
-          <T size={14} style={{ marginTop: 6 }}>
-            <T weight="semibold" size={14}>{author?.username || name} </T>
+          <T
+            size={14}
+            style={{ marginTop: 6 }}
+          >
+            <T weight="semibold" size={14}>
+              {author?.username || name}{' '}
+            </T>
+
             {post.caption}
           </T>
         ) : null}
-        {onComment && commentCount ? (
-          <Pressable onPress={() => onComment(post)} style={{ marginTop: 4 }}>
-            <T size={13} color="subtext">View all {commentCount} comments</T>
+
+        {/* VIEW COMMENTS */}
+        {onComment && commentCount > 0 ? (
+          <Pressable
+            onPress={() => onComment(post)}
+            style={{ marginTop: 4 }}
+          >
+            <T
+              size={13}
+              color="subtext"
+            >
+              View all {commentCount} comments
+            </T>
           </Pressable>
         ) : null}
       </View>
