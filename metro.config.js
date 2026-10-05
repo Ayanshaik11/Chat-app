@@ -1,5 +1,3 @@
-cd ~/Chat-app
-cat > metro.config.js <<'EOF'
 const { getDefaultConfig } = require('expo/metro-config');
 
 const config = getDefaultConfig(__dirname);
@@ -15,4 +13,3 @@ config.resolver.blockList = [
 ];
 
 module.exports = config;
-EOF
