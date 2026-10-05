@@ -32,7 +32,7 @@ const Tab = createBottomTabNavigator();
 const TAB_ICONS = {
   Home: ['home', 'home-outline'],
   Find: ['search', 'search-outline'],
-  Reels: ['film', 'film-outline'],
+  Videos: ['videocam', 'videocam-outline'],
   Messages: ['chatbubbles', 'chatbubbles-outline'],
   Notifications: ['notifications', 'notifications-outline'],
   Profile: ['person', 'person-outline'],
@@ -48,7 +48,7 @@ function Tabs() {
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.subtext,
         // Reels goes edge-to-edge like Instagram — no tab bar cutting into the video
-        tabBarStyle: route.name === 'Reels' ? { display: 'none' } : { backgroundColor: colors.tabBar, borderTopColor: colors.border },
+        tabBarStyle: route.name === 'Videos' ? { display: 'none' } : { backgroundColor: colors.tabBar, borderTopColor: colors.border },
         tabBarLabelStyle: { fontFamily: fonts.medium, fontSize: 10 },
         tabBarBadgeStyle: { backgroundColor: colors.accent, color: '#fff', fontFamily: fonts.semibold, fontSize: 10 },
         tabBarIcon: ({ color, focused }) => (
@@ -58,7 +58,7 @@ function Tabs() {
     >
       <Tab.Screen name="Home" component={HomeScreen} />
       <Tab.Screen name="Find" component={FindScreen} />
-      <Tab.Screen name="Reels" component={ReelsScreen} />
+      <Tab.Screen name="Videos" component={ReelsScreen} />
       <Tab.Screen name="Messages" component={MessagesScreen} options={{ tabBarBadge: unreadMessages > 0 ? unreadMessages : undefined }} />
       <Tab.Screen name="Notifications" component={NotificationsScreen} options={{ tabBarBadge: unreadNotifs > 0 ? unreadNotifs : undefined }} />
       <Tab.Screen name="Profile" component={ProfileScreen} />
