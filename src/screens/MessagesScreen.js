@@ -46,22 +46,22 @@ export default function MessagesScreen({
     fonts,
   } = useTheme();
 
-  const [text, setText] =
-    useState('');
+  const [text, setText] = useState('');
 
   /* =======================================================
      RECENT CHATS
   ======================================================= */
 
   const rows = useMemo(() => {
-    if (!me?.id) {
+    const myId = me?.id || me?.uid;
+
+    if (!myId) {
       return [];
     }
 
-    const q =
-      text.trim().toLowerCase();
+    const q = text.trim().toLowerCase();
 
-    return friends
+    return (friends || [])
       .filter(friend => {
         if (!q) {
           return true;
@@ -71,49 +71,82 @@ export default function MessagesScreen({
           (friend.name || '')
             .toLowerCase()
             .includes(q) ||
+          (friend.displayName || '')
+            .toLowerCase()
+            .includes(q) ||
           (friend.email || '')
             .toLowerCase()
             .includes(q)
         );
       })
       .map(friend => {
+        const friendId =
+          friend.id ||
+          friend.uid;
+
+        if (!friendId) {
+          return {
+            friend,
+            chat: null,
+            lastActivity: 0,
+          };
+        }
+
         const chatId =
           chatIdFor(
-            me.id,
-            friend.id
+            myId,
+            friendId
           );
 
         const chat =
           chats?.[chatId] || null;
 
-        const lastActivity =
+        /*
+         * lastMessageAt is the real ordering
+         * value.
+         *
+         * updatedAt is only a fallback for
+         * older chat documents created before
+         * lastMessageAt was added.
+         */
+        const lastMessageAt =
           chat
-            ? Math.max(
-                toMillis(
-                  chat.lastMessageAt
-                ),
-                toMillis(
-                  chat.updatedAt
-                )
+            ? toMillis(
+                chat.lastMessageAt
               )
             : 0;
 
+        const updatedAt =
+          chat
+            ? toMillis(
+                chat.updatedAt
+              )
+            : 0;
+
+        const lastActivity =
+          lastMessageAt ||
+          updatedAt ||
+          0;
+
         return {
           friend,
+          friendId,
           chat,
           lastActivity,
         };
       })
-      .sort(
-        (a, b) =>
+      .sort((a, b) => {
+        return (
           b.lastActivity -
           a.lastActivity
-      );
+        );
+      });
   }, [
     friends,
     chats,
     text,
     me?.id,
+    me?.uid,
   ]);
 
   /* =======================================================
@@ -125,17 +158,33 @@ export default function MessagesScreen({
   }) => {
     const {
       friend,
+      friendId,
       chat,
     } = item;
 
+    const myId =
+      me?.id ||
+      me?.uid;
+
     const unread =
-      chat?.unread?.[me?.id] || 0;
+      chat?.unread?.[myId] || 0;
+
+    const friendName =
+      friend.name ||
+      friend.displayName ||
+      'User';
+
+    const photoURL =
+      friend.photoURL ||
+      friend.photoUrl ||
+      friend.profilePic ||
+      friend.avatar ||
+      '';
 
     const preview =
       chat?.lastMessage
         ? `${
-            chat.lastSender ===
-            me?.id
+            chat.lastSender === myId
               ? 'You: '
               : ''
           }${chat.lastMessage}`
@@ -150,24 +199,16 @@ export default function MessagesScreen({
               user: me,
 
               otherUser: {
-                id: friend.id,
+                id: friendId,
 
                 name:
-                  friend.name ||
-                  friend.displayName ||
-                  'User',
+                  friendName,
 
                 displayName:
                   friend.displayName ||
-                  friend.name ||
-                  'User',
+                  friendName,
 
-                photoURL:
-                  friend.photoURL ||
-                  friend.photoUrl ||
-                  friend.profilePic ||
-                  friend.avatar ||
-                  '',
+                photoURL,
 
                 email:
                   friend.email ||
@@ -192,16 +233,8 @@ export default function MessagesScreen({
         })}
       >
         <Avatar
-          uri={
-            friend.photoURL ||
-            friend.photoUrl ||
-            friend.profilePic ||
-            friend.avatar
-          }
-          name={
-            friend.name ||
-            friend.displayName
-          }
+          uri={photoURL}
+          name={friendName}
           size={54}
           online={isOnline(friend)}
         />
@@ -220,9 +253,7 @@ export default function MessagesScreen({
             }
             numberOfLines={1}
           >
-            {friend.name ||
-              friend.displayName ||
-              'User'}
+            {friendName}
           </T>
 
           <T
@@ -245,8 +276,7 @@ export default function MessagesScreen({
 
         <View
           style={{
-            alignItems:
-              'flex-end',
+            alignItems: 'flex-end',
             gap: 6,
           }}
         >
@@ -274,11 +304,8 @@ export default function MessagesScreen({
 
                 paddingHorizontal: 5,
 
-                alignItems:
-                  'center',
-
-                justifyContent:
-                  'center',
+                alignItems: 'center',
+                justifyContent: 'center',
               }}
             >
               <T
@@ -317,11 +344,8 @@ export default function MessagesScreen({
 
         <View
           style={{
-            flexDirection:
-              'row',
-
-            alignItems:
-              'center',
+            flexDirection: 'row',
+            alignItems: 'center',
 
             backgroundColor:
               colors.inputBg,
@@ -347,9 +371,7 @@ export default function MessagesScreen({
 
           <TextInput
             value={text}
-            onChangeText={
-              setText
-            }
+            onChangeText={setText}
             placeholder="Search friends"
             placeholderTextColor={
               colors.subtext
@@ -372,12 +394,19 @@ export default function MessagesScreen({
       <FlatList
         data={rows}
         keyExtractor={item =>
-          item.friend.id
+          item.friendId ||
+          item.friend.id ||
+          item.friend.uid
         }
-        renderItem={
-          renderItem
-        }
+        renderItem={renderItem}
         keyboardShouldPersistTaps="handled"
+
+        /*
+         * This makes the list immediately
+         * reflect chat-summary changes.
+         */
+        removeClippedSubviews={false}
+
         ListEmptyComponent={
           <EmptyState
             title="No messages"
