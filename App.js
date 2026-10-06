@@ -170,11 +170,14 @@ function Root() {
               data?.type === 'message' &&
               data?.fromId
             ) {
-              navigateToChat({
-                id: data.fromId,
-                name: data.fromName || 'User',
-                photoURL: data.fromPhoto || '',
-              });
+              navigateToChat(
+                {
+                  id: data.fromId,
+                  name: data.fromName || 'User',
+                  photoURL: data.fromPhoto || '',
+                },
+                me
+              );
             }
           } catch (error) {
             console.error(
@@ -188,7 +191,7 @@ function Root() {
     return () => {
       subscription.remove();
     };
-  }, []);
+  }, [me]);
 
   /*
    * Handle notifications received while
