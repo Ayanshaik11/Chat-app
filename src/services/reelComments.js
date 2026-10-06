@@ -1,5 +1,5 @@
 import {
-  collection, deleteDoc, doc, getCountFromServer, onSnapshot, orderBy, query, serverTimestamp, setDoc,
+  collection, deleteDoc, doc, getCountFromServer, getDocs, onSnapshot, orderBy, query, serverTimestamp, setDoc,
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 
@@ -33,4 +33,10 @@ export async function getReelCommentCount(reelId) {
   } catch {
     return 0;
   }
+}
+
+// One-time fetch of a reel's comments, oldest first
+export async function fetchReelComments(reelId) {
+  const snap = await getDocs(query(commentsRef(reelId), orderBy('createdAt', 'asc')));
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
 }

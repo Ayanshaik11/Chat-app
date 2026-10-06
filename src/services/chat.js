@@ -121,8 +121,7 @@ export async function sendMessage(
       lastMessageAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
 
-      [`unread.${other}`]:
-        increment(1),
+      unread: { [other]: increment(1) },
     },
     {
       merge: true,
@@ -153,10 +152,8 @@ export async function markChatRead(
   await setDoc(
     chatRef,
     {
-      [`unread.${userId}`]: 0,
-
-      [`lastRead.${userId}`]:
-        serverTimestamp(),
+      unread: { [userId]: 0 },
+      lastRead: { [userId]: serverTimestamp() },
     },
     {
       merge: true,
@@ -244,7 +241,7 @@ export async function setTyping(
   await setDoc(
     chatRef,
     {
-      [`typing.${userId}`]: !!value,
+      typing: { [userId]: !!value },
     },
     {
       merge: true,

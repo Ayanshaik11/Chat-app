@@ -7,6 +7,7 @@ import {
 } from 'firebase/firestore';
 
 import { db } from '../config/firebase';
+import { PROXY_API_URL } from '../config/proxy';
 
 /*
  * Full URL of your deployed Vercel notification API.
@@ -18,7 +19,8 @@ import { db } from '../config/firebase';
  * because React Native does not resolve it like a browser.
  */
 const NOTIFICATION_API_URL =
-  process.env.EXPO_PUBLIC_NOTIFICATION_API_URL || '';
+  process.env.EXPO_PUBLIC_NOTIFICATION_API_URL ||
+  `${PROXY_API_URL}/api/send-notification`;
 
 /**
  * Send a push notification through the Vercel FCM proxy.
@@ -162,6 +164,10 @@ export async function addNotification(userId, data) {
     data: {
       type: data?.type || 'general',
       notificationId: notificationRef.id,
+      // Used by App.js to open the right chat when the notification is tapped
+      ...(data?.fromId ? { fromId: data.fromId } : {}),
+      ...(data?.fromName ? { fromName: data.fromName } : {}),
+      ...(data?.fromPhoto ? { fromPhoto: data.fromPhoto } : {}),
     },
   });
 
