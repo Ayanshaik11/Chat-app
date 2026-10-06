@@ -9,21 +9,35 @@ import {
   updateDoc,
   writeBatch,
 } from 'firebase/firestore';
+
 import { db } from '../config/firebase';
 import { PROXY_BASE_URL } from '../config/proxy';
 import { pairId } from '../utils/helpers';
 
-// Push notification for a new message.
+// ---------------------------------------------------------
+// SEND PUSH NOTIFICATION
+// ---------------------------------------------------------
+
+// Asks the Vercel proxy to push a real system notification
+// to the other person's phone.
+// Notification failure never blocks the message itself.
 function notifyNewMessage(me, other, text) {
-  if (!PROXY_BASE_URL || PROXY_BASE_URL.includes('YOUR-PROJECT')) return;
+  if (!PROXY_BASE_URL || PROXY_BASE_URL.includes('YOUR-PROJECT')) {
+    return;
+  }
 
   fetch(`${PROXY_BASE_URL}/api/send-notification`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+    },
     body: JSON.stringify({
       toUserId: other.id,
+
       title: me.name || 'New message',
+
       body: text,
+
       data: {
         type: 'message',
         fromId: me.id,
@@ -34,52 +48,74 @@ function notifyNewMessage(me, other, text) {
   }).catch(() => {});
 }
 
+// ---------------------------------------------------------
+// CHAT ID
+// ---------------------------------------------------------
+
 export const chatIdFor = pairId;
+
+// ---------------------------------------------------------
+// SEND MESSAGE
+// ---------------------------------------------------------
 
 export async function sendMessage(me, other, text, replyTo = null) {
   const chatId = chatIdFor(me.id, other.id);
-  const msgRef = doc(collection(db, 'chats', chatId, 'messages'));
 
-  const message = {
+  const msgRef = doc(
+    collection(db, 'chats', chatId, 'messages')
+  );
+
+  const batch = writeBatch(db);
+
+  const messageData = {
     senderId: me.id,
     text,
     createdAt: serverTimestamp(),
   };
 
+  // Only add replyTo when replying to another message.
   if (replyTo) {
-    message.replyTo = {
+    messageData.replyTo = {
       id: replyTo.id,
       text: replyTo.text || '',
-      senderId: replyTo.senderId,
+      senderId: replyTo.senderId || '',
     };
   }
 
-  const batch = writeBatch(db);
+  // Create message
+  batch.set(msgRef, messageData);
 
-  batch.set(msgRef, message);
-
+  // Update chat preview / unread count
   batch.set(
     doc(db, 'chats', chatId),
     {
       members: [me.id, other.id],
+
       lastMessage: text,
+
       lastSender: me.id,
+
       lastMessageAt: serverTimestamp(),
+
       unread: {
         [other.id]: increment(1),
       },
     },
-    { merge: true }
+    {
+      merge: true,
+    }
   );
 
   await batch.commit();
 
+  // Push notification after successful message creation.
   notifyNewMessage(me, other, text);
-
-  return msgRef.id;
 }
 
-// Mark chat as read.
+// ---------------------------------------------------------
+// MARK CHAT AS READ
+// ---------------------------------------------------------
+
 export const markChatRead = (chatId, meId) =>
   setDoc(
     doc(db, 'chats', chatId),
@@ -87,14 +123,21 @@ export const markChatRead = (chatId, meId) =>
       unread: {
         [meId]: 0,
       },
+
       lastRead: {
         [meId]: serverTimestamp(),
       },
     },
-    { merge: true }
+    {
+      merge: true,
+    }
   );
 
-// Typing indicator.
+// ---------------------------------------------------------
+// TYPING INDICATOR
+// ---------------------------------------------------------
+
+// Shown to the other person as a live "typing..." indicator.
 export const setTyping = (chatId, meId, isTyping) =>
   setDoc(
     doc(db, 'chats', chatId),
@@ -103,49 +146,117 @@ export const setTyping = (chatId, meId, isTyping) =>
         [meId]: isTyping,
       },
     },
-    { merge: true }
+    {
+      merge: true,
+    }
   ).catch(() => {});
 
-// ❤️ 😂 😅 etc.
-export async function reactToMessage(chatId, messageId, userId, emoji) {
-  const ref = doc(db, 'chats', chatId, 'messages', messageId);
+// ---------------------------------------------------------
+// REACT TO MESSAGE
+// ---------------------------------------------------------
 
-  await setDoc(
-    ref,
-    {
-      reactions: {
-        [userId]: emoji,
-      },
-    },
-    { merge: true }
+export async function reactToMessage(
+  chatId,
+  messageId,
+  userId,
+  emoji
+) {
+  const ref = doc(
+    db,
+    'chats',
+    chatId,
+    'messages',
+    messageId
   );
+
+  /*
+   * IMPORTANT:
+   *
+   * Do NOT do:
+   *
+   * reactions: {
+   *   [userId]: emoji
+   * }
+   *
+   * with merge:true.
+   *
+   * That can replace the whole reactions map.
+   *
+   * This nested field update changes only this user's
+   * reaction and keeps everybody else's reaction.
+   */
+
+  await updateDoc(ref, {
+    [`reactions.${userId}`]: emoji,
+  });
 }
 
-// Remove the current user's reaction.
-export async function removeReaction(chatId, messageId, userId) {
-  const ref = doc(db, 'chats', chatId, 'messages', messageId);
+// ---------------------------------------------------------
+// REMOVE REACTION
+// ---------------------------------------------------------
+
+export async function removeReaction(
+  chatId,
+  messageId,
+  userId
+) {
+  const ref = doc(
+    db,
+    'chats',
+    chatId,
+    'messages',
+    messageId
+  );
 
   await updateDoc(ref, {
     [`reactions.${userId}`]: deleteField(),
   });
 }
 
-// 🔴 Unsend — removes the message content for everyone.
-export async function unsendMessage(chatId, messageId) {
-  const ref = doc(db, 'chats', chatId, 'messages', messageId);
+// ---------------------------------------------------------
+// UNSEND MESSAGE
+// ---------------------------------------------------------
+
+export async function unsendMessage(
+  chatId,
+  messageId
+) {
+  const ref = doc(
+    db,
+    'chats',
+    chatId,
+    'messages',
+    messageId
+  );
 
   await updateDoc(ref, {
     text: 'This message was unsent',
     unsent: true,
+
+    // Remove reactions
     reactions: deleteField(),
+
+    // Remove reply information
     replyTo: deleteField(),
   });
 }
 
-// 🗑️ Delete for you.
-// We store the user's ID in deletedFor so the other person still sees it.
-export async function deleteMessageForMe(chatId, messageId, userId) {
-  const ref = doc(db, 'chats', chatId, 'messages', messageId);
+// ---------------------------------------------------------
+// DELETE MESSAGE FOR ME
+// ---------------------------------------------------------
+
+export async function deleteMessageForMe(
+  chatId,
+  messageId,
+  userId
+) {
+  const ref = doc(
+    db,
+    'chats',
+    chatId,
+    'messages',
+    messageId
+  );
 
   await updateDoc(ref, {
     deletedFor: arrayUnion(userId),
