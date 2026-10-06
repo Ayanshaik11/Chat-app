@@ -164,9 +164,6 @@ function MessageRow({
 
   const longPressTriggered = useRef(false);
 
-  /*
-   * Small press animation on the exact bubble.
-   */
   const handlePressIn = () => {
     Animated.timing(pressScale, {
       toValue: 0.96,
@@ -184,11 +181,6 @@ function MessageRow({
     }).start();
   };
 
-  /*
-   * Long press:
-   * - haptic
-   * - open action menu
-   */
   const handleLongPress = async () => {
     if (longPressTriggered.current) {
       return;
@@ -209,9 +201,6 @@ function MessageRow({
     }, 250);
   };
 
-  /*
-   * LEFT → RIGHT reply gesture.
-   */
   const panResponder = useMemo(
     () =>
       PanResponder.create({
@@ -221,11 +210,6 @@ function MessageRow({
           _,
           gesture
         ) => {
-          /*
-           * IMPORTANT:
-           * Only positive dx is accepted.
-           * Positive dx = LEFT → RIGHT.
-           */
           return (
             gesture.dx > 8 &&
             gesture.dx >
@@ -287,9 +271,6 @@ function MessageRow({
     ]
   );
 
-  /*
-   * Reactions
-   */
   const reactions = item.reactions
     ? Object.entries(item.reactions)
     : [];
@@ -308,9 +289,6 @@ function MessageRow({
     }
   );
 
-  /*
-   * Seen
-   */
   const seenBy = item.seenBy || {};
 
   const otherSeenEntries =
@@ -382,10 +360,6 @@ function MessageRow({
                 styles.unsentBubble,
             ]}
           >
-            {/* =================================================
-                OLD REPLIED MESSAGE
-            ================================================= */}
-
             {hasReply && (
               <View style={styles.replyQuote}>
                 <View
@@ -423,10 +397,6 @@ function MessageRow({
               </View>
             )}
 
-            {/* =================================================
-                CURRENT MESSAGE
-            ================================================= */}
-
             <Text
               style={[
                 styles.messageText,
@@ -443,10 +413,6 @@ function MessageRow({
               </Text>
             )}
           </Pressable>
-
-          {/* =================================================
-              REACTION CHIPS
-          ================================================= */}
 
           {Object.keys(reactionCounts).length >
             0 && (
@@ -496,10 +462,6 @@ function MessageRow({
         </Animated.View>
       </View>
 
-      {/* =====================================================
-          SEEN
-      ===================================================== */}
-
       {isMine && latestSeen && (
         <Text style={styles.seenText}>
           {formatSeenTime(latestSeen)}
@@ -526,8 +488,16 @@ export default function ChatScreen({
   const me = user || {};
   const other = otherUser || {};
 
-  const meId = me.uid || me.id;
-  const otherId = other.uid || other.id;
+  /*
+   * IMPORTANT:
+   * King X uses the Google provider ID as its
+   * application-level user ID.
+   *
+   * Do NOT prefer me.uid here because that is
+   * Firebase Auth UID and is different.
+   */
+  const meId = me.id;
+  const otherId = other.id;
 
   const chatId = chatIdFor(
     meId,
@@ -579,9 +549,6 @@ export default function ChatScreen({
 
   const inputRef = useRef(null);
 
-  /*
-   * Long press menu animation.
-   */
   const menuAnim = useRef(
     new Animated.Value(0)
   ).current;
@@ -1030,7 +997,6 @@ export default function ChatScreen({
   )
     .filter(friend => {
       const id =
-        friend?.uid ||
         friend?.id;
 
       return (
@@ -1041,7 +1007,6 @@ export default function ChatScreen({
     .map(friend => ({
       ...friend,
       uid:
-        friend.uid ||
         friend.id,
     }));
 
@@ -1359,8 +1324,6 @@ export default function ChatScreen({
                 },
               ]}
             >
-              {/* QUICK REACTIONS */}
-
               <View
                 style={
                   styles.quickReactionRow
@@ -1968,8 +1931,6 @@ const styles = StyleSheet.create({
     backgroundColor: BG,
   },
 
-  /* HEADER */
-
   header: {
     height: 64,
     flexDirection: 'row',
@@ -2027,15 +1988,11 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
-  /* LOADING */
-
   loading: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
-
-  /* MESSAGES */
 
   messagesList: {
     paddingHorizontal: 12,
@@ -2097,10 +2054,6 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
 
-  /* =======================================================
-     REPLY QUOTE
-  ======================================================= */
-
   replyQuote: {
     flexDirection: 'row',
     backgroundColor: '#3A0D11',
@@ -2134,8 +2087,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
   },
-
-  /* REACTIONS */
 
   reactionRow: {
     flexDirection: 'row',
@@ -2174,16 +2125,12 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
-  /* SEEN */
-
   seenText: {
     color: '#777',
     fontSize: 10,
     marginTop: 2,
     marginHorizontal: 4,
   },
-
-  /* EMPTY */
 
   emptyContainer: {
     alignItems: 'center',
@@ -2201,8 +2148,6 @@ const styles = StyleSheet.create({
     color: '#777',
     marginTop: 5,
   },
-
-  /* REPLY COMPOSER */
 
   replyComposer: {
     minHeight: 58,
@@ -2247,8 +2192,6 @@ const styles = StyleSheet.create({
     color: '#999',
     fontSize: 27,
   },
-
-  /* COMPOSER */
 
   composer: {
     minHeight: 64,
@@ -2297,16 +2240,12 @@ const styles = StyleSheet.create({
     marginLeft: 2,
   },
 
-  /* MODAL */
-
   modalBackdrop: {
     flex: 1,
     backgroundColor:
       'rgba(0,0,0,0.72)',
     justifyContent: 'flex-end',
   },
-
-  /* ACTION SHEET */
 
   actionSheet: {
     backgroundColor: '#151515',
@@ -2404,8 +2343,6 @@ const styles = StyleSheet.create({
     color: RED,
   },
 
-  /* EXTRA REACTIONS */
-
   reactionSheet: {
     maxHeight: '70%',
     backgroundColor: '#151515',
@@ -2452,8 +2389,6 @@ const styles = StyleSheet.create({
   bigEmoji: {
     fontSize: 28,
   },
-
-  /* REACTION POPUP */
 
   reactionPopup: {
     alignSelf: 'center',
@@ -2506,8 +2441,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
   },
-
-  /* FORWARD */
 
   forwardSheet: {
     maxHeight: '82%',
