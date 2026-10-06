@@ -31,6 +31,7 @@ import{
 }from'firebase/firestore';
 
 import{db}from'../config/firebase';
+import{sendPushNotification}from'../services/notifications';
 
 import{
   chatIdFor,
@@ -1080,6 +1081,19 @@ export default function ChatScreen({
         clean,
         reply
       );
+
+      // Push notification for the receiver (never blocks or fails the send)
+      sendPushNotification({
+        toUserId:otherId,
+        title:me.name||'New message',
+        body:clean,
+        data:{
+          type:'message',
+          fromId:meId,
+          fromName:me.name||'',
+          fromPhoto:me.photoURL||''
+        }
+      }).catch(()=>{});
 
 
       requestAnimationFrame(()=>{

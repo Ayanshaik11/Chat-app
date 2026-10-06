@@ -27,13 +27,12 @@ import { useAppData } from '../context/AppDataContext';
 
 import { fetchShorts } from '../services/youtube';
 
+import { fetchReels, toggleReelLike } from '../services/reels';
 import {
-  fetchReels,
-  toggleLikeReel,
-  addComment,
-  deleteComment,
-  fetchComments,
-} from '../services/reels';
+  addReelComment,
+  deleteReelComment,
+  fetchReelComments,
+} from '../services/reelComments';
 
 
 /* =======================================================
@@ -75,9 +74,9 @@ export default function ReelsScreen() {
     height,
   } = useWindowDimensions();
 
-  const { user } = useAuth();
+  const { me } = useAuth();
 
-  useAppData();
+  const { friendIds } = useAppData();
 
 
   /* -------------------------------------------------------
@@ -339,7 +338,7 @@ export default function ReelsScreen() {
       async (
         forceRefresh = false
       ) => {
-        if (!user?.uid) {
+        if (!me?.id) {
           if (mountedRef.current) {
             setFriendReels([]);
           }
@@ -358,7 +357,7 @@ export default function ReelsScreen() {
           setLoading(true);
 
           const result =
-            await fetchReels(user.uid);
+            await fetchReels([me.id, ...friendIds]);
 
           if (!mountedRef.current) {
             return;
@@ -393,7 +392,7 @@ export default function ReelsScreen() {
           }
         }
       },
-      [user?.uid]
+      [me?.id, friendIds]
     );
 
 
@@ -659,16 +658,21 @@ export default function ReelsScreen() {
   const handleLike =
     async (item) => {
       if (
-        !user?.uid ||
+        !me?.id ||
         !item?.id
       ) {
         return;
       }
 
       try {
-        await toggleLikeReel(
+        const wasLiked =
+          Array.isArray(item.likes) &&
+          item.likes.includes(me.id);
+
+        await toggleReelLike(
           item.id,
-          user.uid
+          me.id,
+          wasLiked
         );
 
         const updateList =
@@ -690,7 +694,7 @@ export default function ReelsScreen() {
 
                 const alreadyLiked =
                   likes.includes(
-                    user.uid
+                    me.id
                   );
 
                 return {
@@ -701,11 +705,11 @@ export default function ReelsScreen() {
                       ? likes.filter(
                           (id) =>
                             id !==
-                            user.uid
+                            me.id
                         )
                       : [
                           ...likes,
-                          user.uid,
+                          me.id,
                         ],
                 };
               }
@@ -741,7 +745,7 @@ export default function ReelsScreen() {
 
       try {
         const result =
-          await fetchComments(item.id);
+          await fetchReelComments(item.id);
 
         if (!mountedRef.current) {
           return;
@@ -775,7 +779,7 @@ export default function ReelsScreen() {
   const submitComment =
     async (text) => {
       if (
-        !user?.uid ||
+        !me?.id ||
         !selectedReel?.id ||
         !text?.trim()
       ) {
@@ -783,14 +787,14 @@ export default function ReelsScreen() {
       }
 
       try {
-        await addComment(
+        await addReelComment(
           selectedReel.id,
-          user.uid,
+          me,
           text.trim()
         );
 
         const result =
-          await fetchComments(
+          await fetchReelComments(
             selectedReel.id
           );
 
@@ -825,19 +829,19 @@ export default function ReelsScreen() {
 
   const removeComment =
     async (commentId) => {
-      if (!commentId) {
+      if (!commentId || !selectedReel?.id) {
         return;
       }
 
       try {
-        await deleteComment(commentId);
+        await deleteReelComment(selectedReel.id, commentId);
 
         if (!selectedReel?.id) {
           return;
         }
 
         const result =
-          await fetchComments(
+          await fetchReelComments(
             selectedReel.id
           );
 
@@ -883,7 +887,8 @@ export default function ReelsScreen() {
         index === activeIndex;
 
       const uri =
-        item?.videoUrl ||
+        item?.videoURL ||
+    item?.videoUrl ||
         item?.url ||
         item?.video ||
         item?.mediaUrl;
