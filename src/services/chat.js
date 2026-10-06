@@ -12,6 +12,10 @@ import {
 
 import { db } from '../config/firebase';
 
+/* =========================================================
+   CHAT ID
+========================================================= */
+
 export function chatIdFor(a, b) {
   return [a, b]
     .filter(Boolean)
@@ -30,22 +34,20 @@ export async function sendMessage(
   replyTo = null
 ) {
   if (!me || !other) {
-    throw new Error(
-      'Missing chat participants.'
-    );
+    throw new Error('Missing chat participants.');
   }
 
-  const cleanText =
-    String(text || '').trim();
+  const cleanText = String(text || '').trim();
 
   if (!cleanText) {
     return;
   }
 
-  const chatId = chatIdFor(
-    me,
-    other
-  );
+  const chatId = chatIdFor(me, other);
+
+  if (!chatId) {
+    throw new Error('Invalid chat ID.');
+  }
 
   const chatRef = doc(
     db,
@@ -68,9 +70,12 @@ export async function sendMessage(
     senderId: me,
     receiverId: other,
     text: cleanText,
+
     createdAt: serverTimestamp(),
+
     seenBy: {},
     reactions: {},
+
     unsent: false,
   };
 
@@ -78,28 +83,44 @@ export async function sendMessage(
     messageData.replyTo = {
       id: replyTo.id || null,
       text: replyTo.text || '',
-      senderId:
-        replyTo.senderId || '',
+      senderId: replyTo.senderId || '',
       senderName:
         replyTo.senderName ||
         'Message',
     };
   }
 
+  /* -------------------------------------------------------
+     MESSAGE
+  ------------------------------------------------------- */
+
   batch.set(
     messageRef,
     messageData
   );
 
+  /* -------------------------------------------------------
+     CHAT SUMMARY
+
+     lastSender is important for:
+     "You: message"
+
+     updatedAt is also maintained so the
+     Messages screen can reliably sort
+     conversations by most recent activity.
+  ------------------------------------------------------- */
+
   batch.set(
     chatRef,
     {
       members: [me, other],
+
       lastMessage: cleanText,
-      lastMessageAt:
-        serverTimestamp(),
-      updatedAt:
-        serverTimestamp(),
+      lastSender: me,
+
+      lastMessageAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+
       [`unread.${other}`]:
         increment(1),
     },
@@ -109,14 +130,6 @@ export async function sendMessage(
   );
 
   await batch.commit();
-
-  /*
-   * Notification is intentionally kept
-   * outside the Firestore transaction.
-   *
-   * If your existing project has a
-   * notification function, keep it here.
-   */
 }
 
 /* =========================================================
@@ -141,6 +154,7 @@ export async function markChatRead(
     chatRef,
     {
       [`unread.${userId}`]: 0,
+
       [`lastRead.${userId}`]:
         serverTimestamp(),
     },
@@ -162,7 +176,8 @@ export async function markMessagesSeen(
   if (
     !chatId ||
     !meId ||
-    !Array.isArray(messages)
+    !Array.isArray(messages) ||
+    messages.length === 0
   ) {
     return;
   }
@@ -199,7 +214,7 @@ export async function markMessagesSeen(
         serverTimestamp(),
     });
 
-    count++;
+    count += 1;
   });
 
   if (count > 0) {
@@ -265,8 +280,7 @@ export async function reactToMessage(
   );
 
   await updateDoc(ref, {
-    [`reactions.${userId}`]:
-      emoji,
+    [`reactions.${userId}`]: emoji,
   });
 }
 
