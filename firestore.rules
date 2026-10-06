@@ -3,9 +3,9 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ─────────────────────────────────────────────
-    // Helpers
-    // ─────────────────────────────────────────────
+    // =========================================================
+    // HELPERS
+    // =========================================================
 
     function signedIn() {
       return request.auth != null;
@@ -16,12 +16,14 @@ service cloud.firestore {
     }
 
     function isChatMember(chatId) {
-      return signedIn() && me() in chatId.split('_');
+      return signedIn() &&
+        me() in chatId.split('_');
     }
 
-    // ─────────────────────────────────────────────
+
+    // =========================================================
     // USERS
-    // ─────────────────────────────────────────────
+    // =========================================================
 
     match /users/{userId} {
 
@@ -37,57 +39,69 @@ service cloud.firestore {
         me() == userId;
     }
 
-    // ─────────────────────────────────────────────
+
+    // =========================================================
     // CHATS
-    // ─────────────────────────────────────────────
+    // =========================================================
 
     match /chats/{chatId} {
 
-      // Only members can read a chat.
+      // Both participants can read the chat.
       allow read: if isChatMember(chatId);
 
-      // A chat can only be created/updated by one of its members.
-      allow create, update: if isChatMember(chatId) &&
+      // A new chat must contain its members.
+      allow create: if isChatMember(chatId) &&
         request.resource.data.members is list &&
         me() in request.resource.data.members;
 
+      // Existing chat can be updated by either participant.
+      //
+      // Required for:
+      // - typing
+      // - unread count
+      // - last message
+      // - last read
+      // - timestamps
+      allow update: if isChatMember(chatId);
+
       allow delete: if isChatMember(chatId);
 
-      // ───────────────────────────────────────────
-      // CHAT MESSAGES
-      // ───────────────────────────────────────────
+
+      // =======================================================
+      // MESSAGES
+      // =======================================================
 
       match /messages/{messageId} {
 
-        // Members can read messages.
+        // Both participants can read messages.
         allow read: if isChatMember(chatId);
 
-        // Only a chat member can create a message,
-        // and the sender must be the authenticated user.
+        // Only an authenticated participant can create a message,
+        // and the sender must be the authenticated Firebase user.
         allow create: if isChatMember(chatId) &&
           request.resource.data.senderId == me();
 
-        // Members can update messages.
+        // Both participants can update messages.
         //
-        // This allows:
+        // Required for:
         // - reactions
         // - removing reactions
         // - seenBy
         // - unsend
-        // - delete-for-me
-        // - reply-related message updates
+        // - delete for me
+        // - other message state
         allow update: if isChatMember(chatId);
 
-        // Only the original sender can permanently delete
-        // the message.
+        // Permanent deletion is restricted to the sender.
         allow delete: if isChatMember(chatId) &&
           resource.data.senderId == me();
       }
     }
 
-    // ─────────────────────────────────────────────
+
+    // =========================================================
     // FRIEND REQUESTS
-    // ─────────────────────────────────────────────
+    // =========================================================
 
     match /friendRequests/{requestId} {
 
@@ -100,9 +114,10 @@ service cloud.firestore {
       allow delete: if signedIn();
     }
 
-    // ─────────────────────────────────────────────
+
+    // =========================================================
     // FRIENDSHIPS
-    // ─────────────────────────────────────────────
+    // =========================================================
 
     match /friendships/{friendshipId} {
 
@@ -115,9 +130,10 @@ service cloud.firestore {
       allow delete: if signedIn();
     }
 
-    // ─────────────────────────────────────────────
+
+    // =========================================================
     // POSTS
-    // ─────────────────────────────────────────────
+    // =========================================================
 
     match /posts/{postId} {
 
@@ -131,9 +147,10 @@ service cloud.firestore {
       allow delete: if signedIn() &&
         resource.data.userId == me();
 
-      // ───────────────────────────────────────────
+
+      // =======================================================
       // POST COMMENTS
-      // ───────────────────────────────────────────
+      // =======================================================
 
       match /comments/{commentId} {
 
@@ -149,9 +166,10 @@ service cloud.firestore {
       }
     }
 
-    // ─────────────────────────────────────────────
+
+    // =========================================================
     // STORIES
-    // ─────────────────────────────────────────────
+    // =========================================================
 
     match /stories/{storyId} {
 
@@ -166,9 +184,10 @@ service cloud.firestore {
         resource.data.userId == me();
     }
 
-    // ─────────────────────────────────────────────
+
+    // =========================================================
     // REELS / VIDEOS
-    // ─────────────────────────────────────────────
+    // =========================================================
 
     match /reels/{reelId} {
 
@@ -182,9 +201,10 @@ service cloud.firestore {
       allow delete: if signedIn() &&
         resource.data.userId == me();
 
-      // ───────────────────────────────────────────
+
+      // =======================================================
       // REEL COMMENTS
-      // ───────────────────────────────────────────
+      // =======================================================
 
       match /comments/{commentId} {
 
@@ -200,9 +220,10 @@ service cloud.firestore {
       }
     }
 
-    // ─────────────────────────────────────────────
+
+    // =========================================================
     // NOTIFICATIONS
-    // ─────────────────────────────────────────────
+    // =========================================================
 
     match /notifications/{notificationId} {
 
@@ -218,9 +239,10 @@ service cloud.firestore {
         resource.data.userId == me();
     }
 
-    // ─────────────────────────────────────────────
+
+    // =========================================================
     // DEFAULT DENY
-    // ─────────────────────────────────────────────
+    // =========================================================
 
     match /{document=**} {
       allow read, write: if false;
