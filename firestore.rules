@@ -3,246 +3,105 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // =========================================================
-    // HELPERS
-    // =========================================================
-
+    // The app uses the Google account id (not the Firebase uid) as the user id,
+    // so every ownership check must compare against that id.
     function signedIn() {
       return request.auth != null;
     }
 
     function me() {
-      return request.auth.uid;
+      return request.auth.token.firebase.identities['google.com'][0];
     }
 
     function isChatMember(chatId) {
-      return signedIn() &&
-        me() in chatId.split('_');
+      return signedIn() && me() in chatId.split('_');
     }
 
-
-    // =========================================================
-    // USERS
-    // =========================================================
+    // App update info — read before login, so it must be public
+    match /config/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
 
     match /users/{userId} {
-
       allow read: if signedIn();
+      allow create, update, delete: if signedIn() && me() == userId;
 
-      allow create: if signedIn() &&
-        me() == userId;
-
-      allow update: if signedIn() &&
-        me() == userId;
-
-      allow delete: if signedIn() &&
-        me() == userId;
+      // In-app notifications: anyone signed in can notify a user,
+      // only the owner can read / mark read / delete.
+      match /notifications/{notificationId} {
+        allow create: if signedIn();
+        allow read, update, delete: if signedIn() && me() == userId;
+      }
     }
-
-
-    // =========================================================
-    // CHATS
-    // =========================================================
 
     match /chats/{chatId} {
-
-      // Both participants can read the chat.
       allow read: if isChatMember(chatId);
-
-      // A new chat must contain its members.
-      allow create: if isChatMember(chatId) &&
-        request.resource.data.members is list &&
-        me() in request.resource.data.members;
-
-      // Existing chat can be updated by either participant.
-      //
-      // Required for:
-      // - typing
-      // - unread count
-      // - last message
-      // - last read
-      // - timestamps
-      allow update: if isChatMember(chatId);
-
-      allow delete: if isChatMember(chatId);
-
-
-      // =======================================================
-      // MESSAGES
-      // =======================================================
+      allow create: if isChatMember(chatId)
+        && request.resource.data.members is list
+        && me() in request.resource.data.members;
+      allow update, delete: if isChatMember(chatId);
 
       match /messages/{messageId} {
-
-        // Both participants can read messages.
         allow read: if isChatMember(chatId);
-
-        // Only an authenticated participant can create a message,
-        // and the sender must be the authenticated Firebase user.
-        allow create: if isChatMember(chatId) &&
-          request.resource.data.senderId == me();
-
-        // Both participants can update messages.
-        //
-        // Required for:
-        // - reactions
-        // - removing reactions
-        // - seenBy
-        // - unsend
-        // - delete for me
-        // - other message state
+        allow create: if isChatMember(chatId)
+          && request.resource.data.senderId == me();
+        // reactions, seenBy, unsend, delete-for-me
         allow update: if isChatMember(chatId);
-
-        // Permanent deletion is restricted to the sender.
-        allow delete: if isChatMember(chatId) &&
-          resource.data.senderId == me();
+        allow delete: if isChatMember(chatId)
+          && resource.data.senderId == me();
       }
     }
 
-
-    // =========================================================
-    // FRIEND REQUESTS
-    // =========================================================
-
-    match /friendRequests/{requestId} {
-
-      allow read: if signedIn();
-
-      allow create: if signedIn();
-
-      allow update: if signedIn();
-
-      allow delete: if signedIn();
+    // Friend requests are stored in "requests" with id {from}_{to}
+    match /requests/{requestId} {
+      allow read: if signedIn()
+        && (resource.data.from == me() || resource.data.to == me());
+      allow create: if signedIn() && request.resource.data.from == me();
+      allow delete: if signedIn()
+        && (resource.data.from == me() || resource.data.to == me());
     }
-
-
-    // =========================================================
-    // FRIENDSHIPS
-    // =========================================================
 
     match /friendships/{friendshipId} {
-
-      allow read: if signedIn();
-
-      allow create: if signedIn();
-
-      allow update: if signedIn();
-
-      allow delete: if signedIn();
+      allow read: if signedIn() && me() in resource.data.members;
+      allow create: if signedIn() && me() in request.resource.data.members;
+      allow delete: if signedIn() && me() in resource.data.members;
     }
-
-
-    // =========================================================
-    // POSTS
-    // =========================================================
 
     match /posts/{postId} {
-
       allow read: if signedIn();
-
-      allow create: if signedIn() &&
-        request.resource.data.userId == me();
-
+      allow create: if signedIn() && request.resource.data.authorId == me();
+      // likes are toggled by any signed-in user
       allow update: if signedIn();
-
-      allow delete: if signedIn() &&
-        resource.data.userId == me();
-
-
-      // =======================================================
-      // POST COMMENTS
-      // =======================================================
+      allow delete: if signedIn() && resource.data.authorId == me();
 
       match /comments/{commentId} {
-
         allow read: if signedIn();
-
-        allow create: if signedIn() &&
-          request.resource.data.userId == me();
-
-        allow update: if signedIn();
-
-        allow delete: if signedIn() &&
-          resource.data.userId == me();
+        allow create: if signedIn() && request.resource.data.authorId == me();
+        allow delete: if signedIn() && resource.data.authorId == me();
       }
     }
-
-
-    // =========================================================
-    // STORIES
-    // =========================================================
 
     match /stories/{storyId} {
-
       allow read: if signedIn();
-
-      allow create: if signedIn() &&
-        request.resource.data.userId == me();
-
+      allow create: if signedIn() && request.resource.data.authorId == me();
+      // viewedBy / likedBy are updated by viewers
       allow update: if signedIn();
-
-      allow delete: if signedIn() &&
-        resource.data.userId == me();
+      allow delete: if signedIn() && resource.data.authorId == me();
     }
-
-
-    // =========================================================
-    // REELS / VIDEOS
-    // =========================================================
 
     match /reels/{reelId} {
-
       allow read: if signedIn();
-
-      allow create: if signedIn() &&
-        request.resource.data.userId == me();
-
+      allow create: if signedIn() && request.resource.data.authorId == me();
       allow update: if signedIn();
-
-      allow delete: if signedIn() &&
-        resource.data.userId == me();
-
-
-      // =======================================================
-      // REEL COMMENTS
-      // =======================================================
+      allow delete: if signedIn() && resource.data.authorId == me();
 
       match /comments/{commentId} {
-
         allow read: if signedIn();
-
-        allow create: if signedIn() &&
-          request.resource.data.userId == me();
-
-        allow update: if signedIn();
-
-        allow delete: if signedIn() &&
-          resource.data.userId == me();
+        allow create: if signedIn() && request.resource.data.authorId == me();
+        allow delete: if signedIn() && resource.data.authorId == me();
       }
     }
-
-
-    // =========================================================
-    // NOTIFICATIONS
-    // =========================================================
-
-    match /notifications/{notificationId} {
-
-      allow read: if signedIn() &&
-        resource.data.userId == me();
-
-      allow create: if signedIn();
-
-      allow update: if signedIn() &&
-        resource.data.userId == me();
-
-      allow delete: if signedIn() &&
-        resource.data.userId == me();
-    }
-
-
-    // =========================================================
-    // DEFAULT DENY
-    // =========================================================
 
     match /{document=**} {
       allow read, write: if false;
