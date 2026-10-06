@@ -10,6 +10,7 @@ import {
   Alert,
   Animated,
   FlatList,
+  Image,
   Keyboard,
   KeyboardAvoidingView,
   Modal,
@@ -100,44 +101,63 @@ const EXTRA_REACTIONS = [
   '😈',
 ];
 
-function formatSeenTime(value) {
-  if (!value) {
-    return 'Seen just now';
-  }
-
-  let date;
-
+function toMillis(value) {
   try {
-    if (typeof value.toDate === 'function') {
-      date = value.toDate();
-    } else if (value instanceof Date) {
-      date = value;
-    } else {
-      date = new Date(value);
+    if (!value) return 0;
+
+    if (typeof value.toMillis === 'function') {
+      return value.toMillis();
     }
+
+    if (typeof value.toDate === 'function') {
+      return value.toDate().getTime();
+    }
+
+    if (value instanceof Date) {
+      return value.getTime();
+    }
+
+    const parsed = new Date(value).getTime();
+
+    return Number.isNaN(parsed)
+      ? 0
+      : parsed;
   } catch {
+    return 0;
+  }
+}
+
+function formatSeenTime(value) {
+  const millis = toMillis(value);
+
+  if (!millis) {
     return 'Seen just now';
   }
 
-  if (Number.isNaN(date.getTime())) {
-    return 'Seen just now';
-  }
-
-  const diff = Date.now() - date.getTime();
+  const diff = Math.max(
+    0,
+    Date.now() - millis
+  );
 
   if (diff < 60 * 1000) {
     return 'Seen just now';
   }
 
   if (diff < 60 * 60 * 1000) {
-    return `Seen ${Math.floor(diff / 60000)}m ago`;
+    return `Seen ${Math.floor(
+      diff / 60000
+    )}m ago`;
   }
 
   if (diff < 24 * 60 * 60 * 1000) {
-    return `Seen ${Math.floor(diff / 3600000)}h ago`;
+    return `Seen ${Math.floor(
+      diff / 3600000
+    )}h ago`;
   }
 
-  return `Seen ${date.toLocaleDateString()}`;
+  return `Seen ${new Date(
+    millis
+  ).toLocaleDateString()}`;
 }
 
 /* =========================================================
@@ -152,6 +172,8 @@ function MessageRow({
   inputRef,
 }) {
   const meId = item._meId;
+  const otherId = item._otherId;
+
   const isMine = item.senderId === meId;
 
   const translateX = useRef(
@@ -166,8 +188,8 @@ function MessageRow({
 
   const handlePressIn = () => {
     Animated.timing(pressScale, {
-      toValue: 0.96,
-      duration: 90,
+      toValue: 0.97,
+      duration: 70,
       useNativeDriver: true,
     }).start();
   };
@@ -201,6 +223,12 @@ function MessageRow({
     }, 250);
   };
 
+  /*
+   * RIGHT -> LEFT = negative dx
+   *
+   * The old code used positive dx, which was
+   * LEFT -> RIGHT.
+   */
   const panResponder = useMemo(
     () =>
       PanResponder.create({
@@ -211,9 +239,10 @@ function MessageRow({
           gesture
         ) => {
           return (
-            gesture.dx > 8 &&
-            gesture.dx >
-              Math.abs(gesture.dy)
+            gesture.dx < -8 &&
+            Math.abs(gesture.dx) >
+              Math.abs(gesture.dy) &&
+            Math.abs(gesture.dx) > 8
           );
         },
 
@@ -221,9 +250,9 @@ function MessageRow({
           _,
           gesture
         ) => {
-          if (gesture.dx > 0) {
+          if (gesture.dx < 0) {
             translateX.setValue(
-              Math.min(gesture.dx, 82)
+              Math.max(gesture.dx, -82)
             );
           }
         },
@@ -232,7 +261,7 @@ function MessageRow({
           _,
           gesture
         ) => {
-          if (gesture.dx >= 55) {
+          if (gesture.dx <= -55) {
             Animated.timing(translateX, {
               toValue: 0,
               duration: 110,
@@ -278,7 +307,7 @@ function MessageRow({
   const reactionCounts = {};
 
   reactions.forEach(
-    ([userId, emoji]) => {
+    ([, emoji]) => {
       if (!emoji) return;
 
       if (!reactionCounts[emoji]) {
@@ -289,34 +318,28 @@ function MessageRow({
     }
   );
 
-  const seenBy = item.seenBy || {};
+  /*
+   * Seen mechanism:
+   *
+   * Only YOUR messages can show "Seen".
+   * We specifically check whether the OTHER
+   * participant has seen this message.
+   */
+  const otherSeenAt =
+    isMine &&
+    item.seenBy?.[otherId]
+      ? item.seenBy[otherId]
+      : null;
 
-  const otherSeenEntries =
-    Object.entries(seenBy).filter(
-      ([userId]) => userId !== meId
-    );
+  const hasReply =
+    !!item.replyTo &&
+    !item.unsent;
 
-  let latestSeen = null;
-
-  if (otherSeenEntries.length > 0) {
-    latestSeen = otherSeenEntries
-      .map(([, value]) => value)
-      .sort((a, b) => {
-        const ta =
-          typeof a?.toMillis === 'function'
-            ? a.toMillis()
-            : new Date(a || 0).getTime();
-
-        const tb =
-          typeof b?.toMillis === 'function'
-            ? b.toMillis()
-            : new Date(b || 0).getTime();
-
-        return tb - ta;
-      })[0];
-  }
-
-  const hasReply = !!item.replyTo;
+  const replySenderName =
+    item.replyTo?.senderId === meId
+      ? 'You'
+      : item.replyTo?.senderName ||
+        'Message';
 
   return (
     <View
@@ -360,6 +383,10 @@ function MessageRow({
                 styles.unsentBubble,
             ]}
           >
+            {/* =================================================
+                REPLIED MESSAGE
+            ================================================= */}
+
             {hasReply && (
               <View style={styles.replyQuote}>
                 <View
@@ -375,13 +402,9 @@ function MessageRow({
                     style={
                       styles.replyQuoteTitle
                     }
+                    numberOfLines={1}
                   >
-                    {item.replyTo.senderId ===
-                    meId
-                      ? 'You'
-                      : item.replyTo
-                          .senderName ||
-                        'Message'}
+                    {replySenderName}
                   </Text>
 
                   <Text
@@ -389,13 +412,20 @@ function MessageRow({
                       styles.replyQuoteText
                     }
                     numberOfLines={2}
+                    ellipsizeMode="tail"
                   >
-                    {item.replyTo.text ||
-                      'Message'}
+                    {String(
+                      item.replyTo?.text ||
+                        'Message'
+                    )}
                   </Text>
                 </View>
               </View>
             )}
+
+            {/* =================================================
+                CURRENT MESSAGE
+            ================================================= */}
 
             <Text
               style={[
@@ -404,7 +434,7 @@ function MessageRow({
                   styles.unsentText,
               ]}
             >
-              {item.text}
+              {String(item.text || '')}
             </Text>
 
             {item.unsent && (
@@ -413,6 +443,10 @@ function MessageRow({
               </Text>
             )}
           </Pressable>
+
+          {/* =================================================
+              REACTIONS
+          ================================================= */}
 
           {Object.keys(reactionCounts).length >
             0 && (
@@ -462,9 +496,13 @@ function MessageRow({
         </Animated.View>
       </View>
 
-      {isMine && latestSeen && (
+      {/* =====================================================
+          SEEN
+      ===================================================== */}
+
+      {otherSeenAt && (
         <Text style={styles.seenText}>
-          {formatSeenTime(latestSeen)}
+          {formatSeenTime(otherSeenAt)}
         </Text>
       )}
     </View>
@@ -489,20 +527,51 @@ export default function ChatScreen({
   const other = otherUser || {};
 
   /*
-   * IMPORTANT:
-   * King X uses the Google provider ID as its
-   * application-level user ID.
+   * IMPORTANT
    *
-   * Do NOT prefer me.uid here because that is
-   * Firebase Auth UID and is different.
+   * King X uses the GOOGLE PROVIDER ID as its
+   * application-level ID.
+   *
+   * Therefore:
+   *     id -> preferred
+   *     uid -> fallback only
+   *
+   * Firebase Auth UID must NOT replace the
+   * existing Google-ID based chat IDs.
    */
-  const meId = me.id;
-  const otherId = other.id;
+  const meId =
+    me.id || me.uid || null;
+
+  const otherId =
+    other.id || other.uid || null;
 
   const chatId = chatIdFor(
     meId,
     otherId
   );
+
+  /*
+   * Profile fallback:
+   *
+   * Sometimes navigation has only a partial
+   * user object. friendProfiles may contain the
+   * complete Firestore profile.
+   */
+  const otherProfile =
+    friendProfiles?.[otherId] ||
+    other;
+
+  const otherPhoto =
+    otherProfile?.photoURL ||
+    otherProfile?.photoUrl ||
+    otherProfile?.profilePic ||
+    otherProfile?.avatar ||
+    '';
+
+  const otherName =
+    otherProfile?.displayName ||
+    otherProfile?.name ||
+    'User';
 
   const [messages, setMessages] =
     useState([]);
@@ -593,10 +662,15 @@ export default function ChatScreen({
             );
           });
 
+        /*
+         * Add local identity fields used
+         * only by the UI.
+         */
         const mapped = data.map(
           message => ({
             ...message,
             _meId: meId,
+            _otherId: otherId,
           })
         );
 
@@ -671,6 +745,10 @@ export default function ChatScreen({
   ======================================================= */
 
   const handleReply = message => {
+    if (!message || message.unsent) {
+      return;
+    }
+
     setReplyingTo(message);
 
     closeMenu();
@@ -957,8 +1035,8 @@ export default function ChatScreen({
                 replyingTo.senderId ===
                 meId
                   ? 'You'
-                  : other.displayName ||
-                    other.name ||
+                  : replyingTo.senderName ||
+                    otherName ||
                     'Message',
             }
           : null
@@ -997,18 +1075,25 @@ export default function ChatScreen({
   )
     .filter(friend => {
       const id =
-        friend?.id;
+        friend?.id ||
+        friend?.uid;
 
       return (
         id &&
         id !== meId
       );
     })
-    .map(friend => ({
-      ...friend,
-      uid:
-        friend.id,
-    }));
+    .map(friend => {
+      const id =
+        friend?.id ||
+        friend?.uid;
+
+      return {
+        ...friend,
+        id,
+        uid: id,
+      };
+    });
 
   /* =======================================================
      UI
@@ -1044,18 +1129,28 @@ export default function ChatScreen({
             </Text>
           </TouchableOpacity>
 
+          {/* =================================================
+              REAL PROFILE PHOTO
+          ================================================= */}
+
           <View style={styles.avatar}>
-            <Text
-              style={styles.avatarText}
-            >
-              {(
-                other.displayName ||
-                other.name ||
-                '?'
-              )
-                .charAt(0)
-                .toUpperCase()}
-            </Text>
+            {otherPhoto ? (
+              <Image
+                source={{
+                  uri: otherPhoto,
+                }}
+                style={styles.avatarImage}
+                resizeMode="cover"
+              />
+            ) : (
+              <Text
+                style={styles.avatarText}
+              >
+                {otherName
+                  .charAt(0)
+                  .toUpperCase()}
+              </Text>
+            )}
           </View>
 
           <View
@@ -1065,9 +1160,7 @@ export default function ChatScreen({
               style={styles.headerName}
               numberOfLines={1}
             >
-              {other.displayName ||
-                other.name ||
-                'User'}
+              {otherName}
             </Text>
 
             <Text
@@ -1075,7 +1168,7 @@ export default function ChatScreen({
                 styles.headerStatus
               }
             >
-              {other.online
+              {otherProfile?.online
                 ? 'Online'
                 : 'Messages'}
             </Text>
@@ -1172,13 +1265,14 @@ export default function ChatScreen({
                 style={
                   styles.replyComposerTitle
                 }
+                numberOfLines={1}
               >
                 Replying to{' '}
                 {replyingTo.senderId ===
                 meId
                   ? 'yourself'
-                  : other.displayName ||
-                    other.name ||
+                  : replyingTo.senderName ||
+                    otherName ||
                     'message'}
               </Text>
 
@@ -1186,9 +1280,13 @@ export default function ChatScreen({
                 style={
                   styles.replyComposerText
                 }
-                numberOfLines={1}
+                numberOfLines={2}
+                ellipsizeMode="tail"
               >
-                {replyingTo.text}
+                {String(
+                  replyingTo.text ||
+                    'Message'
+                )}
               </Text>
             </View>
 
@@ -1726,20 +1824,20 @@ export default function ChatScreen({
                     friend => {
                       const selected =
                         selectedFriends.includes(
-                          friend.uid
+                          friend.id
                         );
 
                       return (
                         <TouchableOpacity
                           key={
-                            friend.uid
+                            friend.id
                           }
                           style={
                             styles.friendRow
                           }
                           onPress={() =>
                             toggleFriend(
-                              friend.uid
+                              friend.id
                             )
                           }
                           activeOpacity={
@@ -1751,21 +1849,32 @@ export default function ChatScreen({
                               styles.friendAvatar
                             }
                           >
-                            <Text
-                              style={
-                                styles.friendAvatarText
-                              }
-                            >
-                              {(
-                                friend.displayName ||
-                                friend.name ||
-                                '?'
-                              )
-                                .charAt(
-                                  0
+                            {friend.photoURL ? (
+                              <Image
+                                source={{
+                                  uri: friend.photoURL,
+                                }}
+                                style={
+                                  styles.friendAvatarImage
+                                }
+                              />
+                            ) : (
+                              <Text
+                                style={
+                                  styles.friendAvatarText
+                                }
+                              >
+                                {(
+                                  friend.displayName ||
+                                  friend.name ||
+                                  '?'
                                 )
-                                .toUpperCase()}
-                            </Text>
+                                  .charAt(
+                                    0
+                                  )
+                                  .toUpperCase()}
+                              </Text>
+                            )}
                           </View>
 
                           <View
@@ -1931,6 +2040,10 @@ const styles = StyleSheet.create({
     backgroundColor: BG,
   },
 
+  /* =======================================================
+     HEADER
+  ======================================================= */
+
   header: {
     height: 64,
     flexDirection: 'row',
@@ -1963,6 +2076,12 @@ const styles = StyleSheet.create({
     backgroundColor: RED,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
+  },
+
+  avatarImage: {
+    width: '100%',
+    height: '100%',
   },
 
   avatarText: {
@@ -1973,6 +2092,7 @@ const styles = StyleSheet.create({
 
   headerInfo: {
     flex: 1,
+    minWidth: 0,
     marginLeft: 10,
   },
 
@@ -2005,18 +2125,24 @@ const styles = StyleSheet.create({
   },
 
   swipeContainer: {
-    maxWidth: '84%',
+    width: '100%',
   },
 
   messageAnimated: {
-    maxWidth: '100%',
+    maxWidth: '84%',
   },
+
+  /* =======================================================
+     MESSAGE BUBBLE
+  ======================================================= */
 
   messageBubble: {
     borderRadius: 18,
     paddingHorizontal: 13,
     paddingVertical: 9,
     minWidth: 50,
+    maxWidth: '100%',
+    overflow: 'hidden',
   },
 
   myBubble: {
@@ -2040,6 +2166,7 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 15,
     lineHeight: 21,
+    flexShrink: 1,
   },
 
   unsentText: {
@@ -2054,39 +2181,52 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
 
+  /* =======================================================
+     CLEAN REPLY QUOTE
+  ======================================================= */
+
   replyQuote: {
+    width: '100%',
+    minWidth: 0,
     flexDirection: 'row',
-    backgroundColor: '#3A0D11',
+    backgroundColor: '#350B10',
     borderRadius: 9,
     marginBottom: 8,
     overflow: 'hidden',
     borderWidth: 1,
-    borderColor: '#64151C',
+    borderColor: '#61151C',
   },
 
   replyAccent: {
     width: 4,
     backgroundColor: RED,
+    alignSelf: 'stretch',
   },
 
   replyQuoteContent: {
     flex: 1,
+    minWidth: 0,
     paddingHorizontal: 10,
     paddingVertical: 7,
   },
 
   replyQuoteTitle: {
-    color: '#FF4A55',
+    color: '#FF5962',
     fontSize: 11,
     fontWeight: '900',
     marginBottom: 3,
   },
 
   replyQuoteText: {
-    color: '#D7A7AA',
+    color: '#D6A6AA',
     fontSize: 12,
     lineHeight: 17,
+    flexShrink: 1,
   },
+
+  /* =======================================================
+     REACTIONS
+  ======================================================= */
 
   reactionRow: {
     flexDirection: 'row',
@@ -2125,12 +2265,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
+  /* =======================================================
+     SEEN
+  ======================================================= */
+
   seenText: {
     color: '#777',
     fontSize: 10,
-    marginTop: 2,
+    marginTop: 3,
     marginHorizontal: 4,
   },
+
+  /* =======================================================
+     EMPTY
+  ======================================================= */
 
   emptyContainer: {
     alignItems: 'center',
@@ -2149,8 +2297,12 @@ const styles = StyleSheet.create({
     marginTop: 5,
   },
 
+  /* =======================================================
+     REPLY COMPOSER
+  ======================================================= */
+
   replyComposer: {
-    minHeight: 58,
+    minHeight: 62,
     backgroundColor: '#101010',
     borderTopWidth: 1,
     borderTopColor: BORDER,
@@ -2159,14 +2311,16 @@ const styles = StyleSheet.create({
   },
 
   replyComposerAccent: {
-    width: 3,
-    height: 42,
+    width: 4,
+    height: 44,
     backgroundColor: RED,
   },
 
   replyComposerContent: {
     flex: 1,
+    minWidth: 0,
     paddingHorizontal: 10,
+    paddingVertical: 7,
   },
 
   replyComposerTitle: {
@@ -2178,7 +2332,9 @@ const styles = StyleSheet.create({
   replyComposerText: {
     color: '#AAA',
     fontSize: 12,
+    lineHeight: 17,
     marginTop: 2,
+    flexShrink: 1,
   },
 
   replyClose: {
@@ -2192,6 +2348,10 @@ const styles = StyleSheet.create({
     color: '#999',
     fontSize: 27,
   },
+
+  /* =======================================================
+     COMPOSER
+  ======================================================= */
 
   composer: {
     minHeight: 64,
@@ -2239,6 +2399,10 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     marginLeft: 2,
   },
+
+  /* =======================================================
+     MODALS
+  ======================================================= */
 
   modalBackdrop: {
     flex: 1,
@@ -2343,6 +2507,10 @@ const styles = StyleSheet.create({
     color: RED,
   },
 
+  /* =======================================================
+     REACTIONS SHEET
+  ======================================================= */
+
   reactionSheet: {
     maxHeight: '70%',
     backgroundColor: '#151515',
@@ -2389,6 +2557,10 @@ const styles = StyleSheet.create({
   bigEmoji: {
     fontSize: 28,
   },
+
+  /* =======================================================
+     REACTION POPUP
+  ======================================================= */
 
   reactionPopup: {
     alignSelf: 'center',
@@ -2442,6 +2614,10 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
+  /* =======================================================
+     FORWARD
+  ======================================================= */
+
   forwardSheet: {
     maxHeight: '82%',
     backgroundColor: '#151515',
@@ -2491,6 +2667,12 @@ const styles = StyleSheet.create({
     backgroundColor: RED,
     justifyContent: 'center',
     alignItems: 'center',
+    overflow: 'hidden',
+  },
+
+  friendAvatarImage: {
+    width: '100%',
+    height: '100%',
   },
 
   friendAvatarText: {
@@ -2501,6 +2683,7 @@ const styles = StyleSheet.create({
 
   friendInfo: {
     flex: 1,
+    minWidth: 0,
     marginLeft: 11,
   },
 
