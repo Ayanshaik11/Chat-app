@@ -1,4 +1,10 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+
 import {
   ActivityIndicator,
   Alert,
@@ -20,6 +26,7 @@ import {
 } from 'react-native';
 
 import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
 
 import {
   collection,
@@ -43,14 +50,22 @@ import {
 } from '../services/chat';
 
 const RED = '#E11D2A';
+
 const BG = '#080808';
 const CARD = '#111111';
 const CARD2 = '#171717';
-const BORDER = '#272727';
+const BORDER = '#292929';
+
 const TEXT = '#FFFFFF';
 const MUTED = '#8F8F8F';
 
-const QUICK_REACTIONS = ['❤️', '😂', '😅', '😢', '🔥'];
+const QUICK_REACTIONS = [
+  '❤️',
+  '😂',
+  '😅',
+  '😢',
+  '🔥',
+];
 
 const EXTRA_REACTIONS = [
   '👍',
@@ -86,7 +101,9 @@ const EXTRA_REACTIONS = [
 ];
 
 function formatSeenTime(value) {
-  if (!value) return 'Seen just now';
+  if (!value) {
+    return 'Seen just now';
+  }
 
   let date;
 
@@ -123,23 +140,9 @@ function formatSeenTime(value) {
   return `Seen ${date.toLocaleDateString()}`;
 }
 
-function getCreatedTime(item) {
-  if (!item?.createdAt) return 0;
-
-  try {
-    if (typeof item.createdAt.toMillis === 'function') {
-      return item.createdAt.toMillis();
-    }
-
-    if (item.createdAt instanceof Date) {
-      return item.createdAt.getTime();
-    }
-
-    return new Date(item.createdAt).getTime() || 0;
-  } catch {
-    return 0;
-  }
-}
+/* =========================================================
+   MESSAGE ROW
+========================================================= */
 
 function MessageRow({
   item,
@@ -151,34 +154,105 @@ function MessageRow({
   const meId = item._meId;
   const isMine = item.senderId === meId;
 
-  const translateX = useRef(new Animated.Value(0)).current;
+  const translateX = useRef(
+    new Animated.Value(0)
+  ).current;
 
-  const replyTriggered = useRef(false);
+  const pressScale = useRef(
+    new Animated.Value(1)
+  ).current;
 
+  const longPressTriggered = useRef(false);
+
+  /*
+   * Small press animation on the exact bubble.
+   */
+  const handlePressIn = () => {
+    Animated.timing(pressScale, {
+      toValue: 0.96,
+      duration: 90,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(pressScale, {
+      toValue: 1,
+      speed: 30,
+      bounciness: 5,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  /*
+   * Long press:
+   * - haptic
+   * - open action menu
+   */
+  const handleLongPress = async () => {
+    if (longPressTriggered.current) {
+      return;
+    }
+
+    longPressTriggered.current = true;
+
+    try {
+      await Haptics.impactAsync(
+        Haptics.ImpactFeedbackStyle.Light
+      );
+    } catch {}
+
+    onLongPress(item);
+
+    setTimeout(() => {
+      longPressTriggered.current = false;
+    }, 250);
+  };
+
+  /*
+   * LEFT → RIGHT reply gesture.
+   */
   const panResponder = useMemo(
     () =>
       PanResponder.create({
         onStartShouldSetPanResponder: () => false,
 
-        onMoveShouldSetPanResponder: (_, gesture) => {
-          return Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy);
+        onMoveShouldSetPanResponder: (
+          _,
+          gesture
+        ) => {
+          /*
+           * IMPORTANT:
+           * Only positive dx is accepted.
+           * Positive dx = LEFT → RIGHT.
+           */
+          return (
+            gesture.dx > 8 &&
+            gesture.dx >
+              Math.abs(gesture.dy)
+          );
         },
 
-        onPanResponderMove: (_, gesture) => {
+        onPanResponderMove: (
+          _,
+          gesture
+        ) => {
           if (gesture.dx > 0) {
-            translateX.setValue(Math.min(gesture.dx, 85));
+            translateX.setValue(
+              Math.min(gesture.dx, 82)
+            );
           }
         },
 
-        onPanResponderRelease: (_, gesture) => {
-          if (gesture.dx >= 65 && !replyTriggered.current) {
-            replyTriggered.current = true;
-
-            Animated.spring(translateX, {
+        onPanResponderRelease: (
+          _,
+          gesture
+        ) => {
+          if (gesture.dx >= 55) {
+            Animated.timing(translateX, {
               toValue: 0,
+              duration: 110,
               useNativeDriver: true,
-              friction: 8,
-              tension: 90,
             }).start();
 
             onReply(item);
@@ -187,52 +261,62 @@ function MessageRow({
               inputRef?.current?.focus();
             });
 
-            setTimeout(() => {
-              replyTriggered.current = false;
-            }, 250);
-
             return;
           }
 
-          Animated.spring(translateX, {
+          Animated.timing(translateX, {
             toValue: 0,
+            duration: 90,
             useNativeDriver: true,
-            friction: 8,
-            tension: 90,
           }).start();
         },
 
         onPanResponderTerminate: () => {
-          Animated.spring(translateX, {
+          Animated.timing(translateX, {
             toValue: 0,
+            duration: 90,
             useNativeDriver: true,
           }).start();
         },
       }),
-    [inputRef, item, onReply, translateX]
+    [
+      inputRef,
+      item,
+      onReply,
+      translateX,
+    ]
   );
 
+  /*
+   * Reactions
+   */
   const reactions = item.reactions
     ? Object.entries(item.reactions)
     : [];
 
   const reactionCounts = {};
 
-  reactions.forEach(([userId, emoji]) => {
-    if (!emoji) return;
+  reactions.forEach(
+    ([userId, emoji]) => {
+      if (!emoji) return;
 
-    if (!reactionCounts[emoji]) {
-      reactionCounts[emoji] = 0;
+      if (!reactionCounts[emoji]) {
+        reactionCounts[emoji] = 0;
+      }
+
+      reactionCounts[emoji] += 1;
     }
+  );
 
-    reactionCounts[emoji] += 1;
-  });
-
+  /*
+   * Seen
+   */
   const seenBy = item.seenBy || {};
 
-  const otherSeenEntries = Object.entries(seenBy).filter(
-    ([userId]) => userId !== meId
-  );
+  const otherSeenEntries =
+    Object.entries(seenBy).filter(
+      ([userId]) => userId !== meId
+    );
 
   let latestSeen = null;
 
@@ -261,7 +345,9 @@ function MessageRow({
       style={[
         styles.messageOuter,
         {
-          alignItems: isMine ? 'flex-end' : 'flex-start',
+          alignItems: isMine
+            ? 'flex-end'
+            : 'flex-start',
         },
       ]}
     >
@@ -271,44 +357,81 @@ function MessageRow({
           style={[
             styles.messageAnimated,
             {
-              transform: [{ translateX }],
+              transform: [
+                {
+                  translateX,
+                },
+                {
+                  scale: pressScale,
+                },
+              ],
             },
           ]}
         >
           <Pressable
-            onLongPress={() => onLongPress(item)}
-            delayLongPress={350}
+            onPressIn={handlePressIn}
+            onPressOut={handlePressOut}
+            onLongPress={handleLongPress}
+            delayLongPress={300}
             style={[
               styles.messageBubble,
-              isMine ? styles.myBubble : styles.otherBubble,
-              item.unsent && styles.unsentBubble,
+              isMine
+                ? styles.myBubble
+                : styles.otherBubble,
+              item.unsent &&
+                styles.unsentBubble,
             ]}
           >
+            {/* =================================================
+                OLD REPLIED MESSAGE
+            ================================================= */}
+
             {hasReply && (
               <View style={styles.replyQuote}>
-                <View style={styles.replyAccent} />
+                <View
+                  style={styles.replyAccent}
+                />
 
-                <View style={styles.replyQuoteContent}>
-                  <Text style={styles.replyQuoteTitle}>
-                    {item.replyTo.senderId === meId
+                <View
+                  style={
+                    styles.replyQuoteContent
+                  }
+                >
+                  <Text
+                    style={
+                      styles.replyQuoteTitle
+                    }
+                  >
+                    {item.replyTo.senderId ===
+                    meId
                       ? 'You'
-                      : item.replyTo.senderName || 'Message'}
+                      : item.replyTo
+                          .senderName ||
+                        'Message'}
                   </Text>
 
                   <Text
-                    style={styles.replyQuoteText}
+                    style={
+                      styles.replyQuoteText
+                    }
                     numberOfLines={2}
                   >
-                    {item.replyTo.text || 'Message'}
+                    {item.replyTo.text ||
+                      'Message'}
                   </Text>
                 </View>
               </View>
             )}
 
+            {/* =================================================
+                CURRENT MESSAGE
+            ================================================= */}
+
             <Text
               style={[
                 styles.messageText,
-                item.unsent && styles.unsentText,
+                item.unsent &&
+                  styles.unsentText,
               ]}
             >
               {item.text}
@@ -321,7 +444,12 @@ function MessageRow({
             )}
           </Pressable>
 
-          {Object.keys(reactionCounts).length > 0 && (
+          {/* =================================================
+              REACTION CHIPS
+          ================================================= */}
+
+          {Object.keys(reactionCounts).length >
+            0 && (
             <View
               style={[
                 styles.reactionRow,
@@ -330,32 +458,47 @@ function MessageRow({
                   : styles.reactionRowOther,
               ]}
             >
-              {Object.entries(reactionCounts).map(
-                ([emoji, count]) => (
-                  <TouchableOpacity
-                    key={emoji}
-                    style={styles.reactionChip}
-                    onPress={() =>
-                      onReactionPress(item, emoji)
+              {Object.entries(
+                reactionCounts
+              ).map(([emoji, count]) => (
+                <TouchableOpacity
+                  key={emoji}
+                  style={styles.reactionChip}
+                  onPress={() =>
+                    onReactionPress(
+                      item,
+                      emoji
+                    )
+                  }
+                  activeOpacity={0.7}
+                >
+                  <Text
+                    style={
+                      styles.reactionEmoji
                     }
-                    activeOpacity={0.7}
                   >
-                    <Text style={styles.reactionEmoji}>
-                      {emoji}
-                    </Text>
+                    {emoji}
+                  </Text>
 
-                    {count > 1 && (
-                      <Text style={styles.reactionCount}>
-                        {count}
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                )
-              )}
+                  {count > 1 && (
+                    <Text
+                      style={
+                        styles.reactionCount
+                      }
+                    >
+                      {count}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              ))}
             </View>
           )}
         </Animated.View>
       </View>
+
+      {/* =====================================================
+          SEEN
+      ===================================================== */}
 
       {isMine && latestSeen && (
         <Text style={styles.seenText}>
@@ -366,7 +509,14 @@ function MessageRow({
   );
 }
 
-export default function ChatScreen({ route, navigation }) {
+/* =========================================================
+   MAIN CHAT SCREEN
+========================================================= */
+
+export default function ChatScreen({
+  route,
+  navigation,
+}) {
   const {
     user,
     otherUser,
@@ -379,32 +529,66 @@ export default function ChatScreen({ route, navigation }) {
   const meId = me.uid || me.id;
   const otherId = other.uid || other.id;
 
-  const chatId = chatIdFor(meId, otherId);
+  const chatId = chatIdFor(
+    meId,
+    otherId
+  );
 
-  const [messages, setMessages] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [messages, setMessages] =
+    useState([]);
 
-  const [text, setText] = useState('');
+  const [loading, setLoading] =
+    useState(true);
 
-  const [replyingTo, setReplyingTo] = useState(null);
+  const [text, setText] =
+    useState('');
 
-  const [menuMessage, setMenuMessage] = useState(null);
+  const [replyingTo, setReplyingTo] =
+    useState(null);
 
-  const [reactionMessage, setReactionMessage] = useState(null);
-  const [reactionEmoji, setReactionEmoji] = useState(null);
+  const [menuMessage, setMenuMessage] =
+    useState(null);
 
-  const [showExtraReactions, setShowExtraReactions] =
+  const [
+    reactionMessage,
+    setReactionMessage,
+  ] = useState(null);
+
+  const [
+    reactionEmoji,
+    setReactionEmoji,
+  ] = useState(null);
+
+  const [
+    showExtraReactions,
+    setShowExtraReactions,
+  ] = useState(false);
+
+  const [
+    showForward,
+    setShowForward,
+  ] = useState(false);
+
+  const [
+    selectedFriends,
+    setSelectedFriends,
+  ] = useState([]);
+
+  const [sending, setSending] =
     useState(false);
-
-  const [showForward, setShowForward] = useState(false);
-
-  const [selectedFriends, setSelectedFriends] = useState([]);
-
-  const [sending, setSending] = useState(false);
 
   const inputRef = useRef(null);
 
-  const menuAnim = useRef(new Animated.Value(0)).current;
+  /*
+   * Long press menu animation.
+   */
+  const menuAnim = useRef(
+    new Animated.Value(0)
+  ).current;
+
+  /* =======================================================
+     FIRESTORE LISTENER
+  ======================================================= */
 
   useEffect(() => {
     if (!meId || !otherId) {
@@ -434,25 +618,38 @@ export default function ChatScreen({ route, navigation }) {
             ...docSnap.data(),
           }))
           .filter(message => {
-            const deletedFor = message.deletedFor || [];
+            const deletedFor =
+              message.deletedFor || [];
 
-            return !deletedFor.includes(meId);
+            return !deletedFor.includes(
+              meId
+            );
           });
 
-        const mapped = data.map(message => ({
-          ...message,
-          _meId: meId,
-        }));
+        const mapped = data.map(
+          message => ({
+            ...message,
+            _meId: meId,
+          })
+        );
 
         setMessages(mapped);
         setLoading(false);
 
         try {
-          await markChatRead(chatId, meId);
-          await markMessagesSeen(chatId, mapped, meId);
+          await markChatRead(
+            chatId,
+            meId
+          );
+
+          await markMessagesSeen(
+            chatId,
+            mapped,
+            meId
+          );
         } catch (error) {
           console.log(
-            'Read/seen update error:',
+            'Read/seen error:',
             error?.message || error
           );
         }
@@ -468,12 +665,20 @@ export default function ChatScreen({ route, navigation }) {
     );
 
     return unsubscribe;
-  }, [chatId, meId, otherId]);
+  }, [
+    chatId,
+    meId,
+    otherId,
+  ]);
+
+  /* =======================================================
+     MENU ANIMATION
+  ======================================================= */
 
   const closeMenu = () => {
     Animated.timing(menuAnim, {
       toValue: 0,
-      duration: 140,
+      duration: 100,
       useNativeDriver: true,
     }).start(() => {
       setMenuMessage(null);
@@ -486,17 +691,21 @@ export default function ChatScreen({ route, navigation }) {
     menuAnim.setValue(0);
 
     requestAnimationFrame(() => {
-      Animated.spring(menuAnim, {
+      Animated.timing(menuAnim, {
         toValue: 1,
+        duration: 150,
         useNativeDriver: true,
-        friction: 7,
-        tension: 80,
       }).start();
     });
   };
 
+  /* =======================================================
+     REPLY
+  ======================================================= */
+
   const handleReply = message => {
     setReplyingTo(message);
+
     closeMenu();
 
     requestAnimationFrame(() => {
@@ -504,8 +713,14 @@ export default function ChatScreen({ route, navigation }) {
     });
   };
 
+  /* =======================================================
+     REACTION
+  ======================================================= */
+
   const handleReaction = async emoji => {
-    if (!menuMessage?.id) return;
+    if (!menuMessage?.id) {
+      return;
+    }
 
     try {
       await reactToMessage(
@@ -517,17 +732,25 @@ export default function ChatScreen({ route, navigation }) {
 
       closeMenu();
     } catch (error) {
-      console.log('Reaction error:', error);
+      console.log(
+        'Reaction error:',
+        error
+      );
 
       Alert.alert(
         'Reaction failed',
-        error?.message || 'Unable to react to this message.'
+        error?.message ||
+          'Unable to react to this message.'
       );
     }
   };
 
-  const handleReactionPress = (message, emoji) => {
-    const myReaction = message.reactions?.[meId];
+  const handleReactionPress = (
+    message,
+    emoji
+  ) => {
+    const myReaction =
+      message.reactions?.[meId];
 
     if (myReaction === emoji) {
       setReactionMessage(message);
@@ -538,7 +761,9 @@ export default function ChatScreen({ route, navigation }) {
   };
 
   const removeMyReaction = async () => {
-    if (!reactionMessage?.id) return;
+    if (!reactionMessage?.id) {
+      return;
+    }
 
     try {
       await removeReaction(
@@ -547,11 +772,15 @@ export default function ChatScreen({ route, navigation }) {
         meId
       );
     } catch (error) {
-      console.log('Remove reaction error:', error);
+      console.log(
+        'Remove reaction error:',
+        error
+      );
 
       Alert.alert(
         'Error',
-        error?.message || 'Could not remove reaction.'
+        error?.message ||
+          'Could not remove reaction.'
       );
     } finally {
       setReactionMessage(null);
@@ -559,8 +788,14 @@ export default function ChatScreen({ route, navigation }) {
     }
   };
 
+  /* =======================================================
+     UNSEND
+  ======================================================= */
+
   const handleUnsend = async () => {
-    if (!menuMessage?.id) return;
+    if (!menuMessage?.id) {
+      return;
+    }
 
     closeMenu();
 
@@ -571,17 +806,27 @@ export default function ChatScreen({ route, navigation }) {
         meId
       );
     } catch (error) {
-      console.log('Unsend error:', error);
+      console.log(
+        'Unsend error:',
+        error
+      );
 
       Alert.alert(
         'Error',
-        error?.message || 'Could not unsend message.'
+        error?.message ||
+          'Could not unsend message.'
       );
     }
   };
 
+  /* =======================================================
+     DELETE FOR ME
+  ======================================================= */
+
   const handleDeleteForMe = async () => {
-    if (!menuMessage?.id) return;
+    if (!menuMessage?.id) {
+      return;
+    }
 
     closeMenu();
 
@@ -592,63 +837,101 @@ export default function ChatScreen({ route, navigation }) {
         meId
       );
     } catch (error) {
-      console.log('Delete error:', error);
+      console.log(
+        'Delete error:',
+        error
+      );
 
       Alert.alert(
         'Error',
-        error?.message || 'Could not delete message.'
+        error?.message ||
+          'Could not delete message.'
       );
     }
   };
 
+  /* =======================================================
+     COPY
+  ======================================================= */
+
   const handleCopy = async () => {
-    if (!menuMessage?.text) return;
+    if (!menuMessage?.text) {
+      return;
+    }
 
     try {
-      await Clipboard.setStringAsync(menuMessage.text);
+      await Clipboard.setStringAsync(
+        menuMessage.text
+      );
     } catch (error) {
-      console.log('Copy error:', error);
+      console.log(
+        'Copy error:',
+        error
+      );
     }
 
     closeMenu();
   };
 
-  const toggleFriend = friendId => {
-    setSelectedFriends(current => {
-      if (current.includes(friendId)) {
-        return current.filter(id => id !== friendId);
-      }
+  /* =======================================================
+     FORWARD
+  ======================================================= */
 
-      return [...current, friendId];
-    });
+  const toggleFriend = friendId => {
+    setSelectedFriends(
+      current => {
+        if (
+          current.includes(friendId)
+        ) {
+          return current.filter(
+            id => id !== friendId
+          );
+        }
+
+        return [
+          ...current,
+          friendId,
+        ];
+      }
+    );
   };
 
   const openForward = () => {
-    if (!menuMessage) return;
+    if (!menuMessage) {
+      return;
+    }
 
     setSelectedFriends([]);
+
     closeMenu();
 
     setTimeout(() => {
       setShowForward(true);
-    }, 180);
+    }, 120);
   };
 
   const handleForward = async () => {
-    if (!menuMessage?.text) return;
+    if (!menuMessage?.text) {
+      return;
+    }
 
-    if (selectedFriends.length === 0) {
+    if (
+      selectedFriends.length === 0
+    ) {
       Alert.alert(
         'Select friends',
         'Choose at least one friend.'
       );
+
       return;
     }
 
     try {
       setSending(true);
 
-      for (const friendId of selectedFriends) {
+      for (
+        const friendId of selectedFriends
+      ) {
         await sendMessage(
           meId,
           friendId,
@@ -660,21 +943,35 @@ export default function ChatScreen({ route, navigation }) {
       setSelectedFriends([]);
       setMenuMessage(null);
     } catch (error) {
-      console.log('Forward error:', error);
+      console.log(
+        'Forward error:',
+        error
+      );
 
       Alert.alert(
         'Forward failed',
-        error?.message || 'Could not forward the message.'
+        error?.message ||
+          'Could not forward the message.'
       );
     } finally {
       setSending(false);
     }
   };
 
-  const handleSend = async () => {
-    const cleanText = text.trim();
+  /* =======================================================
+     SEND
+  ======================================================= */
 
-    if (!cleanText || sending) return;
+  const handleSend = async () => {
+    const cleanText =
+      text.trim();
+
+    if (
+      !cleanText ||
+      sending
+    ) {
+      return;
+    }
 
     try {
       setSending(true);
@@ -687,9 +984,11 @@ export default function ChatScreen({ route, navigation }) {
           ? {
               id: replyingTo.id,
               text: replyingTo.text,
-              senderId: replyingTo.senderId,
+              senderId:
+                replyingTo.senderId,
               senderName:
-                replyingTo.senderId === meId
+                replyingTo.senderId ===
+                meId
                   ? 'You'
                   : other.displayName ||
                     other.name ||
@@ -703,11 +1002,15 @@ export default function ChatScreen({ route, navigation }) {
 
       Keyboard.dismiss();
     } catch (error) {
-      console.log('Send message error:', error);
+      console.log(
+        'Send message error:',
+        error
+      );
 
       Alert.alert(
         'Send failed',
-        error?.message || 'Could not send message.'
+        error?.message ||
+          'Could not send message.'
       );
     } finally {
       setSending(false);
@@ -718,35 +1021,68 @@ export default function ChatScreen({ route, navigation }) {
     setReplyingTo(null);
   };
 
-  const friendList = Object.values(friendProfiles || {})
+  /* =======================================================
+     FRIEND LIST
+  ======================================================= */
+
+  const friendList = Object.values(
+    friendProfiles || {}
+  )
     .filter(friend => {
-      const id = friend?.uid || friend?.id;
-      return id && id !== meId;
+      const id =
+        friend?.uid ||
+        friend?.id;
+
+      return (
+        id &&
+        id !== meId
+      );
     })
     .map(friend => ({
       ...friend,
-      uid: friend.uid || friend.id,
+      uid:
+        friend.uid ||
+        friend.id,
     }));
 
+  /* =======================================================
+     UI
+  ======================================================= */
+
   return (
-    <SafeAreaView style={styles.safe}>
+    <SafeAreaView
+      style={styles.safe}
+    >
       <KeyboardAvoidingView
         style={styles.container}
         behavior={
-          Platform.OS === 'ios' ? 'padding' : undefined
+          Platform.OS === 'ios'
+            ? 'padding'
+            : undefined
         }
       >
-        {/* HEADER */}
+        {/* =================================================
+            HEADER
+        ================================================= */}
+
         <View style={styles.header}>
           <TouchableOpacity
             style={styles.backButton}
-            onPress={() => navigation?.goBack()}
+            onPress={() =>
+              navigation?.goBack()
+            }
           >
-            <Text style={styles.backText}>‹</Text>
+            <Text
+              style={styles.backText}
+            >
+              ‹
+            </Text>
           </TouchableOpacity>
 
           <View style={styles.avatar}>
-            <Text style={styles.avatarText}>
+            <Text
+              style={styles.avatarText}
+            >
               {(
                 other.displayName ||
                 other.name ||
@@ -757,7 +1093,9 @@ export default function ChatScreen({ route, navigation }) {
             </Text>
           </View>
 
-          <View style={styles.headerInfo}>
+          <View
+            style={styles.headerInfo}
+          >
             <Text
               style={styles.headerName}
               numberOfLines={1}
@@ -767,7 +1105,11 @@ export default function ChatScreen({ route, navigation }) {
                 'User'}
             </Text>
 
-            <Text style={styles.headerStatus}>
+            <Text
+              style={
+                styles.headerStatus
+              }
+            >
               {other.online
                 ? 'Online'
                 : 'Messages'}
@@ -775,9 +1117,14 @@ export default function ChatScreen({ route, navigation }) {
           </View>
         </View>
 
-        {/* MESSAGES */}
+        {/* =================================================
+            MESSAGES
+        ================================================= */}
+
         {loading ? (
-          <View style={styles.loading}>
+          <View
+            style={styles.loading}
+          >
             <ActivityIndicator
               size="large"
               color={RED}
@@ -787,27 +1134,47 @@ export default function ChatScreen({ route, navigation }) {
           <FlatList
             inverted
             data={messages}
-            keyExtractor={item => item.id}
-            contentContainerStyle={styles.messagesList}
+            keyExtractor={item =>
+              item.id
+            }
+            contentContainerStyle={
+              styles.messagesList
+            }
             keyboardShouldPersistTaps="handled"
             renderItem={({ item }) => (
               <MessageRow
                 item={item}
-                onLongPress={openMenu}
-                onReply={handleReply}
-                onReactionPress={handleReactionPress}
+                onLongPress={
+                  openMenu
+                }
+                onReply={
+                  handleReply
+                }
+                onReactionPress={
+                  handleReactionPress
+                }
                 inputRef={inputRef}
               />
             )}
             ListEmptyComponent={
               <View
-                style={styles.emptyContainer}
+                style={
+                  styles.emptyContainer
+                }
               >
-                <Text style={styles.emptyTitle}>
+                <Text
+                  style={
+                    styles.emptyTitle
+                  }
+                >
                   No messages yet
                 </Text>
 
-                <Text style={styles.emptyText}>
+                <Text
+                  style={
+                    styles.emptyText
+                  }
+                >
                   Start the conversation 👋
                 </Text>
               </View>
@@ -815,15 +1182,35 @@ export default function ChatScreen({ route, navigation }) {
           />
         )}
 
-        {/* REPLY PREVIEW */}
-        {replyingTo && (
-          <View style={styles.replyComposer}>
-            <View style={styles.replyComposerAccent} />
+        {/* =================================================
+            REPLY COMPOSER
+        ================================================= */}
 
-            <View style={styles.replyComposerContent}>
-              <Text style={styles.replyComposerTitle}>
+        {replyingTo && (
+          <View
+            style={
+              styles.replyComposer
+            }
+          >
+            <View
+              style={
+                styles.replyComposerAccent
+              }
+            />
+
+            <View
+              style={
+                styles.replyComposerContent
+              }
+            >
+              <Text
+                style={
+                  styles.replyComposerTitle
+                }
+              >
                 Replying to{' '}
-                {replyingTo.senderId === meId
+                {replyingTo.senderId ===
+                meId
                   ? 'yourself'
                   : other.displayName ||
                     other.name ||
@@ -831,7 +1218,9 @@ export default function ChatScreen({ route, navigation }) {
               </Text>
 
               <Text
-                style={styles.replyComposerText}
+                style={
+                  styles.replyComposerText
+                }
                 numberOfLines={1}
               >
                 {replyingTo.text}
@@ -840,17 +1229,28 @@ export default function ChatScreen({ route, navigation }) {
 
             <TouchableOpacity
               onPress={cancelReply}
-              style={styles.replyClose}
+              style={
+                styles.replyClose
+              }
             >
-              <Text style={styles.replyCloseText}>
+              <Text
+                style={
+                  styles.replyCloseText
+                }
+              >
                 ×
               </Text>
             </TouchableOpacity>
           </View>
         )}
 
-        {/* COMPOSER */}
-        <View style={styles.composer}>
+        {/* =================================================
+            MESSAGE COMPOSER
+        ================================================= */}
+
+        <View
+          style={styles.composer}
+        >
           <TextInput
             ref={inputRef}
             value={text}
@@ -865,77 +1265,130 @@ export default function ChatScreen({ route, navigation }) {
           <TouchableOpacity
             style={[
               styles.sendButton,
-              (!text.trim() || sending) &&
+              (!text.trim() ||
+                sending) &&
                 styles.sendButtonDisabled,
             ]}
             onPress={handleSend}
-            disabled={!text.trim() || sending}
+            disabled={
+              !text.trim() ||
+              sending
+            }
             activeOpacity={0.8}
           >
             {sending ? (
-              <ActivityIndicator color="#fff" />
+              <ActivityIndicator
+                color="#fff"
+              />
             ) : (
-              <Text style={styles.sendText}>
+              <Text
+                style={styles.sendText}
+              >
                 ➤
               </Text>
             )}
           </TouchableOpacity>
         </View>
 
-        {/* LONG PRESS MENU */}
+        {/* =================================================
+            LONG PRESS ACTION MENU
+        ================================================= */}
+
         <Modal
           visible={!!menuMessage}
           transparent
           animationType="none"
-          onRequestClose={closeMenu}
+          onRequestClose={
+            closeMenu
+          }
         >
-          <View style={styles.modalBackdrop}>
+          <View
+            style={
+              styles.modalBackdrop
+            }
+          >
             <Pressable
-              style={StyleSheet.absoluteFill}
-              onPress={closeMenu}
+              style={
+                StyleSheet.absoluteFill
+              }
+              onPress={
+                closeMenu
+              }
             />
 
             <Animated.View
               style={[
                 styles.actionSheet,
                 {
-                  opacity: menuAnim,
+                  opacity:
+                    menuAnim,
+
                   transform: [
                     {
-                      translateY: menuAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [40, 0],
-                      }),
+                      translateY:
+                        menuAnim.interpolate(
+                          {
+                            inputRange: [
+                              0,
+                              1,
+                            ],
+                            outputRange: [
+                              18,
+                              0,
+                            ],
+                          }
+                        ),
                     },
+
                     {
-                      scale: menuAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0.94, 1],
-                      }),
+                      scale:
+                        menuAnim.interpolate(
+                          {
+                            inputRange: [
+                              0,
+                              1,
+                            ],
+                            outputRange: [
+                              0.97,
+                              1,
+                            ],
+                          }
+                        ),
                     },
                   ],
                 },
               ]}
             >
               {/* QUICK REACTIONS */}
-              <View style={styles.quickReactionRow}>
-                {QUICK_REACTIONS.map(emoji => (
-                  <TouchableOpacity
-                    key={emoji}
-                    style={styles.quickReaction}
-                    onPress={() =>
-                      handleReaction(emoji)
-                    }
-                  >
-                    <Text
+
+              <View
+                style={
+                  styles.quickReactionRow
+                }
+              >
+                {QUICK_REACTIONS.map(
+                  emoji => (
+                    <TouchableOpacity
+                      key={emoji}
                       style={
-                        styles.quickReactionText
+                        styles.quickReaction
+                      }
+                      onPress={() =>
+                        handleReaction(
+                          emoji
+                        )
                       }
                     >
-                      {emoji}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                      <Text
+                        style={
+                          styles.quickReactionText
+                        }
+                      >
+                        {emoji}
+                      </Text>
+                    </TouchableOpacity>
+                  )
+                )}
 
                 <TouchableOpacity
                   style={[
@@ -943,46 +1396,63 @@ export default function ChatScreen({ route, navigation }) {
                     styles.plusReaction,
                   ]}
                   onPress={() =>
-                    setShowExtraReactions(true)
+                    setShowExtraReactions(
+                      true
+                    )
                   }
                 >
                   <Text
-                    style={styles.plusReactionText}
+                    style={
+                      styles.plusReactionText
+                    }
                   >
                     +
                   </Text>
                 </TouchableOpacity>
               </View>
 
-              <View style={styles.menuDivider} />
+              <View
+                style={
+                  styles.menuDivider
+                }
+              />
 
               <ActionButton
                 icon="↩"
                 label="Reply"
                 onPress={() =>
-                  handleReply(menuMessage)
+                  handleReply(
+                    menuMessage
+                  )
                 }
               />
 
               <ActionButton
                 icon="➤"
                 label="Forward"
-                onPress={openForward}
+                onPress={
+                  openForward
+                }
               />
 
               <ActionButton
                 icon="⧉"
                 label="Copy"
-                onPress={handleCopy}
+                onPress={
+                  handleCopy
+                }
               />
 
-              {menuMessage?.senderId === meId &&
+              {menuMessage?.senderId ===
+                meId &&
                 !menuMessage?.unsent && (
                   <ActionButton
                     icon="↶"
                     label="Unsend"
                     danger
-                    onPress={handleUnsend}
+                    onPress={
+                      handleUnsend
+                    }
                   />
                 )}
 
@@ -990,39 +1460,70 @@ export default function ChatScreen({ route, navigation }) {
                 icon="⌫"
                 label="Delete for you"
                 danger
-                onPress={handleDeleteForMe}
+                onPress={
+                  handleDeleteForMe
+                }
               />
 
               <ActionButton
                 icon="×"
                 label="Cancel"
-                onPress={closeMenu}
+                onPress={
+                  closeMenu
+                }
               />
             </Animated.View>
           </View>
         </Modal>
 
-        {/* EXTRA REACTIONS */}
+        {/* =================================================
+            EXTRA REACTIONS
+        ================================================= */}
+
         <Modal
-          visible={showExtraReactions}
+          visible={
+            showExtraReactions
+          }
           transparent
           animationType="slide"
           onRequestClose={() =>
-            setShowExtraReactions(false)
+            setShowExtraReactions(
+              false
+            )
           }
         >
-          <View style={styles.modalBackdrop}>
+          <View
+            style={
+              styles.modalBackdrop
+            }
+          >
             <Pressable
-              style={StyleSheet.absoluteFill}
+              style={
+                StyleSheet.absoluteFill
+              }
               onPress={() =>
-                setShowExtraReactions(false)
+                setShowExtraReactions(
+                  false
+                )
               }
             />
 
-            <View style={styles.reactionSheet}>
-              <View style={styles.sheetHandle} />
+            <View
+              style={
+                styles.reactionSheet
+              }
+            >
+              <View
+                style={
+                  styles.sheetHandle
+                }
+              />
 
-              <Text style={styles.sheetTitle}>
+              <Text
+                style={
+                  styles.sheetTitle
+                }
+              >
                 Choose reaction
               </Text>
 
@@ -1031,70 +1532,135 @@ export default function ChatScreen({ route, navigation }) {
                   styles.emojiGrid
                 }
               >
-                {EXTRA_REACTIONS.map(emoji => (
-                  <TouchableOpacity
-                    key={emoji}
-                    style={styles.bigEmojiButton}
-                    onPress={async () => {
-                      await handleReaction(emoji);
-                      setShowExtraReactions(false);
-                    }}
-                  >
-                    <Text style={styles.bigEmoji}>
-                      {emoji}
-                    </Text>
-                  </TouchableOpacity>
-                ))}
+                {EXTRA_REACTIONS.map(
+                  emoji => (
+                    <TouchableOpacity
+                      key={emoji}
+                      style={
+                        styles.bigEmojiButton
+                      }
+                      onPress={async () => {
+                        await handleReaction(
+                          emoji
+                        );
+
+                        setShowExtraReactions(
+                          false
+                        );
+                      }}
+                    >
+                      <Text
+                        style={
+                          styles.bigEmoji
+                        }
+                      >
+                        {emoji}
+                      </Text>
+                    </TouchableOpacity>
+                  )
+                )}
               </ScrollView>
             </View>
           </View>
         </Modal>
 
-        {/* REMOVE REACTION */}
+        {/* =================================================
+            REMOVE REACTION
+        ================================================= */}
+
         <Modal
-          visible={!!reactionMessage}
+          visible={
+            !!reactionMessage
+          }
           transparent
           animationType="fade"
           onRequestClose={() => {
-            setReactionMessage(null);
-            setReactionEmoji(null);
+            setReactionMessage(
+              null
+            );
+
+            setReactionEmoji(
+              null
+            );
           }}
         >
-          <View style={styles.modalBackdrop}>
+          <View
+            style={
+              styles.modalBackdrop
+            }
+          >
             <Pressable
-              style={StyleSheet.absoluteFill}
+              style={
+                StyleSheet.absoluteFill
+              }
               onPress={() => {
-                setReactionMessage(null);
-                setReactionEmoji(null);
+                setReactionMessage(
+                  null
+                );
+
+                setReactionEmoji(
+                  null
+                );
               }}
             />
 
-            <View style={styles.reactionPopup}>
-              <Text style={styles.reactionPopupEmoji}>
+            <View
+              style={
+                styles.reactionPopup
+              }
+            >
+              <Text
+                style={
+                  styles.reactionPopupEmoji
+                }
+              >
                 {reactionEmoji}
               </Text>
 
-              <Text style={styles.reactionPopupTitle}>
+              <Text
+                style={
+                  styles.reactionPopupTitle
+                }
+              >
                 Remove your reaction?
               </Text>
 
               <TouchableOpacity
-                style={styles.redButton}
-                onPress={removeMyReaction}
+                style={
+                  styles.redButton
+                }
+                onPress={
+                  removeMyReaction
+                }
               >
-                <Text style={styles.redButtonText}>
+                <Text
+                  style={
+                    styles.redButtonText
+                  }
+                >
                   Remove
                 </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.cancelButton}
+                style={
+                  styles.cancelButton
+                }
                 onPress={() => {
-                  setReactionMessage(null);
-                  setReactionEmoji(null);
+                  setReactionMessage(
+                    null
+                  );
+
+                  setReactionEmoji(
+                    null
+                  );
                 }}
               >
-                <Text style={styles.cancelButtonText}>
+                <Text
+                  style={
+                    styles.cancelButtonText
+                  }
+                >
                   Cancel
                 </Text>
               </TouchableOpacity>
@@ -1102,7 +1668,10 @@ export default function ChatScreen({ route, navigation }) {
           </View>
         </Modal>
 
-        {/* FORWARD */}
+        {/* =================================================
+            FORWARD
+        ================================================= */}
+
         <Modal
           visible={showForward}
           transparent
@@ -1111,150 +1680,217 @@ export default function ChatScreen({ route, navigation }) {
             setShowForward(false)
           }
         >
-          <View style={styles.modalBackdrop}>
-            <View style={styles.forwardSheet}>
-              <View style={styles.sheetHandle} />
+          <View
+            style={
+              styles.modalBackdrop
+            }
+          >
+            <View
+              style={
+                styles.forwardSheet
+              }
+            >
+              <View
+                style={
+                  styles.sheetHandle
+                }
+              />
 
-              <View style={styles.forwardHeader}>
-                <Text style={styles.sheetTitle}>
+              <View
+                style={
+                  styles.forwardHeader
+                }
+              >
+                <Text
+                  style={
+                    styles.sheetTitle
+                  }
+                >
                   Forward to
                 </Text>
 
                 <TouchableOpacity
                   onPress={() =>
-                    setShowForward(false)
+                    setShowForward(
+                      false
+                    )
                   }
                 >
-                  <Text style={styles.closeText}>
+                  <Text
+                    style={
+                      styles.closeText
+                    }
+                  >
                     ×
                   </Text>
                 </TouchableOpacity>
               </View>
 
-              {friendList.length === 0 ? (
-                <View style={styles.noFriends}>
-                  <Text style={styles.noFriendsTitle}>
+              {friendList.length ===
+              0 ? (
+                <View
+                  style={
+                    styles.noFriends
+                  }
+                >
+                  <Text
+                    style={
+                      styles.noFriendsTitle
+                    }
+                  >
                     No friends available
                   </Text>
 
-                  <Text style={styles.noFriendsText}>
-                    Your friend list is empty.
+                  <Text
+                    style={
+                      styles.noFriendsText
+                    }
+                  >
+                    Your friend list is
+                    empty.
                   </Text>
                 </View>
               ) : (
                 <ScrollView
-                  style={styles.friendScroll}
+                  style={
+                    styles.friendScroll
+                  }
                   contentContainerStyle={
                     styles.friendList
                   }
                 >
-                  {friendList.map(friend => {
-                    const selected =
-                      selectedFriends.includes(
-                        friend.uid
-                      );
+                  {friendList.map(
+                    friend => {
+                      const selected =
+                        selectedFriends.includes(
+                          friend.uid
+                        );
 
-                    return (
-                      <TouchableOpacity
-                        key={friend.uid}
-                        style={styles.friendRow}
-                        onPress={() =>
-                          toggleFriend(
+                      return (
+                        <TouchableOpacity
+                          key={
                             friend.uid
-                          )
-                        }
-                        activeOpacity={0.75}
-                      >
-                        <View
-                          style={styles.friendAvatar}
-                        >
-                          <Text
-                            style={
-                              styles.friendAvatarText
-                            }
-                          >
-                            {(
-                              friend.displayName ||
-                              friend.name ||
-                              '?'
-                            )
-                              .charAt(0)
-                              .toUpperCase()}
-                          </Text>
-                        </View>
-
-                        <View
+                          }
                           style={
-                            styles.friendInfo
+                            styles.friendRow
+                          }
+                          onPress={() =>
+                            toggleFriend(
+                              friend.uid
+                            )
+                          }
+                          activeOpacity={
+                            0.75
                           }
                         >
-                          <Text
+                          <View
                             style={
-                              styles.friendName
+                              styles.friendAvatar
                             }
-                            numberOfLines={1}
                           >
-                            {friend.displayName ||
-                              friend.name ||
-                              'User'}
-                          </Text>
-
-                          <Text
-                            style={
-                              styles.friendUsername
-                            }
-                            numberOfLines={1}
-                          >
-                            {friend.username
-                              ? `@${friend.username}`
-                              : 'Friend'}
-                          </Text>
-                        </View>
-
-                        <View
-                          style={[
-                            styles.checkbox,
-                            selected &&
-                              styles.checkboxSelected,
-                          ]}
-                        >
-                          {selected && (
                             <Text
                               style={
-                                styles.checkmark
+                                styles.friendAvatarText
                               }
                             >
-                              ✓
+                              {(
+                                friend.displayName ||
+                                friend.name ||
+                                '?'
+                              )
+                                .charAt(
+                                  0
+                                )
+                                .toUpperCase()}
                             </Text>
-                          )}
-                        </View>
-                      </TouchableOpacity>
-                    );
-                  })}
+                          </View>
+
+                          <View
+                            style={
+                              styles.friendInfo
+                            }
+                          >
+                            <Text
+                              style={
+                                styles.friendName
+                              }
+                              numberOfLines={
+                                1
+                              }
+                            >
+                              {friend.displayName ||
+                                friend.name ||
+                                'User'}
+                            </Text>
+
+                            <Text
+                              style={
+                                styles.friendUsername
+                              }
+                              numberOfLines={
+                                1
+                              }
+                            >
+                              {friend.username
+                                ? `@${friend.username}`
+                                : 'Friend'}
+                            </Text>
+                          </View>
+
+                          <View
+                            style={[
+                              styles.checkbox,
+                              selected &&
+                                styles.checkboxSelected,
+                            ]}
+                          >
+                            {selected && (
+                              <Text
+                                style={
+                                  styles.checkmark
+                                }
+                              >
+                                ✓
+                              </Text>
+                            )}
+                          </View>
+                        </TouchableOpacity>
+                      );
+                    }
+                  )}
                 </ScrollView>
               )}
 
               <TouchableOpacity
                 style={[
                   styles.forwardButton,
-                  (selectedFriends.length === 0 ||
+                  (selectedFriends.length ===
+                    0 ||
                     sending) &&
                     styles.forwardButtonDisabled,
                 ]}
                 disabled={
-                  selectedFriends.length === 0 ||
+                  selectedFriends.length ===
+                    0 ||
                   sending
                 }
-                onPress={handleForward}
+                onPress={
+                  handleForward
+                }
               >
                 {sending ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator
+                    color="#fff"
+                  />
                 ) : (
                   <Text
-                    style={styles.forwardButtonText}
+                    style={
+                      styles.forwardButtonText
+                    }
                   >
                     Forward
-                    {selectedFriends.length > 0
+                    {selectedFriends.length >
+                    0
                       ? ` (${selectedFriends.length})`
                       : ''}
                   </Text>
@@ -1268,6 +1904,10 @@ export default function ChatScreen({ route, navigation }) {
   );
 }
 
+/* =========================================================
+   ACTION BUTTON
+========================================================= */
+
 function ActionButton({
   icon,
   label,
@@ -1276,20 +1916,24 @@ function ActionButton({
 }) {
   return (
     <TouchableOpacity
-      style={styles.actionButton}
+      style={
+        styles.actionButton
+      }
       onPress={onPress}
       activeOpacity={0.7}
     >
       <View
         style={[
           styles.actionIcon,
-          danger && styles.actionIconDanger,
+          danger &&
+            styles.actionIconDanger,
         ]}
       >
         <Text
           style={[
             styles.actionIconText,
-            danger && styles.actionIconTextDanger,
+            danger &&
+              styles.actionIconTextDanger,
           ]}
         >
           {icon}
@@ -1299,7 +1943,8 @@ function ActionButton({
       <Text
         style={[
           styles.actionLabel,
-          danger && styles.actionLabelDanger,
+          danger &&
+            styles.actionLabelDanger,
         ]}
       >
         {label}
@@ -1307,6 +1952,10 @@ function ActionButton({
     </TouchableOpacity>
   );
 }
+
+/* =========================================================
+   STYLES
+========================================================= */
 
 const styles = StyleSheet.create({
   safe: {
@@ -1318,6 +1967,8 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: BG,
   },
+
+  /* HEADER */
 
   header: {
     height: 64,
@@ -1376,11 +2027,15 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
 
+  /* LOADING */
+
   loading: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
   },
+
+  /* MESSAGES */
 
   messagesList: {
     paddingHorizontal: 12,
@@ -1442,36 +2097,45 @@ const styles = StyleSheet.create({
     fontStyle: 'italic',
   },
 
+  /* =======================================================
+     REPLY QUOTE
+  ======================================================= */
+
   replyQuote: {
     flexDirection: 'row',
-    backgroundColor: 'rgba(0,0,0,0.28)',
+    backgroundColor: '#3A0D11',
     borderRadius: 9,
-    marginBottom: 7,
+    marginBottom: 8,
     overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#64151C',
   },
 
   replyAccent: {
-    width: 3,
+    width: 4,
     backgroundColor: RED,
   },
 
   replyQuoteContent: {
-    paddingHorizontal: 9,
-    paddingVertical: 6,
     flex: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
   },
 
   replyQuoteTitle: {
-    color: RED,
+    color: '#FF4A55',
     fontSize: 11,
-    fontWeight: '800',
-    marginBottom: 2,
+    fontWeight: '900',
+    marginBottom: 3,
   },
 
   replyQuoteText: {
-    color: '#A8A8A8',
-    fontSize: 11,
+    color: '#D7A7AA',
+    fontSize: 12,
+    lineHeight: 17,
   },
+
+  /* REACTIONS */
 
   reactionRow: {
     flexDirection: 'row',
@@ -1510,12 +2174,16 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
+  /* SEEN */
+
   seenText: {
     color: '#777',
     fontSize: 10,
     marginTop: 2,
     marginHorizontal: 4,
   },
+
+  /* EMPTY */
 
   emptyContainer: {
     alignItems: 'center',
@@ -1533,6 +2201,8 @@ const styles = StyleSheet.create({
     color: '#777',
     marginTop: 5,
   },
+
+  /* REPLY COMPOSER */
 
   replyComposer: {
     minHeight: 58,
@@ -1577,6 +2247,8 @@ const styles = StyleSheet.create({
     color: '#999',
     fontSize: 27,
   },
+
+  /* COMPOSER */
 
   composer: {
     minHeight: 64,
@@ -1625,18 +2297,26 @@ const styles = StyleSheet.create({
     marginLeft: 2,
   },
 
+  /* MODAL */
+
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.72)',
+    backgroundColor:
+      'rgba(0,0,0,0.72)',
     justifyContent: 'flex-end',
   },
+
+  /* ACTION SHEET */
 
   actionSheet: {
     backgroundColor: '#151515',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingTop: 12,
-    paddingBottom: Platform.OS === 'ios' ? 28 : 16,
+    paddingBottom:
+      Platform.OS === 'ios'
+        ? 28
+        : 16,
     paddingHorizontal: 12,
     borderTopWidth: 1,
     borderTopColor: '#2A2A2A',
@@ -1701,7 +2381,8 @@ const styles = StyleSheet.create({
   },
 
   actionIconDanger: {
-    backgroundColor: 'rgba(225,29,42,0.16)',
+    backgroundColor:
+      'rgba(225,29,42,0.16)',
   },
 
   actionIconText: {
@@ -1722,6 +2403,8 @@ const styles = StyleSheet.create({
   actionLabelDanger: {
     color: RED,
   },
+
+  /* EXTRA REACTIONS */
 
   reactionSheet: {
     maxHeight: '70%',
@@ -1769,6 +2452,8 @@ const styles = StyleSheet.create({
   bigEmoji: {
     fontSize: 28,
   },
+
+  /* REACTION POPUP */
 
   reactionPopup: {
     alignSelf: 'center',
@@ -1822,6 +2507,8 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
 
+  /* FORWARD */
+
   forwardSheet: {
     maxHeight: '82%',
     backgroundColor: '#151515',
@@ -1829,7 +2516,10 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 24,
     paddingHorizontal: 15,
     paddingTop: 10,
-    paddingBottom: Platform.OS === 'ios' ? 28 : 15,
+    paddingBottom:
+      Platform.OS === 'ios'
+        ? 28
+        : 15,
   },
 
   forwardHeader: {

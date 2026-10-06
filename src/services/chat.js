@@ -11,82 +11,97 @@ import {
 } from 'firebase/firestore';
 
 import { db } from '../config/firebase';
-import { PROXY_BASE_URL } from '../config/proxy';
-import { pairId } from '../utils/helpers';
 
-// ---------------------------------------------------------
-// NOTIFICATION
-// ---------------------------------------------------------
+export function chatIdFor(a, b) {
+  return [a, b]
+    .filter(Boolean)
+    .sort()
+    .join('_');
+}
 
-function notifyNewMessage(me, other, text) {
-  if (!PROXY_BASE_URL || PROXY_BASE_URL.includes('YOUR-PROJECT')) {
+/* =========================================================
+   SEND MESSAGE
+========================================================= */
+
+export async function sendMessage(
+  me,
+  other,
+  text,
+  replyTo = null
+) {
+  if (!me || !other) {
+    throw new Error(
+      'Missing chat participants.'
+    );
+  }
+
+  const cleanText =
+    String(text || '').trim();
+
+  if (!cleanText) {
     return;
   }
 
-  fetch(`${PROXY_BASE_URL}/api/send-notification`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      toUserId: other.id,
-      title: me.name || 'New message',
-      body: text,
-      data: {
-        type: 'message',
-        fromId: me.id,
-        fromName: me.name || '',
-        fromPhoto: me.photoURL || '',
-      },
-    }),
-  }).catch(() => {});
-}
+  const chatId = chatIdFor(
+    me,
+    other
+  );
 
-// ---------------------------------------------------------
-// CHAT ID
-// ---------------------------------------------------------
+  const chatRef = doc(
+    db,
+    'chats',
+    chatId
+  );
 
-export const chatIdFor = pairId;
-
-// ---------------------------------------------------------
-// SEND MESSAGE
-// ---------------------------------------------------------
-
-export async function sendMessage(me, other, text, replyTo = null) {
-  const chatId = chatIdFor(me.id, other.id);
-
-  const msgRef = doc(
-    collection(db, 'chats', chatId, 'messages')
+  const messageRef = doc(
+    collection(
+      db,
+      'chats',
+      chatId,
+      'messages'
+    )
   );
 
   const batch = writeBatch(db);
 
   const messageData = {
-    senderId: me.id,
-    text,
+    senderId: me,
+    receiverId: other,
+    text: cleanText,
     createdAt: serverTimestamp(),
+    seenBy: {},
+    reactions: {},
+    unsent: false,
   };
 
   if (replyTo) {
     messageData.replyTo = {
-      id: replyTo.id,
+      id: replyTo.id || null,
       text: replyTo.text || '',
-      senderId: replyTo.senderId || '',
+      senderId:
+        replyTo.senderId || '',
+      senderName:
+        replyTo.senderName ||
+        'Message',
     };
   }
 
-  batch.set(msgRef, messageData);
+  batch.set(
+    messageRef,
+    messageData
+  );
 
   batch.set(
-    doc(db, 'chats', chatId),
+    chatRef,
     {
-      members: [me.id, other.id],
-      lastMessage: text,
-      lastSender: me.id,
-      lastMessageAt: serverTimestamp(),
-      unread: {
-        [other.id]: increment(1),
-      },
+      members: [me, other],
+      lastMessage: cleanText,
+      lastMessageAt:
+        serverTimestamp(),
+      updatedAt:
+        serverTimestamp(),
+      [`unread.${other}`]:
+        increment(1),
     },
     {
       merge: true,
@@ -95,46 +110,82 @@ export async function sendMessage(me, other, text, replyTo = null) {
 
   await batch.commit();
 
-  notifyNewMessage(me, other, text);
+  /*
+   * Notification is intentionally kept
+   * outside the Firestore transaction.
+   *
+   * If your existing project has a
+   * notification function, keep it here.
+   */
 }
 
-// ---------------------------------------------------------
-// CHAT READ
-// ---------------------------------------------------------
+/* =========================================================
+   MARK CHAT READ
+========================================================= */
 
-export const markChatRead = (chatId, meId) =>
-  setDoc(
-    doc(db, 'chats', chatId),
+export async function markChatRead(
+  chatId,
+  userId
+) {
+  if (!chatId || !userId) {
+    return;
+  }
+
+  const chatRef = doc(
+    db,
+    'chats',
+    chatId
+  );
+
+  await setDoc(
+    chatRef,
     {
-      unread: {
-        [meId]: 0,
-      },
-      lastRead: {
-        [meId]: serverTimestamp(),
-      },
+      [`unread.${userId}`]: 0,
+      [`lastRead.${userId}`]:
+        serverTimestamp(),
     },
     {
       merge: true,
     }
   );
+}
 
-// ---------------------------------------------------------
-// MARK MESSAGES SEEN
-// ---------------------------------------------------------
+/* =========================================================
+   MARK MESSAGES SEEN
+========================================================= */
 
-export async function markMessagesSeen(chatId, messages, meId) {
-  const incoming = messages.filter(
-    (message) =>
-      message.senderId !== meId &&
-      !message.unsent &&
-      !message.deletedFor?.includes(meId)
-  );
-
-  if (!incoming.length) return;
+export async function markMessagesSeen(
+  chatId,
+  messages,
+  meId
+) {
+  if (
+    !chatId ||
+    !meId ||
+    !Array.isArray(messages)
+  ) {
+    return;
+  }
 
   const batch = writeBatch(db);
 
-  incoming.forEach((message) => {
+  let count = 0;
+
+  messages.forEach(message => {
+    if (
+      !message?.id ||
+      message.senderId === meId
+    ) {
+      return;
+    }
+
+    const alreadySeen =
+      message.seenBy?.[meId];
+
+    if (alreadySeen) {
+      return;
+    }
+
     const ref = doc(
       db,
       'chats',
@@ -144,33 +195,51 @@ export async function markMessagesSeen(chatId, messages, meId) {
     );
 
     batch.update(ref, {
-      [`seenBy.${meId}`]: serverTimestamp(),
+      [`seenBy.${meId}`]:
+        serverTimestamp(),
     });
+
+    count++;
   });
 
-  await batch.commit();
+  if (count > 0) {
+    await batch.commit();
+  }
 }
 
-// ---------------------------------------------------------
-// TYPING
-// ---------------------------------------------------------
+/* =========================================================
+   TYPING
+========================================================= */
 
-export const setTyping = (chatId, meId, isTyping) =>
-  setDoc(
-    doc(db, 'chats', chatId),
+export async function setTyping(
+  chatId,
+  userId,
+  value
+) {
+  if (!chatId || !userId) {
+    return;
+  }
+
+  const chatRef = doc(
+    db,
+    'chats',
+    chatId
+  );
+
+  await setDoc(
+    chatRef,
     {
-      typing: {
-        [meId]: isTyping,
-      },
+      [`typing.${userId}`]: !!value,
     },
     {
       merge: true,
     }
-  ).catch(() => {});
+  );
+}
 
-// ---------------------------------------------------------
-// REACTIONS
-// ---------------------------------------------------------
+/* =========================================================
+   REACT
+========================================================= */
 
 export async function reactToMessage(
   chatId,
@@ -178,6 +247,15 @@ export async function reactToMessage(
   userId,
   emoji
 ) {
+  if (
+    !chatId ||
+    !messageId ||
+    !userId ||
+    !emoji
+  ) {
+    return;
+  }
+
   const ref = doc(
     db,
     'chats',
@@ -187,15 +265,28 @@ export async function reactToMessage(
   );
 
   await updateDoc(ref, {
-    [`reactions.${userId}`]: emoji,
+    [`reactions.${userId}`]:
+      emoji,
   });
 }
+
+/* =========================================================
+   REMOVE REACTION
+========================================================= */
 
 export async function removeReaction(
   chatId,
   messageId,
   userId
 ) {
+  if (
+    !chatId ||
+    !messageId ||
+    !userId
+  ) {
+    return;
+  }
+
   const ref = doc(
     db,
     'chats',
@@ -205,15 +296,28 @@ export async function removeReaction(
   );
 
   await updateDoc(ref, {
-    [`reactions.${userId}`]: deleteField(),
+    [`reactions.${userId}`]:
+      deleteField(),
   });
 }
 
-// ---------------------------------------------------------
-// UNSEND
-// ---------------------------------------------------------
+/* =========================================================
+   UNSEND
+========================================================= */
 
-export async function unsendMessage(chatId, messageId) {
+export async function unsendMessage(
+  chatId,
+  messageId,
+  userId
+) {
+  if (
+    !chatId ||
+    !messageId ||
+    !userId
+  ) {
+    return;
+  }
+
   const ref = doc(
     db,
     'chats',
@@ -230,15 +334,23 @@ export async function unsendMessage(chatId, messageId) {
   });
 }
 
-// ---------------------------------------------------------
-// DELETE FOR ME
-// ---------------------------------------------------------
+/* =========================================================
+   DELETE FOR ME
+========================================================= */
 
 export async function deleteMessageForMe(
   chatId,
   messageId,
   userId
 ) {
+  if (
+    !chatId ||
+    !messageId ||
+    !userId
+  ) {
+    return;
+  }
+
   const ref = doc(
     db,
     'chats',
@@ -248,6 +360,7 @@ export async function deleteMessageForMe(
   );
 
   await updateDoc(ref, {
-    deletedFor: arrayUnion(userId),
+    deletedFor:
+      arrayUnion(userId),
   });
 }
