@@ -1,57 +1,229 @@
 rules_version = '2';
+
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function signedIn() { return request.auth != null; }
-    // The Google account ID of the signed-in person = the app's user id
-    function me() { return request.auth.token.firebase.identities['google.com'][0]; }
+    // ─────────────────────────────────────────────
+    // Helpers
+    // ─────────────────────────────────────────────
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function me() {
+      return request.auth.uid;
+    }
+
+    function isChatMember(chatId) {
+      return signedIn() && me() in chatId.split('_');
+    }
+
+    // ─────────────────────────────────────────────
+    // USERS
+    // ─────────────────────────────────────────────
 
     match /users/{userId} {
+
       allow read: if signedIn();
-      allow create, update, delete: if signedIn() && userId == me();
 
-      match /notifications/{nid} {
-        allow read, update, delete: if signedIn() && userId == me();
-        allow create: if signedIn();
-      }
+      allow create: if signedIn() &&
+        me() == userId;
+
+      allow update: if signedIn() &&
+        me() == userId;
+
+      allow delete: if signedIn() &&
+        me() == userId;
     }
 
-    match /posts/{postId} {
-      allow read: if signedIn();
-      allow create: if signedIn() && request.resource.data.authorId == me();
-      allow delete: if signedIn() && resource.data.authorId == me();
-      // anyone can like (only the "likes" field), the author can edit everything
-      allow update: if signedIn() && (
-        resource.data.authorId == me() ||
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['likes'])
-      );
-    }
-
-    match /stories/{storyId} {
-      allow read: if signedIn();
-      allow create: if signedIn() && request.resource.data.authorId == me();
-      allow delete: if signedIn() && resource.data.authorId == me();
-    }
-
-    match /requests/{requestId} {
-      allow read: if signedIn() && (resource.data.from == me() || resource.data.to == me());
-      allow create: if signedIn() && request.resource.data.from == me();
-      allow delete: if signedIn() && (resource.data.from == me() || resource.data.to == me());
-    }
-
-    match /friendships/{pairId} {
-      allow read, delete: if signedIn() && me() in resource.data.members;
-      allow create: if signedIn() && me() in request.resource.data.members;
-    }
+    // ─────────────────────────────────────────────
+    // CHATS
+    // ─────────────────────────────────────────────
 
     match /chats/{chatId} {
-      allow read: if signedIn() && me() in resource.data.members;
-      allow create, update: if signedIn() && me() in request.resource.data.members;
 
-      // chat id = "<googleIdA>_<googleIdB>"
+      // Only members can read a chat.
+      allow read: if isChatMember(chatId);
+
+      // A chat can only be created/updated by one of its members.
+      allow create, update: if isChatMember(chatId) &&
+        request.resource.data.members is list &&
+        me() in request.resource.data.members;
+
+      allow delete: if isChatMember(chatId);
+
+      // ───────────────────────────────────────────
+      // CHAT MESSAGES
+      // ───────────────────────────────────────────
+
       match /messages/{messageId} {
-        allow read, create: if signedIn() && me() in chatId.split('_');
+
+        // Members can read messages.
+        allow read: if isChatMember(chatId);
+
+        // Only a chat member can create a message,
+        // and the sender must be the authenticated user.
+        allow create: if isChatMember(chatId) &&
+          request.resource.data.senderId == me();
+
+        // Members can update messages.
+        //
+        // This allows:
+        // - reactions
+        // - removing reactions
+        // - seenBy
+        // - unsend
+        // - delete-for-me
+        // - reply-related message updates
+        allow update: if isChatMember(chatId);
+
+        // Only the original sender can permanently delete
+        // the message.
+        allow delete: if isChatMember(chatId) &&
+          resource.data.senderId == me();
       }
+    }
+
+    // ─────────────────────────────────────────────
+    // FRIEND REQUESTS
+    // ─────────────────────────────────────────────
+
+    match /friendRequests/{requestId} {
+
+      allow read: if signedIn();
+
+      allow create: if signedIn();
+
+      allow update: if signedIn();
+
+      allow delete: if signedIn();
+    }
+
+    // ─────────────────────────────────────────────
+    // FRIENDSHIPS
+    // ─────────────────────────────────────────────
+
+    match /friendships/{friendshipId} {
+
+      allow read: if signedIn();
+
+      allow create: if signedIn();
+
+      allow update: if signedIn();
+
+      allow delete: if signedIn();
+    }
+
+    // ─────────────────────────────────────────────
+    // POSTS
+    // ─────────────────────────────────────────────
+
+    match /posts/{postId} {
+
+      allow read: if signedIn();
+
+      allow create: if signedIn() &&
+        request.resource.data.userId == me();
+
+      allow update: if signedIn();
+
+      allow delete: if signedIn() &&
+        resource.data.userId == me();
+
+      // ───────────────────────────────────────────
+      // POST COMMENTS
+      // ───────────────────────────────────────────
+
+      match /comments/{commentId} {
+
+        allow read: if signedIn();
+
+        allow create: if signedIn() &&
+          request.resource.data.userId == me();
+
+        allow update: if signedIn();
+
+        allow delete: if signedIn() &&
+          resource.data.userId == me();
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // STORIES
+    // ─────────────────────────────────────────────
+
+    match /stories/{storyId} {
+
+      allow read: if signedIn();
+
+      allow create: if signedIn() &&
+        request.resource.data.userId == me();
+
+      allow update: if signedIn();
+
+      allow delete: if signedIn() &&
+        resource.data.userId == me();
+    }
+
+    // ─────────────────────────────────────────────
+    // REELS / VIDEOS
+    // ─────────────────────────────────────────────
+
+    match /reels/{reelId} {
+
+      allow read: if signedIn();
+
+      allow create: if signedIn() &&
+        request.resource.data.userId == me();
+
+      allow update: if signedIn();
+
+      allow delete: if signedIn() &&
+        resource.data.userId == me();
+
+      // ───────────────────────────────────────────
+      // REEL COMMENTS
+      // ───────────────────────────────────────────
+
+      match /comments/{commentId} {
+
+        allow read: if signedIn();
+
+        allow create: if signedIn() &&
+          request.resource.data.userId == me();
+
+        allow update: if signedIn();
+
+        allow delete: if signedIn() &&
+          resource.data.userId == me();
+      }
+    }
+
+    // ─────────────────────────────────────────────
+    // NOTIFICATIONS
+    // ─────────────────────────────────────────────
+
+    match /notifications/{notificationId} {
+
+      allow read: if signedIn() &&
+        resource.data.userId == me();
+
+      allow create: if signedIn();
+
+      allow update: if signedIn() &&
+        resource.data.userId == me();
+
+      allow delete: if signedIn() &&
+        resource.data.userId == me();
+    }
+
+    // ─────────────────────────────────────────────
+    // DEFAULT DENY
+    // ─────────────────────────────────────────────
+
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }
