@@ -10,31 +10,6 @@ import {
 ========================================================
  KING X MEDIA UTILITY
 ========================================================
-
-Default behavior:
-
-    pickMedia()
-        ↓
-    Opens media gallery directly
-
-No:
-    "Choose Gallery or Camera?" popup
-
-Use:
-
-    pickMedia()
-        → Images
-
-    pickMedia({ video: true })
-        → Images + Videos
-
-    pickMedia({ square: true })
-        → Profile-picture style 1:1 crop
-
-    pickMedia({ source: 'camera' })
-        → Camera directly
-
-========================================================
 */
 
 
@@ -47,10 +22,6 @@ export async function pickMedia({
   video = false,
   square = false,
 } = {}) {
-
-  // ----------------------------------------------------
-  // COMMON OPTIONS
-  // ----------------------------------------------------
 
   const options = {
     mediaTypes: video
@@ -68,7 +39,6 @@ export async function pickMedia({
     videoMaxDuration: 30,
   };
 
-
   let result;
 
 
@@ -81,7 +51,6 @@ export async function pickMedia({
     const permission =
       await ImagePicker.requestCameraPermissionsAsync();
 
-
     if (!permission.granted) {
 
       Alert.alert(
@@ -91,7 +60,6 @@ export async function pickMedia({
 
       return null;
     }
-
 
     result =
       await ImagePicker.launchCameraAsync(options);
@@ -107,7 +75,6 @@ export async function pickMedia({
     const permission =
       await ImagePicker.requestMediaLibraryPermissionsAsync();
 
-
     if (!permission.granted) {
 
       Alert.alert(
@@ -118,19 +85,13 @@ export async function pickMedia({
       return null;
     }
 
-
-    // IMPORTANT:
-    // Gallery opens DIRECTLY.
-    //
-    // There is NO Gallery/Camera Alert here.
-
     result =
       await ImagePicker.launchImageLibraryAsync(options);
   }
 
 
   // ====================================================
-  // USER CANCELLED
+  // CANCELLED
   // ====================================================
 
   if (
@@ -143,7 +104,7 @@ export async function pickMedia({
 
 
   // ====================================================
-  // RETURN FIRST SELECTED FILE
+  // FIRST ASSET
   // ====================================================
 
   return result.assets[0];
@@ -152,7 +113,7 @@ export async function pickMedia({
 
 
 // ======================================================
-// CHECK WHETHER MEDIA IS VIDEO
+// CHECK VIDEO
 // ======================================================
 
 export const isVideo = (asset) => {
@@ -161,17 +122,16 @@ export const isVideo = (asset) => {
     return false;
   }
 
-
   return (
     asset.type === 'video' ||
-    (asset.mimeType || '').startsWith('video')
+    (asset.mimeType || '').toLowerCase().startsWith('video/')
   );
 };
 
 
 
 // ======================================================
-// GET MIME TYPE
+// MIME TYPE
 // ======================================================
 
 export function mimeOf(asset) {
@@ -180,30 +140,43 @@ export function mimeOf(asset) {
     return 'image/jpeg';
   }
 
+  const provided =
+    String(asset.mimeType || '')
+      .trim()
+      .toLowerCase();
 
-  if (asset.mimeType) {
-    return asset.mimeType;
+  if (provided) {
+    return provided;
   }
 
+  if (asset.type === 'video') {
+    return 'video/mp4';
+  }
 
-  return isVideo(asset)
-    ? 'video/mp4'
-    : 'image/jpeg';
+  return 'image/jpeg';
 }
 
 
 
 // ======================================================
-// GET FILE EXTENSION
+// EXTENSION
 // ======================================================
 
 export const extOf = (mime = '') => {
 
-  return (
-    mime.split('/')[1] || 'jpg'
-  )
+  const clean =
+    String(mime)
+      .toLowerCase()
+      .split(';')[0]
+      .trim();
+
+  const extension =
+    clean.split('/')[1] || 'jpg';
+
+  return extension
     .replace('quicktime', 'mov')
-    .replace('jpeg', 'jpg');
+    .replace('jpeg', 'jpg')
+    .replace('svg+xml', 'svg');
 };
 
 
@@ -221,13 +194,83 @@ export function uploadFile(
 
   return new Promise((resolve, reject) => {
 
-    const isVid =
-      (contentType || '').startsWith('video');
+    if (!uri) {
+      reject(
+        new Error('No media file was selected.')
+      );
+      return;
+    }
 
 
-    const ext =
-      (contentType || '').split('/')[1] ||
-      (isVid ? 'mp4' : 'jpg');
+    if (!CLOUDINARY_CLOUD_NAME) {
+      reject(
+        new Error('Cloudinary cloud name is missing.')
+      );
+      return;
+    }
+
+
+    if (!CLOUDINARY_UPLOAD_PRESET) {
+      reject(
+        new Error('Cloudinary upload preset is missing.')
+      );
+      return;
+    }
+
+
+    // --------------------------------------------------
+    // NORMALIZE MIME
+    // --------------------------------------------------
+
+    const mime =
+      String(contentType || '')
+        .toLowerCase()
+        .split(';')[0]
+        .trim() ||
+      'image/jpeg';
+
+
+    const video =
+      mime.startsWith('video/');
+
+
+    // --------------------------------------------------
+    // EXTENSION
+    // --------------------------------------------------
+
+    let extension =
+      mime.split('/')[1] ||
+      (video ? 'mp4' : 'jpg');
+
+    extension =
+      extension
+        .replace('quicktime', 'mov')
+        .replace('jpeg', 'jpg');
+
+
+    // --------------------------------------------------
+    // CLOUDINARY RESOURCE TYPE
+    // --------------------------------------------------
+    //
+    // IMPORTANT:
+    //
+    // image uploads → /image/upload
+    // video uploads → /video/upload
+    //
+    // Instead of using /auto/upload for every file.
+    // This is more reliable with Android multipart uploads.
+    //
+
+    const resourceType =
+      video
+        ? 'video'
+        : 'image';
+
+
+    const uploadURL =
+      `https://api.cloudinary.com/v1_1/` +
+      `${CLOUDINARY_CLOUD_NAME}/` +
+      `${resourceType}/upload`;
 
 
     // --------------------------------------------------
@@ -242,8 +285,8 @@ export function uploadFile(
       'file',
       {
         uri,
-        type: contentType,
-        name: `upload.${ext}`,
+        type: mime,
+        name: `kingx_${Date.now()}.${extension}`,
       }
     );
 
@@ -252,6 +295,29 @@ export function uploadFile(
       'upload_preset',
       CLOUDINARY_UPLOAD_PRESET
     );
+
+
+    // --------------------------------------------------
+    // OPTIONAL FOLDER
+    // --------------------------------------------------
+    //
+    // The path is only used as an organizing folder.
+    // Cloudinary's unsigned preset controls what is allowed.
+    //
+
+    if (path) {
+
+      const folder =
+        String(path)
+          .replace(/\\/g, '/')
+          .split('/')
+          .slice(0, -1)
+          .join('/');
+
+      if (folder) {
+        form.append('folder', folder);
+      }
+    }
 
 
     // --------------------------------------------------
@@ -264,91 +330,158 @@ export function uploadFile(
 
     xhr.open(
       'POST',
-      `https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/auto/upload`
+      uploadURL
     );
 
 
-    // --------------------------------------------------
-    // UPLOAD PROGRESS
-    // --------------------------------------------------
-
-    xhr.upload.onprogress = (event) => {
-
-      if (
-        event.lengthComputable &&
-        onProgress
-      ) {
-
-        onProgress(
-          event.loaded / event.total
-        );
-      }
-    };
+    xhr.timeout = 120000;
 
 
     // --------------------------------------------------
-    // SUCCESS / ERROR
+    // PROGRESS
     // --------------------------------------------------
 
-    xhr.onload = () => {
+    xhr.upload.onprogress =
+      (event) => {
 
-      let body = {};
+        if (
+          event.lengthComputable &&
+          typeof onProgress === 'function'
+        ) {
+
+          const progress =
+            event.total > 0
+              ? event.loaded / event.total
+              : 0;
+
+          onProgress(
+            Math.max(
+              0,
+              Math.min(1, progress)
+            )
+          );
+        }
+      };
 
 
-      try {
+    // --------------------------------------------------
+    // SUCCESS
+    // --------------------------------------------------
 
-        body =
-          JSON.parse(
-            xhr.responseText
+    xhr.onload =
+      () => {
+
+        let body = {};
+
+        try {
+
+          body =
+            JSON.parse(
+              xhr.responseText || '{}'
+            );
+
+        } catch (error) {
+
+          body = {};
+        }
+
+
+        if (
+          xhr.status >= 200 &&
+          xhr.status < 300 &&
+          body.secure_url
+        ) {
+
+          if (
+            typeof onProgress === 'function'
+          ) {
+            onProgress(1);
+          }
+
+          resolve(
+            body.secure_url
           );
 
-      } catch (error) {
-
-        body = {};
-      }
+          return;
+        }
 
 
-      if (
-        xhr.status >= 200 &&
-        xhr.status < 300 &&
-        body.secure_url
-      ) {
+        const cloudinaryError =
+          body?.error?.message ||
+          body?.message ||
+          `Cloudinary returned HTTP ${xhr.status}.`;
 
-        resolve(
-          body.secure_url
-        );
-
-      } else {
 
         reject(
           new Error(
-            body?.error?.message ||
-            'Upload failed. Check your Cloudinary name and upload preset.'
+            `Cloudinary upload failed: ${cloudinaryError}`
           )
         );
-      }
-    };
+      };
 
 
     // --------------------------------------------------
-    // NETWORK ERROR
+    // HTTP ERROR
     // --------------------------------------------------
 
-    xhr.onerror = () => {
+    xhr.onerror =
+      () => {
+
+        reject(
+          new Error(
+            'Network error while uploading to Cloudinary. Check your internet connection.'
+          )
+        );
+      };
+
+
+    // --------------------------------------------------
+    // TIMEOUT
+    // --------------------------------------------------
+
+    xhr.ontimeout =
+      () => {
+
+        reject(
+          new Error(
+            'Cloudinary upload timed out. Please try again with a smaller file.'
+          )
+        );
+      };
+
+
+    // --------------------------------------------------
+    // ABORT
+    // --------------------------------------------------
+
+    xhr.onabort =
+      () => {
+
+        reject(
+          new Error(
+            'Upload was cancelled.'
+          )
+        );
+      };
+
+
+    // --------------------------------------------------
+    // SEND
+    // --------------------------------------------------
+
+    try {
+
+      xhr.send(form);
+
+    } catch (error) {
 
       reject(
         new Error(
-          'Network error while uploading.'
+          error?.message ||
+          'Could not start the Cloudinary upload.'
         )
       );
-    };
-
-
-    // --------------------------------------------------
-    // START UPLOAD
-    // --------------------------------------------------
-
-    xhr.send(form);
+    }
   });
 }
 
@@ -358,10 +491,8 @@ export function uploadFile(
 // DELETE FILE
 // ======================================================
 //
-// Cloudinary unsigned uploads cannot safely be deleted
+// Unsigned Cloudinary uploads cannot safely be deleted
 // directly from the client.
-//
-// Firestore post/story removal is handled separately.
 //
 
 export const deleteFile = () =>
