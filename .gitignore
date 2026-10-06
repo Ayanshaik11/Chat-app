@@ -2,3 +2,5 @@ node_modules/
 
 /google-services.json
 /google-services-base64.txt
+
+.expo/
