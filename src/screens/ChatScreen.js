@@ -1,11 +1,6 @@
-import React, {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   FlatList,
@@ -15,15 +10,16 @@ import {
   PanResponder,
   Platform,
   Pressable,
+  SafeAreaView,
   ScrollView,
   StyleSheet,
+  Text,
   TextInput,
+  TouchableOpacity,
   View,
 } from 'react-native';
 
 import * as Clipboard from 'expo-clipboard';
-
-import { Ionicons } from '@expo/vector-icons';
 
 import {
   collection,
@@ -34,10 +30,6 @@ import {
 } from 'firebase/firestore';
 
 import { db } from '../config/firebase';
-
-import { useAuth } from '../context/AuthContext';
-import { useAppData } from '../context/AppDataContext';
-import { useTheme } from '../context/SettingsContext';
 
 import {
   chatIdFor,
@@ -50,66 +42,69 @@ import {
   unsendMessage,
 } from '../services/chat';
 
-import {
-  clock,
-  isOnline,
-  lastSeenText,
-} from '../utils/helpers';
-
-import Screen from '../components/Screen';
-import ScreenHeader from '../components/ScreenHeader';
-import Avatar from '../components/Avatar';
-import T from '../components/T';
-
 const RED = '#E11D2A';
+const BG = '#080808';
+const CARD = '#111111';
+const CARD2 = '#171717';
+const BORDER = '#272727';
+const TEXT = '#FFFFFF';
+const MUTED = '#8F8F8F';
 
-const QUICK_REACTIONS = [
-  '❤️',
-  '😂',
-  '😅',
-  '😢',
-  '🔥',
-];
+const QUICK_REACTIONS = ['❤️', '😂', '😅', '😢', '🔥'];
 
 const EXTRA_REACTIONS = [
   '👍',
   '👎',
+  '👏',
+  '🙌',
   '😍',
-  '😘',
   '🥰',
+  '😘',
   '🤣',
-  '😊',
-  '😁',
   '😎',
-  '🤩',
+  '🤔',
   '😮',
+  '😱',
   '😡',
   '😭',
-  '🤔',
-  '🙄',
-  '👏',
+  '🥹',
+  '🤗',
+  '😴',
+  '🤩',
+  '💀',
+  '🤝',
   '🙏',
   '💯',
   '✨',
   '🎉',
   '💔',
   '❤️‍🔥',
-  '🥹',
-  '😴',
-  '🤝',
-  '👀',
-  '💀',
-  '🚀',
-  '⭐',
   '🫶',
+  '👀',
+  '🚀',
+  '😈',
 ];
 
-function formatSeenTime(timestamp) {
-  if (!timestamp) return 'Seen just now';
+function formatSeenTime(value) {
+  if (!value) return 'Seen just now';
 
-  const date = timestamp?.toDate
-    ? timestamp.toDate()
-    : new Date(timestamp);
+  let date;
+
+  try {
+    if (typeof value.toDate === 'function') {
+      date = value.toDate();
+    } else if (value instanceof Date) {
+      date = value;
+    } else {
+      date = new Date(value);
+    }
+  } catch {
+    return 'Seen just now';
+  }
+
+  if (Number.isNaN(date.getTime())) {
+    return 'Seen just now';
+  }
 
   const diff = Date.now() - date.getTime();
 
@@ -117,35 +112,48 @@ function formatSeenTime(timestamp) {
     return 'Seen just now';
   }
 
-  const minutes = Math.floor(diff / 60000);
-
-  if (minutes < 60) {
-    return `Seen ${minutes}m ago`;
+  if (diff < 60 * 60 * 1000) {
+    return `Seen ${Math.floor(diff / 60000)}m ago`;
   }
 
-  const hours = Math.floor(minutes / 60);
-
-  if (hours < 24) {
-    return `Seen ${hours}h ago`;
+  if (diff < 24 * 60 * 60 * 1000) {
+    return `Seen ${Math.floor(diff / 3600000)}h ago`;
   }
 
-  return 'Seen';
+  return `Seen ${date.toLocaleDateString()}`;
 }
 
-// ---------------------------------------------------------
-// MESSAGE ROW
-// ---------------------------------------------------------
+function getCreatedTime(item) {
+  if (!item?.createdAt) return 0;
+
+  try {
+    if (typeof item.createdAt.toMillis === 'function') {
+      return item.createdAt.toMillis();
+    }
+
+    if (item.createdAt instanceof Date) {
+      return item.createdAt.getTime();
+    }
+
+    return new Date(item.createdAt).getTime() || 0;
+  } catch {
+    return 0;
+  }
+}
 
 function MessageRow({
   item,
-  mine,
-  colors,
   onLongPress,
   onReply,
   onReactionPress,
+  inputRef,
 }) {
+  const meId = item._meId;
+  const isMine = item.senderId === meId;
+
   const translateX = useRef(new Animated.Value(0)).current;
-  const triggered = useRef(false);
+
+  const replyTriggered = useRef(false);
 
   const panResponder = useMemo(
     () =>
@@ -153,41 +161,44 @@ function MessageRow({
         onStartShouldSetPanResponder: () => false,
 
         onMoveShouldSetPanResponder: (_, gesture) => {
-          return (
-            Math.abs(gesture.dx) > 8 &&
-            Math.abs(gesture.dx) > Math.abs(gesture.dy)
-          );
-        },
-
-        onPanResponderGrant: () => {
-          triggered.current = false;
+          return Math.abs(gesture.dx) > 8 && Math.abs(gesture.dx) > Math.abs(gesture.dy);
         },
 
         onPanResponderMove: (_, gesture) => {
-          // Instagram-style right swipe to reply.
-          const distance = Math.max(
-            0,
-            Math.min(85, gesture.dx)
-          );
-
-          translateX.setValue(distance);
-
-          if (distance >= 65 && !triggered.current) {
-            triggered.current = true;
-
-            onReply(item);
-
-            setTimeout(() => {
-              Keyboard.dismiss();
-            }, 50);
+          if (gesture.dx > 0) {
+            translateX.setValue(Math.min(gesture.dx, 85));
           }
         },
 
-        onPanResponderRelease: () => {
+        onPanResponderRelease: (_, gesture) => {
+          if (gesture.dx >= 65 && !replyTriggered.current) {
+            replyTriggered.current = true;
+
+            Animated.spring(translateX, {
+              toValue: 0,
+              useNativeDriver: true,
+              friction: 8,
+              tension: 90,
+            }).start();
+
+            onReply(item);
+
+            requestAnimationFrame(() => {
+              inputRef?.current?.focus();
+            });
+
+            setTimeout(() => {
+              replyTriggered.current = false;
+            }, 250);
+
+            return;
+          }
+
           Animated.spring(translateX, {
             toValue: 0,
             useNativeDriver: true,
-            friction: 7,
+            friction: 8,
+            tension: 90,
           }).start();
         },
 
@@ -198,574 +209,435 @@ function MessageRow({
           }).start();
         },
       }),
-    [item, onReply, translateX]
+    [inputRef, item, onReply, translateX]
   );
 
-  const reactionEntries = Object.entries(
-    item.reactions || {}
+  const reactions = item.reactions
+    ? Object.entries(item.reactions)
+    : [];
+
+  const reactionCounts = {};
+
+  reactions.forEach(([userId, emoji]) => {
+    if (!emoji) return;
+
+    if (!reactionCounts[emoji]) {
+      reactionCounts[emoji] = 0;
+    }
+
+    reactionCounts[emoji] += 1;
+  });
+
+  const seenBy = item.seenBy || {};
+
+  const otherSeenEntries = Object.entries(seenBy).filter(
+    ([userId]) => userId !== meId
   );
 
-  const myReaction = item.reactions?.[item._meId];
+  let latestSeen = null;
 
-  const seenByOther = mine
-    ? Object.keys(item.seenBy || {}).some(
-        (id) => id !== item._meId
-      )
-    : false;
+  if (otherSeenEntries.length > 0) {
+    latestSeen = otherSeenEntries
+      .map(([, value]) => value)
+      .sort((a, b) => {
+        const ta =
+          typeof a?.toMillis === 'function'
+            ? a.toMillis()
+            : new Date(a || 0).getTime();
 
-  const bubbleColor = item.unsent
-    ? '#555'
-    : mine
-      ? colors.bubbleMine
-      : colors.bubbleOther;
+        const tb =
+          typeof b?.toMillis === 'function'
+            ? b.toMillis()
+            : new Date(b || 0).getTime();
 
-  const textColor = item.unsent
-    ? '#C8C8C8'
-    : mine
-      ? colors.bubbleMineText
-      : colors.text;
+        return tb - ta;
+      })[0];
+  }
+
+  const hasReply = !!item.replyTo;
 
   return (
     <View
-      style={{
-        alignSelf: mine ? 'flex-end' : 'flex-start',
-        maxWidth: '84%',
-        marginVertical: 3,
-      }}
-      {...panResponder.panHandlers}
+      style={[
+        styles.messageOuter,
+        {
+          alignItems: isMine ? 'flex-end' : 'flex-start',
+        },
+      ]}
     >
-      <Animated.View
-        style={{
-          transform: [{ translateX }],
-        }}
-      >
-        <Pressable
-          onLongPress={() => onLongPress(item)}
-          delayLongPress={350}
+      <View style={styles.swipeContainer}>
+        <Animated.View
+          {...panResponder.panHandlers}
+          style={[
+            styles.messageAnimated,
+            {
+              transform: [{ translateX }],
+            },
+          ]}
         >
-          <View
-            style={{
-              backgroundColor: bubbleColor,
-              borderRadius: 18,
-
-              borderBottomRightRadius: mine ? 4 : 18,
-              borderBottomLeftRadius: mine ? 18 : 4,
-
-              paddingHorizontal: 13,
-              paddingVertical: 8,
-
-              borderWidth: mine || item.unsent ? 0 : 1,
-              borderColor: colors.border,
-
-              opacity: item.unsent ? 0.75 : 1,
-            }}
+          <Pressable
+            onLongPress={() => onLongPress(item)}
+            delayLongPress={350}
+            style={[
+              styles.messageBubble,
+              isMine ? styles.myBubble : styles.otherBubble,
+              item.unsent && styles.unsentBubble,
+            ]}
           >
-            {/* -----------------------------------------
-                REPLY PREVIEW
-            ----------------------------------------- */}
+            {hasReply && (
+              <View style={styles.replyQuote}>
+                <View style={styles.replyAccent} />
 
-            {item.replyTo ? (
-              <View
-                style={{
-                  backgroundColor: item.unsent
-                    ? '#444'
-                    : 'rgba(120, 0, 0, 0.28)',
+                <View style={styles.replyQuoteContent}>
+                  <Text style={styles.replyQuoteTitle}>
+                    {item.replyTo.senderId === meId
+                      ? 'You'
+                      : item.replyTo.senderName || 'Message'}
+                  </Text>
 
-                  borderLeftWidth: 3,
-                  borderLeftColor: RED,
-
-                  borderRadius: 8,
-
-                  paddingHorizontal: 9,
-                  paddingVertical: 6,
-
-                  marginBottom: 7,
-                }}
-              >
-                <T
-                  size={10}
-                  weight="semibold"
-                  color={item.unsent ? '#AAA' : RED}
-                >
-                  Replying to message
-                </T>
-
-                <T
-                  size={12}
-                  color={
-                    item.unsent
-                      ? '#999'
-                      : mine
-                        ? 'rgba(255,255,255,0.72)'
-                        : colors.subtext
-                  }
-                  numberOfLines={2}
-                  style={{ marginTop: 2 }}
-                >
-                  {item.replyTo.text || 'Message'}
-                </T>
+                  <Text
+                    style={styles.replyQuoteText}
+                    numberOfLines={2}
+                  >
+                    {item.replyTo.text || 'Message'}
+                  </Text>
+                </View>
               </View>
-            ) : null}
+            )}
 
-            {/* -----------------------------------------
-                MESSAGE
-            ----------------------------------------- */}
-
-            <T
-              color={textColor}
-              size={15}
-              style={
-                item.unsent
-                  ? {
-                      fontStyle: 'italic',
-                    }
-                  : undefined
-              }
+            <Text
+              style={[
+                styles.messageText,
+                item.unsent && styles.unsentText,
+              ]}
             >
               {item.text}
-            </T>
+            </Text>
 
-            {/* -----------------------------------------
-                TIME
-            ----------------------------------------- */}
+            {item.unsent && (
+              <Text style={styles.unsentLabel}>
+                Unsent message
+              </Text>
+            )}
+          </Pressable>
 
-            <T
-              size={10}
-              color={
-                item.unsent
-                  ? '#999'
-                  : mine
-                    ? 'rgba(255,255,255,0.75)'
-                    : 'subtext'
-              }
-              style={{
-                alignSelf: 'flex-end',
-                marginTop: 3,
-              }}
-            >
-              {clock(item.createdAt)}
-            </T>
-          </View>
-
-          {/* -------------------------------------------
-              REACTIONS
-          ------------------------------------------- */}
-
-          {reactionEntries.length > 0 ? (
+          {Object.keys(reactionCounts).length > 0 && (
             <View
-              style={{
-                flexDirection: 'row',
-                alignSelf: mine
-                  ? 'flex-end'
-                  : 'flex-start',
-                marginTop: -4,
-                marginHorizontal: 5,
-              }}
+              style={[
+                styles.reactionRow,
+                isMine
+                  ? styles.reactionRowMine
+                  : styles.reactionRowOther,
+              ]}
             >
-              {[
-                ...new Set(
-                  reactionEntries.map(
-                    ([, emoji]) => emoji
-                  )
-                ),
-              ].map((emoji) => {
-                const count = reactionEntries.filter(
-                  ([, value]) => value === emoji
-                ).length;
-
-                return (
-                  <Pressable
+              {Object.entries(reactionCounts).map(
+                ([emoji, count]) => (
+                  <TouchableOpacity
                     key={emoji}
+                    style={styles.reactionChip}
                     onPress={() =>
                       onReactionPress(item, emoji)
                     }
-                    style={{
-                      backgroundColor:
-                        colors.inputBg,
-                      borderRadius: 12,
-                      paddingHorizontal: 6,
-                      paddingVertical: 2,
-                      marginRight: 3,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                    }}
+                    activeOpacity={0.7}
                   >
-                    <T size={12}>
+                    <Text style={styles.reactionEmoji}>
                       {emoji}
-                      {count > 1 ? ` ${count}` : ''}
-                    </T>
-                  </Pressable>
-                );
-              })}
-            </View>
-          ) : null}
+                    </Text>
 
-          {/* -------------------------------------------
-              SEEN
-          ------------------------------------------- */}
-
-          {mine && seenByOther && !item.unsent ? (
-            <T
-              size={9}
-              color="subtext"
-              style={{
-                alignSelf: 'flex-end',
-                marginTop: 2,
-                marginRight: 3,
-              }}
-            >
-              {formatSeenTime(
-                Object.values(item.seenBy || {}).find(
-                  (v, index, arr) =>
-                    index === arr.length - 1
+                    {count > 1 && (
+                      <Text style={styles.reactionCount}>
+                        {count}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
                 )
               )}
-            </T>
-          ) : null}
-        </Pressable>
-      </Animated.View>
+            </View>
+          )}
+        </Animated.View>
+      </View>
+
+      {isMine && latestSeen && (
+        <Text style={styles.seenText}>
+          {formatSeenTime(latestSeen)}
+        </Text>
+      )}
     </View>
   );
 }
 
-// ---------------------------------------------------------
-// MAIN SCREEN
-// ---------------------------------------------------------
-
-export default function ChatScreen({
-  route,
-  navigation,
-}) {
-  const { user } = route.params;
-
-  const { me } = useAuth();
-
+export default function ChatScreen({ route, navigation }) {
   const {
-    chats,
-    friendProfiles,
-  } = useAppData();
+    user,
+    otherUser,
+    friendProfiles = {},
+  } = route.params || {};
 
-  const {
-    colors,
-    fonts,
-  } = useTheme();
+  const me = user || {};
+  const other = otherUser || {};
 
-  const chatId = chatIdFor(me.id, user.id);
+  const meId = me.uid || me.id;
+  const otherId = other.uid || other.id;
 
-  const live = friendProfiles[user.id] || user;
-
-  const unread =
-    chats[chatId]?.unread?.[me.id] || 0;
+  const chatId = chatIdFor(meId, otherId);
 
   const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
 
   const [text, setText] = useState('');
 
-  const [replyingTo, setReplyingTo] =
-    useState(null);
+  const [replyingTo, setReplyingTo] = useState(null);
 
-  const [menuMessage, setMenuMessage] =
-    useState(null);
+  const [menuMessage, setMenuMessage] = useState(null);
 
-  const [reactionMessage, setReactionMessage] =
-    useState(null);
+  const [reactionMessage, setReactionMessage] = useState(null);
+  const [reactionEmoji, setReactionEmoji] = useState(null);
 
-  const [emojiPickerVisible, setEmojiPickerVisible] =
+  const [showExtraReactions, setShowExtraReactions] =
     useState(false);
 
-  const [forwardVisible, setForwardVisible] =
-    useState(false);
+  const [showForward, setShowForward] = useState(false);
 
-  const [selectedFriends, setSelectedFriends] =
-    useState([]);
+  const [selectedFriends, setSelectedFriends] = useState([]);
 
-  const [forwarding, setForwarding] =
-    useState(false);
+  const [sending, setSending] = useState(false);
 
-  // -------------------------------------------------------
-  // MESSAGES
-  // -------------------------------------------------------
+  const inputRef = useRef(null);
+
+  const menuAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    return onSnapshot(
-      query(
-        collection(
-          db,
-          'chats',
-          chatId,
-          'messages'
-        ),
-        orderBy('createdAt', 'desc'),
-        limit(80)
-      ),
-      (snap) => {
-        const data = snap.docs.map((d) => ({
-          id: d.id,
-          ...d.data(),
-          _meId: me.id,
+    if (!meId || !otherId) {
+      setLoading(false);
+      return undefined;
+    }
+
+    const messagesRef = collection(
+      db,
+      'chats',
+      chatId,
+      'messages'
+    );
+
+    const q = query(
+      messagesRef,
+      orderBy('createdAt', 'desc'),
+      limit(80)
+    );
+
+    const unsubscribe = onSnapshot(
+      q,
+      async snapshot => {
+        const data = snapshot.docs
+          .map(docSnap => ({
+            id: docSnap.id,
+            ...docSnap.data(),
+          }))
+          .filter(message => {
+            const deletedFor = message.deletedFor || [];
+
+            return !deletedFor.includes(meId);
+          });
+
+        const mapped = data.map(message => ({
+          ...message,
+          _meId: meId,
         }));
 
-        setMessages(data);
+        setMessages(mapped);
+        setLoading(false);
+
+        try {
+          await markChatRead(chatId, meId);
+          await markMessagesSeen(chatId, mapped, meId);
+        } catch (error) {
+          console.log(
+            'Read/seen update error:',
+            error?.message || error
+          );
+        }
       },
-      () => {}
+      error => {
+        console.log(
+          'Messages listener error:',
+          error?.message || error
+        );
+
+        setLoading(false);
+      }
     );
-  }, [chatId, me.id]);
 
-  // -------------------------------------------------------
-  // READ CHAT
-  // -------------------------------------------------------
-
-  useEffect(() => {
-    if (unread > 0) {
-      markChatRead(chatId, me.id).catch(() => {});
-    }
-  }, [unread, chatId, me.id]);
-
-  // -------------------------------------------------------
-  // MARK INCOMING MESSAGES SEEN
-  // -------------------------------------------------------
-
-  useEffect(() => {
-    if (!messages.length) return;
-
-    markMessagesSeen(
-      chatId,
-      messages,
-      me.id
-    ).catch(() => {});
-  }, [messages.length, chatId, me.id]);
-
-  // -------------------------------------------------------
-  // SEND
-  // -------------------------------------------------------
-
-  const send = async () => {
-    const t = text.trim();
-
-    if (!t) return;
-
-    const reply = replyingTo;
-
-    setText('');
-    setReplyingTo(null);
-
-    try {
-      await sendMessage(
-        me,
-        user,
-        t,
-        reply
-      );
-    } catch (e) {
-      setText(t);
-      setReplyingTo(reply);
-
-      Alert.alert(
-        'Message not sent',
-        e.message
-      );
-    }
-  };
-
-  // -------------------------------------------------------
-  // LONG PRESS
-  // -------------------------------------------------------
-
-  const openMenu = (message) => {
-    setMenuMessage(message);
-  };
+    return unsubscribe;
+  }, [chatId, meId, otherId]);
 
   const closeMenu = () => {
-    setMenuMessage(null);
-  };
-
-  // -------------------------------------------------------
-  // REPLY
-  // -------------------------------------------------------
-
-  const startReply = (message) => {
-    setReplyingTo(message);
-    closeMenu();
-
-    setTimeout(() => {
-      // TextInput receives focus through autoFocus
-      // state change below.
-    }, 50);
-  };
-
-  // -------------------------------------------------------
-  // COPY
-  // -------------------------------------------------------
-
-  const handleCopy = async () => {
-    if (!menuMessage || menuMessage.unsent) {
-      return;
-    }
-
-    await Clipboard.setStringAsync(
-      menuMessage.text || ''
-    );
-
-    closeMenu();
-  };
-
-  // -------------------------------------------------------
-  // UNSEND
-  // -------------------------------------------------------
-
-  const handleUnsend = () => {
-    if (!menuMessage) return;
-
-    Alert.alert(
-      'Unsend message?',
-      'This message will be removed for everyone.',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Unsend',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await unsendMessage(
-                chatId,
-                menuMessage.id
-              );
-            } catch (e) {
-              Alert.alert(
-                'Unsend failed',
-                e.message
-              );
-            }
-
-            closeMenu();
-          },
-        },
-      ]
-    );
-  };
-
-  // -------------------------------------------------------
-  // DELETE FOR ME
-  // -------------------------------------------------------
-
-  const handleDeleteForMe = () => {
-    if (!menuMessage) return;
-
-    Alert.alert(
-      'Delete for you?',
-      'This message will disappear from your chat.',
-      [
-        {
-          text: 'Cancel',
-          style: 'cancel',
-        },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await deleteMessageForMe(
-                chatId,
-                menuMessage.id,
-                me.id
-              );
-            } catch (e) {
-              Alert.alert(
-                'Delete failed',
-                e.message
-              );
-            }
-
-            closeMenu();
-          },
-        },
-      ]
-    );
-  };
-
-  // -------------------------------------------------------
-  // REACTION
-  // -------------------------------------------------------
-
-  const chooseReaction = async (
-    message,
-    emoji
-  ) => {
-    try {
-      await reactToMessage(
-        chatId,
-        message.id,
-        me.id,
-        emoji
-      );
-    } catch (e) {
-      Alert.alert(
-        'Reaction failed',
-        e.message
-      );
-    }
-  };
-
-  const handleReactionPress = (
-    message,
-    emoji
-  ) => {
-    setReactionMessage({
-      ...message,
-      selectedEmoji: emoji,
+    Animated.timing(menuAnim, {
+      toValue: 0,
+      duration: 140,
+      useNativeDriver: true,
+    }).start(() => {
+      setMenuMessage(null);
     });
   };
 
+  const openMenu = message => {
+    setMenuMessage(message);
+
+    menuAnim.setValue(0);
+
+    requestAnimationFrame(() => {
+      Animated.spring(menuAnim, {
+        toValue: 1,
+        useNativeDriver: true,
+        friction: 7,
+        tension: 80,
+      }).start();
+    });
+  };
+
+  const handleReply = message => {
+    setReplyingTo(message);
+    closeMenu();
+
+    requestAnimationFrame(() => {
+      inputRef.current?.focus();
+    });
+  };
+
+  const handleReaction = async emoji => {
+    if (!menuMessage?.id) return;
+
+    try {
+      await reactToMessage(
+        chatId,
+        menuMessage.id,
+        meId,
+        emoji
+      );
+
+      closeMenu();
+    } catch (error) {
+      console.log('Reaction error:', error);
+
+      Alert.alert(
+        'Reaction failed',
+        error?.message || 'Unable to react to this message.'
+      );
+    }
+  };
+
+  const handleReactionPress = (message, emoji) => {
+    const myReaction = message.reactions?.[meId];
+
+    if (myReaction === emoji) {
+      setReactionMessage(message);
+      setReactionEmoji(emoji);
+    } else {
+      setMenuMessage(message);
+    }
+  };
+
   const removeMyReaction = async () => {
-    if (!reactionMessage) return;
+    if (!reactionMessage?.id) return;
 
     try {
       await removeReaction(
         chatId,
         reactionMessage.id,
-        me.id
+        meId
       );
-    } catch (e) {
-      Alert.alert(
-        'Could not remove reaction',
-        e.message
-      );
-    }
+    } catch (error) {
+      console.log('Remove reaction error:', error);
 
-    setReactionMessage(null);
+      Alert.alert(
+        'Error',
+        error?.message || 'Could not remove reaction.'
+      );
+    } finally {
+      setReactionMessage(null);
+      setReactionEmoji(null);
+    }
   };
 
-  // -------------------------------------------------------
-  // FORWARD
-  // -------------------------------------------------------
+  const handleUnsend = async () => {
+    if (!menuMessage?.id) return;
 
-  const openForward = () => {
-    if (!menuMessage || menuMessage.unsent) {
-      return;
+    closeMenu();
+
+    try {
+      await unsendMessage(
+        chatId,
+        menuMessage.id,
+        meId
+      );
+    } catch (error) {
+      console.log('Unsend error:', error);
+
+      Alert.alert(
+        'Error',
+        error?.message || 'Could not unsend message.'
+      );
+    }
+  };
+
+  const handleDeleteForMe = async () => {
+    if (!menuMessage?.id) return;
+
+    closeMenu();
+
+    try {
+      await deleteMessageForMe(
+        chatId,
+        menuMessage.id,
+        meId
+      );
+    } catch (error) {
+      console.log('Delete error:', error);
+
+      Alert.alert(
+        'Error',
+        error?.message || 'Could not delete message.'
+      );
+    }
+  };
+
+  const handleCopy = async () => {
+    if (!menuMessage?.text) return;
+
+    try {
+      await Clipboard.setStringAsync(menuMessage.text);
+    } catch (error) {
+      console.log('Copy error:', error);
     }
 
-    setSelectedFriends([]);
-    setForwardVisible(true);
     closeMenu();
   };
 
-  const toggleFriend = (friendId) => {
-    setSelectedFriends((current) =>
-      current.includes(friendId)
-        ? current.filter(
-            (id) => id !== friendId
-          )
-        : [...current, friendId]
-    );
+  const toggleFriend = friendId => {
+    setSelectedFriends(current => {
+      if (current.includes(friendId)) {
+        return current.filter(id => id !== friendId);
+      }
+
+      return [...current, friendId];
+    });
   };
 
-  const forwardMessage = async () => {
+  const openForward = () => {
     if (!menuMessage) return;
 
-    if (!selectedFriends.length) {
+    setSelectedFriends([]);
+    closeMenu();
+
+    setTimeout(() => {
+      setShowForward(true);
+    }, 180);
+  };
+
+  const handleForward = async () => {
+    if (!menuMessage?.text) return;
+
+    if (selectedFriends.length === 0) {
       Alert.alert(
         'Select friends',
         'Choose at least one friend.'
@@ -773,1034 +645,1307 @@ export default function ChatScreen({
       return;
     }
 
-    setForwarding(true);
-
     try {
+      setSending(true);
+
       for (const friendId of selectedFriends) {
-        const friend = friendProfiles[friendId];
-
-        if (!friend) continue;
-
         await sendMessage(
-          me,
-          friend,
-          menuMessage.text || ''
+          meId,
+          friendId,
+          menuMessage.text
         );
       }
 
-      setForwardVisible(false);
+      setShowForward(false);
       setSelectedFriends([]);
       setMenuMessage(null);
-    } catch (e) {
+    } catch (error) {
+      console.log('Forward error:', error);
+
       Alert.alert(
         'Forward failed',
-        e.message
+        error?.message || 'Could not forward the message.'
       );
     } finally {
-      setForwarding(false);
+      setSending(false);
     }
   };
 
-  // -------------------------------------------------------
-  // FRIEND LIST
-  // -------------------------------------------------------
+  const handleSend = async () => {
+    const cleanText = text.trim();
 
-  const friends = Object.values(
-    friendProfiles || {}
-  ).filter(
-    (friend) => friend?.id && friend.id !== me.id
-  );
+    if (!cleanText || sending) return;
 
-  // -------------------------------------------------------
-  // FILTER DELETED
-  // -------------------------------------------------------
+    try {
+      setSending(true);
 
-  const visibleMessages = messages.filter(
-    (message) =>
-      !message.deletedFor?.includes(me.id)
-  );
+      await sendMessage(
+        meId,
+        otherId,
+        cleanText,
+        replyingTo
+          ? {
+              id: replyingTo.id,
+              text: replyingTo.text,
+              senderId: replyingTo.senderId,
+              senderName:
+                replyingTo.senderId === meId
+                  ? 'You'
+                  : other.displayName ||
+                    other.name ||
+                    'Message',
+            }
+          : null
+      );
 
-  // -------------------------------------------------------
-  // RENDER MESSAGE
-  // -------------------------------------------------------
+      setText('');
+      setReplyingTo(null);
 
-  const renderItem = ({ item, index }) => {
-    const mine =
-      item.senderId === me.id;
+      Keyboard.dismiss();
+    } catch (error) {
+      console.log('Send message error:', error);
 
-    return (
-      <MessageRow
-        item={item}
-        mine={mine}
-        colors={colors}
-        onLongPress={openMenu}
-        onReply={startReply}
-        onReactionPress={
-          handleReactionPress
-        }
-      />
-    );
+      Alert.alert(
+        'Send failed',
+        error?.message || 'Could not send message.'
+      );
+    } finally {
+      setSending(false);
+    }
   };
 
-  // -------------------------------------------------------
-  // SCREEN
-  // -------------------------------------------------------
+  const cancelReply = () => {
+    setReplyingTo(null);
+  };
+
+  const friendList = Object.values(friendProfiles || {})
+    .filter(friend => {
+      const id = friend?.uid || friend?.id;
+      return id && id !== meId;
+    })
+    .map(friend => ({
+      ...friend,
+      uid: friend.uid || friend.id,
+    }));
 
   return (
-    <Screen edges={['top', 'bottom']}>
-
-      {/* =================================================
-          HEADER
-      ================================================= */}
-
-      <ScreenHeader
-        onBack={() => navigation.goBack()}
-      >
-        <Pressable
-          onPress={() =>
-            navigation.navigate(
-              'UserProfile',
-              {
-                userId: user.id,
-              }
-            )
-          }
-          style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            gap: 10,
-          }}
-        >
-          <Avatar
-            uri={live.photoURL}
-            name={live.name}
-            size={38}
-            online={isOnline(live)}
-          />
-
-          <View style={{ flex: 1 }}>
-            <T
-              weight="semibold"
-              size={16}
-              numberOfLines={1}
-            >
-              {live.name}
-            </T>
-
-            <T
-              size={11}
-              color={
-                isOnline(live)
-                  ? 'primary'
-                  : 'subtext'
-              }
-            >
-              {lastSeenText(live)}
-            </T>
-          </View>
-        </Pressable>
-      </ScreenHeader>
-
-      {/* =================================================
-          CHAT
-      ================================================= */}
-
+    <SafeAreaView style={styles.safe}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={styles.container}
         behavior={
-          Platform.OS === 'ios'
-            ? 'padding'
-            : undefined
+          Platform.OS === 'ios' ? 'padding' : undefined
         }
       >
-        <View style={{ flex: 1 }}>
+        {/* HEADER */}
+        <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.backButton}
+            onPress={() => navigation?.goBack()}
+          >
+            <Text style={styles.backText}>‹</Text>
+          </TouchableOpacity>
 
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {(
+                other.displayName ||
+                other.name ||
+                '?'
+              )
+                .charAt(0)
+                .toUpperCase()}
+            </Text>
+          </View>
+
+          <View style={styles.headerInfo}>
+            <Text
+              style={styles.headerName}
+              numberOfLines={1}
+            >
+              {other.displayName ||
+                other.name ||
+                'User'}
+            </Text>
+
+            <Text style={styles.headerStatus}>
+              {other.online
+                ? 'Online'
+                : 'Messages'}
+            </Text>
+          </View>
+        </View>
+
+        {/* MESSAGES */}
+        {loading ? (
+          <View style={styles.loading}>
+            <ActivityIndicator
+              size="large"
+              color={RED}
+            />
+          </View>
+        ) : (
           <FlatList
             inverted
-            data={visibleMessages}
-            keyExtractor={(m) => m.id}
-            renderItem={renderItem}
-            contentContainerStyle={{
-              padding: 12,
-              flexGrow: 1,
-            }}
+            data={messages}
+            keyExtractor={item => item.id}
+            contentContainerStyle={styles.messagesList}
             keyboardShouldPersistTaps="handled"
+            renderItem={({ item }) => (
+              <MessageRow
+                item={item}
+                onLongPress={openMenu}
+                onReply={handleReply}
+                onReactionPress={handleReactionPress}
+                inputRef={inputRef}
+              />
+            )}
+            ListEmptyComponent={
+              <View
+                style={styles.emptyContainer}
+              >
+                <Text style={styles.emptyTitle}>
+                  No messages yet
+                </Text>
+
+                <Text style={styles.emptyText}>
+                  Start the conversation 👋
+                </Text>
+              </View>
+            }
           />
+        )}
 
-          {!visibleMessages.length ? (
-            <View
-              pointerEvents="none"
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: 30,
-              }}
-            >
-              <T
-                color="subtext"
-                style={{
-                  textAlign: 'center',
-                }}
-              >
-                Say hello to {live.name}! 👋
-              </T>
-            </View>
-          ) : null}
+        {/* REPLY PREVIEW */}
+        {replyingTo && (
+          <View style={styles.replyComposer}>
+            <View style={styles.replyComposerAccent} />
 
-        </View>
+            <View style={styles.replyComposerContent}>
+              <Text style={styles.replyComposerTitle}>
+                Replying to{' '}
+                {replyingTo.senderId === meId
+                  ? 'yourself'
+                  : other.displayName ||
+                    other.name ||
+                    'message'}
+              </Text>
 
-        {/* =================================================
-            REPLY PREVIEW
-        ================================================= */}
-
-        {replyingTo ? (
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-
-              borderTopWidth: 1,
-              borderTopColor: colors.border,
-
-              paddingHorizontal: 12,
-              paddingVertical: 8,
-
-              backgroundColor: colors.inputBg,
-            }}
-          >
-            <View
-              style={{
-                flex: 1,
-                borderLeftWidth: 3,
-                borderLeftColor: RED,
-                paddingLeft: 9,
-              }}
-            >
-              <T
-                size={11}
-                weight="semibold"
-                color="primary"
-              >
-                Replying to message
-              </T>
-
-              <T
-                size={12}
-                color="subtext"
+              <Text
+                style={styles.replyComposerText}
                 numberOfLines={1}
-                style={{ marginTop: 2 }}
               >
                 {replyingTo.text}
-              </T>
+              </Text>
             </View>
 
-            <Pressable
-              onPress={() =>
-                setReplyingTo(null)
-              }
-              style={{
-                width: 34,
-                height: 34,
-                borderRadius: 17,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
+            <TouchableOpacity
+              onPress={cancelReply}
+              style={styles.replyClose}
             >
-              <Ionicons
-                name="close"
-                size={21}
-                color={colors.subtext}
-              />
-            </Pressable>
+              <Text style={styles.replyCloseText}>
+                ×
+              </Text>
+            </TouchableOpacity>
           </View>
-        ) : null}
+        )}
 
-        {/* =================================================
-            COMPOSER
-        ================================================= */}
-
-        <View
-          style={{
-            flexDirection: 'row',
-            alignItems: 'flex-end',
-
-            padding: 10,
-            gap: 8,
-
-            borderTopWidth: 1,
-            borderTopColor: colors.border,
-          }}
-        >
+        {/* COMPOSER */}
+        <View style={styles.composer}>
           <TextInput
+            ref={inputRef}
             value={text}
             onChangeText={setText}
-            placeholder="Message…"
-            placeholderTextColor={
-              colors.subtext
-            }
+            placeholder="Message..."
+            placeholderTextColor="#666"
             multiline
-            style={{
-              flex: 1,
-              maxHeight: 110,
-
-              backgroundColor:
-                colors.inputBg,
-
-              borderRadius: 22,
-
-              paddingHorizontal: 16,
-              paddingTop: 10,
-              paddingBottom: 10,
-
-              fontFamily: fonts.regular,
-              fontSize: 15,
-
-              color: colors.text,
-            }}
+            maxLength={4000}
+            style={styles.input}
           />
 
-          <Pressable
-            onPress={send}
-            disabled={!text.trim()}
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 22,
-
-              backgroundColor: RED,
-
-              alignItems: 'center',
-              justifyContent: 'center',
-
-              opacity: text.trim()
-                ? 1
-                : 0.4,
-            }}
-          >
-            <Ionicons
-              name="send"
-              size={19}
-              color="#fff"
-              style={{ marginLeft: 2 }}
-            />
-          </Pressable>
-        </View>
-      </KeyboardAvoidingView>
-
-      {/* =================================================
-          LONG PRESS MENU
-      ================================================= */}
-
-      <Modal
-        visible={!!menuMessage}
-        transparent
-        animationType="fade"
-        onRequestClose={closeMenu}
-      >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={closeMenu}
-        >
-          <Pressable
+          <TouchableOpacity
             style={[
-              styles.actionSheet,
-              {
-                backgroundColor:
-                  colors.inputBg,
-              },
+              styles.sendButton,
+              (!text.trim() || sending) &&
+                styles.sendButtonDisabled,
             ]}
-            onPress={(e) =>
-              e.stopPropagation()
-            }
+            onPress={handleSend}
+            disabled={!text.trim() || sending}
+            activeOpacity={0.8}
           >
+            {sending ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.sendText}>
+                ➤
+              </Text>
+            )}
+          </TouchableOpacity>
+        </View>
 
-            {/* Reactions */}
-
-            <View
-              style={styles.quickReactionRow}
-            >
-              {QUICK_REACTIONS.map(
-                (emoji) => (
-                  <Pressable
-                    key={emoji}
-                    onPress={() => {
-                      chooseReaction(
-                        menuMessage,
-                        emoji
-                      );
-                      closeMenu();
-                    }}
-                    style={
-                      styles.quickReaction
-                    }
-                  >
-                    <T size={25}>
-                      {emoji}
-                    </T>
-                  </Pressable>
-                )
-              )}
-
-              <Pressable
-                onPress={() => {
-                  setEmojiPickerVisible(
-                    true
-                  );
-                }}
-                style={[
-                  styles.plusReaction,
-                  {
-                    backgroundColor:
-                      RED,
-                  },
-                ]}
-              >
-                <Ionicons
-                  name="add"
-                  size={22}
-                  color="#fff"
-                />
-              </Pressable>
-            </View>
-
-            {/* Reply */}
-
-            <ActionButton
-              icon="arrow-undo-outline"
-              text="Reply"
-              colors={colors}
-              onPress={() =>
-                startReply(menuMessage)
-              }
-            />
-
-            {/* Forward */}
-
-            {!menuMessage?.unsent ? (
-              <ActionButton
-                icon="arrow-redo-outline"
-                text="Forward"
-                colors={colors}
-                onPress={openForward}
-              />
-            ) : null}
-
-            {/* Copy */}
-
-            {!menuMessage?.unsent ? (
-              <ActionButton
-                icon="copy-outline"
-                text="Copy"
-                colors={colors}
-                onPress={handleCopy}
-              />
-            ) : null}
-
-            {/* Unsend */}
-
-            {menuMessage?.senderId ===
-              me.id &&
-            !menuMessage?.unsent ? (
-              <ActionButton
-                icon="remove-circle-outline"
-                text="Unsend"
-                colors={colors}
-                danger
-                onPress={handleUnsend}
-              />
-            ) : null}
-
-            {/* Delete */}
-
-            <ActionButton
-              icon="trash-outline"
-              text="Delete for you"
-              colors={colors}
-              danger
-              onPress={handleDeleteForMe}
-            />
-
-            {/* Cancel */}
-
+        {/* LONG PRESS MENU */}
+        <Modal
+          visible={!!menuMessage}
+          transparent
+          animationType="none"
+          onRequestClose={closeMenu}
+        >
+          <View style={styles.modalBackdrop}>
             <Pressable
+              style={StyleSheet.absoluteFill}
               onPress={closeMenu}
+            />
+
+            <Animated.View
               style={[
-                styles.cancelButton,
+                styles.actionSheet,
                 {
-                  backgroundColor:
-                    colors.background,
+                  opacity: menuAnim,
+                  transform: [
+                    {
+                      translateY: menuAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [40, 0],
+                      }),
+                    },
+                    {
+                      scale: menuAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.94, 1],
+                      }),
+                    },
+                  ],
                 },
               ]}
             >
-              <T
-                weight="semibold"
-                color="subtext"
-              >
-                Cancel
-              </T>
-            </Pressable>
+              {/* QUICK REACTIONS */}
+              <View style={styles.quickReactionRow}>
+                {QUICK_REACTIONS.map(emoji => (
+                  <TouchableOpacity
+                    key={emoji}
+                    style={styles.quickReaction}
+                    onPress={() =>
+                      handleReaction(emoji)
+                    }
+                  >
+                    <Text
+                      style={
+                        styles.quickReactionText
+                      }
+                    >
+                      {emoji}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
 
-          </Pressable>
-        </Pressable>
-      </Modal>
+                <TouchableOpacity
+                  style={[
+                    styles.quickReaction,
+                    styles.plusReaction,
+                  ]}
+                  onPress={() =>
+                    setShowExtraReactions(true)
+                  }
+                >
+                  <Text
+                    style={styles.plusReactionText}
+                  >
+                    +
+                  </Text>
+                </TouchableOpacity>
+              </View>
 
-      {/* =================================================
-          EXTRA EMOJI PICKER
-      ================================================= */}
+              <View style={styles.menuDivider} />
 
-      <Modal
-        visible={emojiPickerVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() =>
-          setEmojiPickerVisible(false)
-        }
-      >
-        <View style={styles.modalBackdrop}>
-
-          <View
-            style={[
-              styles.emojiSheet,
-              {
-                backgroundColor:
-                  colors.inputBg,
-              },
-            ]}
-          >
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent:
-                  'space-between',
-                marginBottom: 12,
-              }}
-            >
-              <T
-                weight="semibold"
-                size={17}
-              >
-                Choose reaction
-              </T>
-
-              <Pressable
+              <ActionButton
+                icon="↩"
+                label="Reply"
                 onPress={() =>
-                  setEmojiPickerVisible(
-                    false
-                  )
+                  handleReply(menuMessage)
                 }
-              >
-                <Ionicons
-                  name="close"
-                  size={24}
-                  color={colors.text}
-                />
-              </Pressable>
-            </View>
+              />
 
-            <ScrollView>
-              <View
-                style={
+              <ActionButton
+                icon="➤"
+                label="Forward"
+                onPress={openForward}
+              />
+
+              <ActionButton
+                icon="⧉"
+                label="Copy"
+                onPress={handleCopy}
+              />
+
+              {menuMessage?.senderId === meId &&
+                !menuMessage?.unsent && (
+                  <ActionButton
+                    icon="↶"
+                    label="Unsend"
+                    danger
+                    onPress={handleUnsend}
+                  />
+                )}
+
+              <ActionButton
+                icon="⌫"
+                label="Delete for you"
+                danger
+                onPress={handleDeleteForMe}
+              />
+
+              <ActionButton
+                icon="×"
+                label="Cancel"
+                onPress={closeMenu}
+              />
+            </Animated.View>
+          </View>
+        </Modal>
+
+        {/* EXTRA REACTIONS */}
+        <Modal
+          visible={showExtraReactions}
+          transparent
+          animationType="slide"
+          onRequestClose={() =>
+            setShowExtraReactions(false)
+          }
+        >
+          <View style={styles.modalBackdrop}>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() =>
+                setShowExtraReactions(false)
+              }
+            />
+
+            <View style={styles.reactionSheet}>
+              <View style={styles.sheetHandle} />
+
+              <Text style={styles.sheetTitle}>
+                Choose reaction
+              </Text>
+
+              <ScrollView
+                contentContainerStyle={
                   styles.emojiGrid
                 }
               >
-                {EXTRA_REACTIONS.map(
-                  (emoji) => (
-                    <Pressable
-                      key={emoji}
-                      onPress={() => {
-                        chooseReaction(
-                          menuMessage,
-                          emoji
-                        );
-
-                        setEmojiPickerVisible(
-                          false
-                        );
-
-                        closeMenu();
-                      }}
-                      style={
-                        styles.emojiItem
-                      }
-                    >
-                      <T size={29}>
-                        {emoji}
-                      </T>
-                    </Pressable>
-                  )
-                )}
-              </View>
-            </ScrollView>
+                {EXTRA_REACTIONS.map(emoji => (
+                  <TouchableOpacity
+                    key={emoji}
+                    style={styles.bigEmojiButton}
+                    onPress={async () => {
+                      await handleReaction(emoji);
+                      setShowExtraReactions(false);
+                    }}
+                  >
+                    <Text style={styles.bigEmoji}>
+                      {emoji}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
           </View>
+        </Modal>
 
-        </View>
-      </Modal>
+        {/* REMOVE REACTION */}
+        <Modal
+          visible={!!reactionMessage}
+          transparent
+          animationType="fade"
+          onRequestClose={() => {
+            setReactionMessage(null);
+            setReactionEmoji(null);
+          }}
+        >
+          <View style={styles.modalBackdrop}>
+            <Pressable
+              style={StyleSheet.absoluteFill}
+              onPress={() => {
+                setReactionMessage(null);
+                setReactionEmoji(null);
+              }}
+            />
 
-      {/* =================================================
-          REACTION REMOVE POPUP
-      ================================================= */}
+            <View style={styles.reactionPopup}>
+              <Text style={styles.reactionPopupEmoji}>
+                {reactionEmoji}
+              </Text>
 
-      <Modal
-        visible={!!reactionMessage}
-        transparent
-        animationType="fade"
-        onRequestClose={() =>
-          setReactionMessage(null)
-        }
-      >
-        <Pressable
-          style={styles.modalBackdrop}
-          onPress={() =>
-            setReactionMessage(null)
+              <Text style={styles.reactionPopupTitle}>
+                Remove your reaction?
+              </Text>
+
+              <TouchableOpacity
+                style={styles.redButton}
+                onPress={removeMyReaction}
+              >
+                <Text style={styles.redButtonText}>
+                  Remove
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.cancelButton}
+                onPress={() => {
+                  setReactionMessage(null);
+                  setReactionEmoji(null);
+                }}
+              >
+                <Text style={styles.cancelButtonText}>
+                  Cancel
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* FORWARD */}
+        <Modal
+          visible={showForward}
+          transparent
+          animationType="slide"
+          onRequestClose={() =>
+            setShowForward(false)
           }
         >
-          <Pressable
-            style={[
-              styles.reactionPopup,
-              {
-                backgroundColor:
-                  colors.inputBg,
-              },
-            ]}
-            onPress={(e) =>
-              e.stopPropagation()
-            }
-          >
-            <T
-              size={16}
-              weight="semibold"
-            >
-              Your reaction
-            </T>
+          <View style={styles.modalBackdrop}>
+            <View style={styles.forwardSheet}>
+              <View style={styles.sheetHandle} />
 
-            <T
-              size={38}
-              style={{
-                textAlign: 'center',
-                marginVertical: 12,
-              }}
-            >
-              {reactionMessage?.selectedEmoji}
-            </T>
+              <View style={styles.forwardHeader}>
+                <Text style={styles.sheetTitle}>
+                  Forward to
+                </Text>
 
-            <Pressable
-              onPress={removeMyReaction}
-              style={[
-                styles.redButton,
-                {
-                  backgroundColor: RED,
-                },
-              ]}
-            >
-              <Ionicons
-                name="remove-circle-outline"
-                size={19}
-                color="#fff"
-              />
-
-              <T
-                color="#fff"
-                weight="semibold"
-              >
-                Remove reaction
-              </T>
-            </Pressable>
-
-            <Pressable
-              onPress={() =>
-                setReactionMessage(null)
-              }
-              style={{
-                alignItems: 'center',
-                paddingVertical: 12,
-              }}
-            >
-              <T color="subtext">
-                Cancel
-              </T>
-            </Pressable>
-          </Pressable>
-        </Pressable>
-      </Modal>
-
-      {/* =================================================
-          FORWARD FRIEND SELECTOR
-      ================================================= */}
-
-      <Modal
-        visible={forwardVisible}
-        transparent
-        animationType="slide"
-        onRequestClose={() =>
-          setForwardVisible(false)
-        }
-      >
-        <View style={styles.modalBackdrop}>
-
-          <View
-            style={[
-              styles.forwardSheet,
-              {
-                backgroundColor:
-                  colors.inputBg,
-              },
-            ]}
-          >
-
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                justifyContent:
-                  'space-between',
-                marginBottom: 14,
-              }}
-            >
-              <View>
-                <T
-                  size={18}
-                  weight="semibold"
+                <TouchableOpacity
+                  onPress={() =>
+                    setShowForward(false)
+                  }
                 >
-                  Forward message
-                </T>
-
-                <T
-                  size={11}
-                  color="subtext"
-                  style={{
-                    marginTop: 2,
-                  }}
-                >
-                  Select multiple friends
-                </T>
+                  <Text style={styles.closeText}>
+                    ×
+                  </Text>
+                </TouchableOpacity>
               </View>
 
-              <Pressable
-                onPress={() =>
-                  setForwardVisible(
-                    false
-                  )
-                }
-              >
-                <Ionicons
-                  name="close"
-                  size={25}
-                  color={colors.text}
-                />
-              </Pressable>
-            </View>
+              {friendList.length === 0 ? (
+                <View style={styles.noFriends}>
+                  <Text style={styles.noFriendsTitle}>
+                    No friends available
+                  </Text>
 
-            <ScrollView
-              style={{
-                maxHeight: 430,
-              }}
-            >
-              {friends.length ? (
-                friends.map((friend) => {
-                  const selected =
-                    selectedFriends.includes(
-                      friend.id
-                    );
-
-                  return (
-                    <Pressable
-                      key={friend.id}
-                      onPress={() =>
-                        toggleFriend(
-                          friend.id
-                        )
-                      }
-                      style={{
-                        flexDirection:
-                          'row',
-                        alignItems:
-                          'center',
-
-                        paddingVertical: 10,
-
-                        borderBottomWidth:
-                          1,
-                        borderBottomColor:
-                          colors.border,
-                      }}
-                    >
-                      <Avatar
-                        uri={
-                          friend.photoURL
-                        }
-                        name={
-                          friend.name
-                        }
-                        size={42}
-                        online={isOnline(
-                          friend
-                        )}
-                      />
-
-                      <View
-                        style={{
-                          flex: 1,
-                          marginLeft: 11,
-                        }}
-                      >
-                        <T
-                          weight="semibold"
-                        >
-                          {friend.name}
-                        </T>
-
-                        <T
-                          size={11}
-                          color="subtext"
-                        >
-                          {isOnline(
-                            friend
-                          )
-                            ? 'Online'
-                            : 'Offline'}
-                        </T>
-                      </View>
-
-                      <View
-                        style={[
-                          styles.checkbox,
-                          {
-                            borderColor:
-                              selected
-                                ? RED
-                                : colors.border,
-
-                            backgroundColor:
-                              selected
-                                ? RED
-                                : 'transparent',
-                          },
-                        ]}
-                      >
-                        {selected ? (
-                          <Ionicons
-                            name="checkmark"
-                            size={17}
-                            color="#fff"
-                          />
-                        ) : null}
-                      </View>
-                    </Pressable>
-                  );
-                })
-              ) : (
-                <View
-                  style={{
-                    padding: 30,
-                    alignItems:
-                      'center',
-                  }}
-                >
-                  <T color="subtext">
-                    No friends available.
-                  </T>
+                  <Text style={styles.noFriendsText}>
+                    Your friend list is empty.
+                  </Text>
                 </View>
+              ) : (
+                <ScrollView
+                  style={styles.friendScroll}
+                  contentContainerStyle={
+                    styles.friendList
+                  }
+                >
+                  {friendList.map(friend => {
+                    const selected =
+                      selectedFriends.includes(
+                        friend.uid
+                      );
+
+                    return (
+                      <TouchableOpacity
+                        key={friend.uid}
+                        style={styles.friendRow}
+                        onPress={() =>
+                          toggleFriend(
+                            friend.uid
+                          )
+                        }
+                        activeOpacity={0.75}
+                      >
+                        <View
+                          style={styles.friendAvatar}
+                        >
+                          <Text
+                            style={
+                              styles.friendAvatarText
+                            }
+                          >
+                            {(
+                              friend.displayName ||
+                              friend.name ||
+                              '?'
+                            )
+                              .charAt(0)
+                              .toUpperCase()}
+                          </Text>
+                        </View>
+
+                        <View
+                          style={
+                            styles.friendInfo
+                          }
+                        >
+                          <Text
+                            style={
+                              styles.friendName
+                            }
+                            numberOfLines={1}
+                          >
+                            {friend.displayName ||
+                              friend.name ||
+                              'User'}
+                          </Text>
+
+                          <Text
+                            style={
+                              styles.friendUsername
+                            }
+                            numberOfLines={1}
+                          >
+                            {friend.username
+                              ? `@${friend.username}`
+                              : 'Friend'}
+                          </Text>
+                        </View>
+
+                        <View
+                          style={[
+                            styles.checkbox,
+                            selected &&
+                              styles.checkboxSelected,
+                          ]}
+                        >
+                          {selected && (
+                            <Text
+                              style={
+                                styles.checkmark
+                              }
+                            >
+                              ✓
+                            </Text>
+                          )}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
               )}
-            </ScrollView>
 
-            <Pressable
-              disabled={
-                forwarding ||
-                !selectedFriends.length
-              }
-              onPress={forwardMessage}
-              style={[
-                styles.forwardButton,
-                {
-                  backgroundColor: RED,
-                  opacity:
-                    forwarding ||
-                    !selectedFriends.length
-                      ? 0.45
-                      : 1,
-                },
-              ]}
-            >
-              <Ionicons
-                name="arrow-redo"
-                size={19}
-                color="#fff"
-              />
-
-              <T
-                color="#fff"
-                weight="semibold"
+              <TouchableOpacity
+                style={[
+                  styles.forwardButton,
+                  (selectedFriends.length === 0 ||
+                    sending) &&
+                    styles.forwardButtonDisabled,
+                ]}
+                disabled={
+                  selectedFriends.length === 0 ||
+                  sending
+                }
+                onPress={handleForward}
               >
-                {forwarding
-                  ? 'Forwarding...'
-                  : `Forward${
-                      selectedFriends.length
-                        ? ` to ${selectedFriends.length}`
-                        : ''
-                    }`}
-              </T>
-            </Pressable>
-
+                {sending ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text
+                    style={styles.forwardButtonText}
+                  >
+                    Forward
+                    {selectedFriends.length > 0
+                      ? ` (${selectedFriends.length})`
+                      : ''}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
-        </View>
-      </Modal>
-
-    </Screen>
+        </Modal>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
-// ---------------------------------------------------------
-// ACTION BUTTON
-// ---------------------------------------------------------
-
 function ActionButton({
   icon,
-  text,
-  colors,
+  label,
   onPress,
   danger = false,
 }) {
   return (
-    <Pressable
+    <TouchableOpacity
+      style={styles.actionButton}
       onPress={onPress}
-      style={{
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingVertical: 13,
-        gap: 13,
-      }}
+      activeOpacity={0.7}
     >
-      <Ionicons
-        name={icon}
-        size={21}
-        color={danger ? '#F43F5E' : colors.text}
-      />
-
-      <T
-        color={danger ? '#F43F5E' : colors.text}
-        size={15}
+      <View
+        style={[
+          styles.actionIcon,
+          danger && styles.actionIconDanger,
+        ]}
       >
-        {text}
-      </T>
-    </Pressable>
+        <Text
+          style={[
+            styles.actionIconText,
+            danger && styles.actionIconTextDanger,
+          ]}
+        >
+          {icon}
+        </Text>
+      </View>
+
+      <Text
+        style={[
+          styles.actionLabel,
+          danger && styles.actionLabelDanger,
+        ]}
+      >
+        {label}
+      </Text>
+    </TouchableOpacity>
   );
 }
 
-// ---------------------------------------------------------
-// STYLES
-// ---------------------------------------------------------
-
 const styles = StyleSheet.create({
+  safe: {
+    flex: 1,
+    backgroundColor: BG,
+  },
+
+  container: {
+    flex: 1,
+    backgroundColor: BG,
+  },
+
+  header: {
+    height: 64,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: BORDER,
+    backgroundColor: '#0C0C0C',
+  },
+
+  backButton: {
+    width: 38,
+    height: 42,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 2,
+  },
+
+  backText: {
+    color: '#fff',
+    fontSize: 38,
+    fontWeight: '300',
+    marginTop: -4,
+  },
+
+  avatar: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: RED,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  avatarText: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '800',
+  },
+
+  headerInfo: {
+    flex: 1,
+    marginLeft: 10,
+  },
+
+  headerName: {
+    color: TEXT,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+
+  headerStatus: {
+    color: MUTED,
+    fontSize: 12,
+    marginTop: 2,
+  },
+
+  loading: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  messagesList: {
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+  },
+
+  messageOuter: {
+    width: '100%',
+    marginVertical: 4,
+  },
+
+  swipeContainer: {
+    maxWidth: '84%',
+  },
+
+  messageAnimated: {
+    maxWidth: '100%',
+  },
+
+  messageBubble: {
+    borderRadius: 18,
+    paddingHorizontal: 13,
+    paddingVertical: 9,
+    minWidth: 50,
+  },
+
+  myBubble: {
+    backgroundColor: RED,
+    borderBottomRightRadius: 5,
+  },
+
+  otherBubble: {
+    backgroundColor: CARD2,
+    borderBottomLeftRadius: 5,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+
+  unsentBubble: {
+    backgroundColor: '#444',
+    opacity: 0.75,
+  },
+
+  messageText: {
+    color: '#fff',
+    fontSize: 15,
+    lineHeight: 21,
+  },
+
+  unsentText: {
+    color: '#D0D0D0',
+    fontStyle: 'italic',
+  },
+
+  unsentLabel: {
+    color: '#AAA',
+    fontSize: 10,
+    marginTop: 3,
+    fontStyle: 'italic',
+  },
+
+  replyQuote: {
+    flexDirection: 'row',
+    backgroundColor: 'rgba(0,0,0,0.28)',
+    borderRadius: 9,
+    marginBottom: 7,
+    overflow: 'hidden',
+  },
+
+  replyAccent: {
+    width: 3,
+    backgroundColor: RED,
+  },
+
+  replyQuoteContent: {
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+    flex: 1,
+  },
+
+  replyQuoteTitle: {
+    color: RED,
+    fontSize: 11,
+    fontWeight: '800',
+    marginBottom: 2,
+  },
+
+  replyQuoteText: {
+    color: '#A8A8A8',
+    fontSize: 11,
+  },
+
+  reactionRow: {
+    flexDirection: 'row',
+    marginTop: -4,
+  },
+
+  reactionRowMine: {
+    justifyContent: 'flex-end',
+  },
+
+  reactionRowOther: {
+    justifyContent: 'flex-start',
+  },
+
+  reactionChip: {
+    minHeight: 27,
+    paddingHorizontal: 7,
+    borderRadius: 15,
+    backgroundColor: '#202020',
+    borderWidth: 1,
+    borderColor: '#333',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 4,
+  },
+
+  reactionEmoji: {
+    fontSize: 15,
+  },
+
+  reactionCount: {
+    color: '#fff',
+    fontSize: 11,
+    marginLeft: 3,
+    fontWeight: '700',
+  },
+
+  seenText: {
+    color: '#777',
+    fontSize: 10,
+    marginTop: 2,
+    marginHorizontal: 4,
+  },
+
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingTop: 250,
+  },
+
+  emptyTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '700',
+  },
+
+  emptyText: {
+    color: '#777',
+    marginTop: 5,
+  },
+
+  replyComposer: {
+    minHeight: 58,
+    backgroundColor: '#101010',
+    borderTopWidth: 1,
+    borderTopColor: BORDER,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+
+  replyComposerAccent: {
+    width: 3,
+    height: 42,
+    backgroundColor: RED,
+  },
+
+  replyComposerContent: {
+    flex: 1,
+    paddingHorizontal: 10,
+  },
+
+  replyComposerTitle: {
+    color: RED,
+    fontWeight: '800',
+    fontSize: 12,
+  },
+
+  replyComposerText: {
+    color: '#AAA',
+    fontSize: 12,
+    marginTop: 2,
+  },
+
+  replyClose: {
+    width: 44,
+    height: 44,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  replyCloseText: {
+    color: '#999',
+    fontSize: 27,
+  },
+
+  composer: {
+    minHeight: 64,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    backgroundColor: '#0C0C0C',
+    borderTopWidth: 1,
+    borderTopColor: BORDER,
+  },
+
+  input: {
+    flex: 1,
+    maxHeight: 120,
+    minHeight: 46,
+    backgroundColor: '#171717',
+    color: '#fff',
+    borderRadius: 23,
+    paddingHorizontal: 17,
+    paddingTop: 12,
+    paddingBottom: 10,
+    fontSize: 15,
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+
+  sendButton: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: RED,
+    marginLeft: 8,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  sendButtonDisabled: {
+    opacity: 0.45,
+  },
+
+  sendText: {
+    color: '#fff',
+    fontSize: 20,
+    fontWeight: '800',
+    marginLeft: 2,
+  },
+
   modalBackdrop: {
     flex: 1,
-    backgroundColor: 'rgba(0,0,0,0.62)',
+    backgroundColor: 'rgba(0,0,0,0.72)',
     justifyContent: 'flex-end',
   },
 
   actionSheet: {
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    paddingHorizontal: 18,
+    backgroundColor: '#151515',
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
     paddingTop: 12,
-    paddingBottom: 25,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 16,
+    paddingHorizontal: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#2A2A2A',
   },
 
   quickReactionRow: {
     flexDirection: 'row',
+    justifyContent: 'center',
     alignItems: 'center',
-    paddingBottom: 10,
-    marginBottom: 5,
+    paddingVertical: 5,
   },
 
   quickReaction: {
-    width: 42,
-    height: 42,
-    alignItems: 'center',
+    width: 49,
+    height: 49,
+    borderRadius: 25,
+    backgroundColor: '#222',
     justifyContent: 'center',
+    alignItems: 'center',
+    marginHorizontal: 4,
+    borderWidth: 1,
+    borderColor: '#333',
+  },
+
+  quickReactionText: {
+    fontSize: 25,
   },
 
   plusReaction: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+    backgroundColor: RED,
+    borderColor: RED,
+  },
+
+  plusReactionText: {
+    color: '#fff',
+    fontSize: 28,
+    fontWeight: '400',
+  },
+
+  menuDivider: {
+    height: 1,
+    backgroundColor: '#292929',
+    marginVertical: 8,
+  },
+
+  actionButton: {
+    minHeight: 50,
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+
+  actionIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#252525',
     justifyContent: 'center',
-    marginLeft: 4,
-  },
-
-  cancelButton: {
-    marginTop: 8,
-    borderRadius: 14,
     alignItems: 'center',
-    paddingVertical: 13,
+    marginRight: 12,
   },
 
-  emojiSheet: {
-    maxHeight: '75%',
+  actionIconDanger: {
+    backgroundColor: 'rgba(225,29,42,0.16)',
+  },
+
+  actionIconText: {
+    color: '#fff',
+    fontSize: 18,
+  },
+
+  actionIconTextDanger: {
+    color: RED,
+  },
+
+  actionLabel: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '600',
+  },
+
+  actionLabelDanger: {
+    color: RED,
+  },
+
+  reactionSheet: {
+    maxHeight: '70%',
+    backgroundColor: '#151515',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 18,
+    paddingHorizontal: 15,
+    paddingTop: 10,
+    paddingBottom: 25,
+  },
+
+  sheetHandle: {
+    width: 42,
+    height: 4,
+    borderRadius: 3,
+    backgroundColor: '#555',
+    alignSelf: 'center',
+    marginBottom: 13,
+  },
+
+  sheetTitle: {
+    color: '#fff',
+    fontSize: 18,
+    fontWeight: '800',
+    marginBottom: 12,
   },
 
   emojiGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    justifyContent: 'center',
+    paddingBottom: 10,
   },
 
-  emojiItem: {
-    width: '16.66%',
-    height: 54,
-    alignItems: 'center',
+  bigEmojiButton: {
+    width: 56,
+    height: 56,
     justifyContent: 'center',
+    alignItems: 'center',
+    borderRadius: 12,
+    backgroundColor: '#202020',
+    margin: 4,
+  },
+
+  bigEmoji: {
+    fontSize: 28,
   },
 
   reactionPopup: {
-    position: 'absolute',
-    left: 25,
-    right: 25,
-    top: '35%',
-    borderRadius: 20,
-    padding: 20,
+    alignSelf: 'center',
+    width: '84%',
+    backgroundColor: '#161616',
+    borderRadius: 22,
+    padding: 22,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: BORDER,
+  },
+
+  reactionPopupEmoji: {
+    fontSize: 40,
+    marginBottom: 8,
+  },
+
+  reactionPopupTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+    marginBottom: 18,
   },
 
   redButton: {
-    height: 46,
+    width: '100%',
+    minHeight: 48,
     borderRadius: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
+    backgroundColor: RED,
     justifyContent: 'center',
-    gap: 8,
+    alignItems: 'center',
+  },
+
+  redButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  cancelButton: {
+    width: '100%',
+    minHeight: 48,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginTop: 4,
+  },
+
+  cancelButtonText: {
+    color: '#999',
+    fontSize: 14,
+    fontWeight: '600',
   },
 
   forwardSheet: {
     maxHeight: '82%',
+    backgroundColor: '#151515',
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
-    padding: 18,
+    paddingHorizontal: 15,
+    paddingTop: 10,
+    paddingBottom: Platform.OS === 'ios' ? 28 : 15,
+  },
+
+  forwardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+
+  closeText: {
+    color: '#999',
+    fontSize: 30,
+    fontWeight: '300',
+  },
+
+  friendScroll: {
+    maxHeight: 440,
+  },
+
+  friendList: {
+    paddingVertical: 5,
+  },
+
+  friendRow: {
+    minHeight: 66,
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    borderBottomWidth: 1,
+    borderBottomColor: '#222',
+  },
+
+  friendAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: RED,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  friendAvatarText: {
+    color: '#fff',
+    fontWeight: '800',
+    fontSize: 16,
+  },
+
+  friendInfo: {
+    flex: 1,
+    marginLeft: 11,
+  },
+
+  friendName: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+
+  friendUsername: {
+    color: '#777',
+    fontSize: 12,
+    marginTop: 2,
   },
 
   checkbox: {
-    width: 24,
-    height: 24,
-    borderRadius: 7,
+    width: 25,
+    height: 25,
+    borderRadius: 13,
     borderWidth: 2,
-    alignItems: 'center',
+    borderColor: '#555',
     justifyContent: 'center',
+    alignItems: 'center',
+  },
+
+  checkboxSelected: {
+    backgroundColor: RED,
+    borderColor: RED,
+  },
+
+  checkmark: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '900',
   },
 
   forwardButton: {
-    height: 48,
+    height: 50,
     borderRadius: 13,
-    marginTop: 14,
-    flexDirection: 'row',
-    alignItems: 'center',
+    backgroundColor: RED,
     justifyContent: 'center',
-    gap: 8,
+    alignItems: 'center',
+    marginTop: 12,
+  },
+
+  forwardButtonDisabled: {
+    opacity: 0.4,
+  },
+
+  forwardButtonText: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+
+  noFriends: {
+    paddingVertical: 50,
+    alignItems: 'center',
+  },
+
+  noFriendsTitle: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+
+  noFriendsText: {
+    color: '#777',
+    marginTop: 5,
   },
 });
