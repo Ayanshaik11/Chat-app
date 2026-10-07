@@ -167,7 +167,7 @@ module.exports = async (req, res) => {
     const detailParams =
       new URLSearchParams({
         part:
-          'snippet,contentDetails',
+          'snippet,contentDetails,status',
 
         id: videoIds.join(','),
 
@@ -197,8 +197,19 @@ module.exports = async (req, res) => {
       });
     }
 
-    const videos =
-      detailData.items || [];
+    // Keep only videos that can really play inside an embedded player:
+    // embeddable, public, not age-restricted and not blocked in India.
+    const videos = (detailData.items || []).filter((v) => {
+      const status = v.status || {};
+      const details = v.contentDetails || {};
+      if (status.embeddable === false) return false;
+      if (status.privacyStatus && status.privacyStatus !== 'public') return false;
+      if (details.contentRating?.ytRating === 'ytAgeRestricted') return false;
+      const region = details.regionRestriction;
+      if (region?.blocked?.includes('IN')) return false;
+      if (region?.allowed && !region.allowed.includes('IN')) return false;
+      return true;
+    });
 
     /*
      * Convert YouTube response into
