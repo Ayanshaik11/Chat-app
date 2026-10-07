@@ -123,6 +123,8 @@ export default function ReelsScreen() {
     setNextPageToken,
   ] = useState(null);
 
+  const [muted, setMuted] = useState(false);
+
   const [
     searchText,
     setSearchText,
@@ -253,7 +255,6 @@ export default function ReelsScreen() {
 
             setActiveIndex(0);
 
-            youtubePlayerKey.current += 1;
 
             setTimeout(() => {
               listRef.current?.scrollToOffset({
@@ -474,25 +475,6 @@ export default function ReelsScreen() {
         ''
       );
     };
-
-
-  /* =======================================================
-     ACTIVE VIDEO CHANGE
-  ======================================================= */
-
-  useEffect(() => {
-    /*
-     * Stop the previous player and force
-     * the new active YouTube player to
-     * initialize again.
-     */
-    youtubePlayerKey.current += 1;
-
-    youtubePlayerRef.current = null;
-  }, [
-    activeIndex,
-    activeTab,
-  ]);
 
 
   /* =======================================================
@@ -957,12 +939,8 @@ export default function ReelsScreen() {
   ======================================================= */
 
   const renderYoutubeVideo =
-    (
-      item,
-      index
-    ) => {
-      const isActive =
-        index === activeIndex;
+    (item, index) => {
+      const isActive = index === activeIndex;
 
       if (!item?.videoId) {
         return (
@@ -975,21 +953,10 @@ export default function ReelsScreen() {
               alignItems: 'center',
             }}
           >
-            <Ionicons
-              name="logo-youtube"
-              size={50}
-              color="#555"
-            />
+            <Ionicons name="logo-youtube" size={50} color="#555" />
           </View>
         );
       }
-
-      const playerWidth = width;
-
-      const playerHeight =
-        Math.round(
-          playerWidth * (9 / 16)
-        );
 
       return (
         <View
@@ -997,171 +964,119 @@ export default function ReelsScreen() {
             width,
             height,
             backgroundColor: '#000',
-            justifyContent: 'center',
-            alignItems: 'center',
+            overflow: 'hidden',
           }}
         >
+          {/* Only the visible video gets a player: it fills the whole
+              screen (9:16 shorts fill a portrait box) and autoplays. */}
+          {isActive && (
+            <View
+              pointerEvents="none"
+              style={{ width, height }}
+            >
+              <YoutubePlayer
+                key={item.videoId}
+                ref={youtubePlayerRef}
+                width={width}
+                height={height}
+                videoId={item.videoId}
+                play
+                mute={muted}
+                forceAndroidAutoplay
+                initialPlayerParams={{
+                  controls: false,
+                  modestbranding: true,
+                  rel: false,
+                  loop: true,
+                  playlist: item.videoId,
+                  iv_load_policy: 3,
+                  playsinline: 1,
+                  preventFullScreen: true,
+                }}
+                webViewStyle={{
+                  backgroundColor: '#000',
+                  opacity: 0.99,
+                }}
+                webViewProps={{
+                  allowsInlineMediaPlayback: true,
+                  mediaPlaybackRequiresUserAction: false,
+                  javaScriptEnabled: true,
+                  domStorageEnabled: true,
+                  androidLayerType: 'hardware',
+                  scrollEnabled: false,
+                  bounces: false,
+                }}
+                onChangeState={(state) => {
+                  if (state === 'ended' || state === 'cued' || state === 'unstarted') {
+                    setTimeout(() => {
+                      youtubePlayerRef.current?.seekTo?.(0, true);
+                    }, 100);
+                  }
+                }}
+              />
+            </View>
+          )}
 
-          <YoutubePlayer
-            /*
-             * Fresh player for the active
-             * video.
-             */
-            key={`${item.videoId}-${youtubePlayerKey.current}`}
-
-            ref={
-              isActive
-                ? youtubePlayerRef
-                : undefined
-            }
-
-            width={playerWidth}
-
-            height={playerHeight}
-
-            videoId={item.videoId}
-
-            /*
-             * Main autoplay switch.
-             */
-            play={isActive}
-
-            /*
-             * Keep sound enabled.
-             * YouTube/Android may still apply
-             * its own autoplay policy.
-             */
-            mute={false}
-
-            /*
-             * Specifically requests Android
-             * autoplay from the library.
-             */
-            forceAndroidAutoplay
-
-            /*
-             * Extra WebView autoplay settings.
-             */
-            webViewProps={{
-              allowsInlineMediaPlayback: true,
-
-              mediaPlaybackRequiresUserAction: false,
-
-              javaScriptEnabled: true,
-
-              domStorageEnabled: true,
-
-              androidLayerType: 'hardware',
-            }}
-
-            /*
-             * When YouTube reports that the
-             * player is ready, explicitly tell
-             * the player to start.
-             */
-            onReady={async () => {
-              if (!isActive) {
-                return;
-              }
-
-              console.log(
-                'YouTube ready → autoplay'
-              );
-
-              try {
-                await youtubePlayerRef.current?.playVideo();
-              } catch (error) {
-                console.log(
-                  'Autoplay command failed:',
-                  error
-                );
-              }
-            }}
-
-            onChangeState={(state) => {
-              console.log(
-                'YouTube state:',
-                state
-              );
-
-              /*
-               * If YouTube reports CUED or
-               * UNSTARTED while this is the
-               * active video, try autoplay
-               * once more.
-               */
-              if (
-                isActive &&
-                (
-                  state === 'cued' ||
-                  state === 'unstarted'
-                )
-              ) {
-                setTimeout(() => {
-                  youtubePlayerRef.current?.playVideo?.();
-                }, 250);
-              }
-            }}
-
-            onError={(error) => {
-              console.log(
-                'YouTube error:',
-                error
-              );
-            }}
-          />
-
-          {/* Video information */}
-
+          {/* Title + channel */}
           <View
             pointerEvents="none"
             style={{
               position: 'absolute',
               left: 16,
-              right: 16,
-              bottom: 35,
+              right: 80,
+              bottom: 40,
             }}
           >
             <Animated.Text
               numberOfLines={2}
               style={{
                 color: '#fff',
-                fontSize: 17,
+                fontSize: 16,
                 fontWeight: '700',
-                textShadowColor:
-                  'rgba(0,0,0,0.8)',
-                textShadowOffset: {
-                  width: 0,
-                  height: 1,
-                },
+                textShadowColor: 'rgba(0,0,0,0.8)',
+                textShadowOffset: { width: 0, height: 1 },
                 textShadowRadius: 4,
               }}
             >
-              {item?.title ||
-                'YouTube Video'}
+              {item?.title || 'YouTube Video'}
             </Animated.Text>
-
             <Animated.Text
               numberOfLines={1}
               style={{
                 color: '#ddd',
                 fontSize: 13,
                 marginTop: 5,
-                textShadowColor:
-                  'rgba(0,0,0,0.8)',
-                textShadowOffset: {
-                  width: 0,
-                  height: 1,
-                },
+                textShadowColor: 'rgba(0,0,0,0.8)',
+                textShadowOffset: { width: 0, height: 1 },
                 textShadowRadius: 4,
               }}
             >
-              {item?.authorName ||
-                item?.channelTitle ||
-                'YouTube'}
+              {item?.authorName || item?.channelTitle || 'YouTube'}
             </Animated.Text>
           </View>
 
+          {/* Mute / unmute */}
+          <Pressable
+            onPress={() => setMuted((m) => !m)}
+            hitSlop={12}
+            style={{
+              position: 'absolute',
+              right: 16,
+              bottom: 120,
+              width: 46,
+              height: 46,
+              borderRadius: 23,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+          >
+            <Ionicons
+              name={muted ? 'volume-mute' : 'volume-high'}
+              size={24}
+              color="#fff"
+            />
+          </Pressable>
         </View>
       );
     };
@@ -1488,6 +1403,7 @@ export default function ReelsScreen() {
         renderItem={renderItem}
 
         pagingEnabled
+  getItemLayout={(_, i) => ({ length: height, offset: height * i, index: i })}
 
         showsVerticalScrollIndicator={false}
 
