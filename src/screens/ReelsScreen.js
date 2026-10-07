@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 
 import { WebView } from 'react-native-webview';
+import PROXY_API_URL from '../config/proxy';
 import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/native';
 import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
@@ -855,25 +856,28 @@ export default function ReelsScreen() {
                 backgroundColor: '#000',
               }}
               originWhitelist={['*']}
+              // Load the embed page directly with a real Referer. YouTube now
+              // rejects embeds without one (the "Error 152/153" screens).
               source={{
-                baseUrl: 'https://www.youtube.com',
-                html: `<!DOCTYPE html><html><head>
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-<style>html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden}
-iframe{position:fixed;top:0;left:0;width:100%;height:100%;border:0}</style></head><body>
-<iframe id="yt" src="https://www.youtube.com/embed/${item.videoId}?autoplay=1&mute=${muted ? 1 : 0}&controls=0&loop=1&playlist=${item.videoId}&playsinline=1&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1&enablejsapi=1&origin=https%3A%2F%2Fwww.youtube.com"
-allow="autoplay; encrypted-media" allowfullscreen></iframe>
-<script>
-var f=document.getElementById('yt');
-function listen(){try{f.contentWindow.postMessage(JSON.stringify({event:'listening',id:1,channel:'widget'}),'*');}catch(x){}}
-f.addEventListener('load',function(){listen();var n=0;var t=setInterval(function(){listen();if(++n>6)clearInterval(t);},500);});
-window.addEventListener('message',function(e){
-  var d=e.data;
-  if(typeof d==='string'){try{d=JSON.parse(d);}catch(x){return;}}
-  if(d&&d.event==='onError'){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage('error:'+d.info);}
-});
-</script></body></html>`,
+                uri: `https://www.youtube.com/embed/${item.videoId}?autoplay=1&mute=${muted ? 1 : 0}&controls=0&loop=1&playlist=${item.videoId}&playsinline=1&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1`,
+                headers: { Referer: PROXY_API_URL },
               }}
+              injectedJavaScript={`
+                (function () {
+                  var n = 0;
+                  var t = setInterval(function () {
+                    n++;
+                    var v = document.querySelector('video');
+                    if (v && v.paused) { try { v.play(); } catch (e) {} }
+                    if (document.querySelector('.ytp-error')) {
+                      window.ReactNativeWebView.postMessage('error:unavailable');
+                      clearInterval(t);
+                    }
+                    if (n > 40) clearInterval(t);
+                  }, 500);
+                })();
+                true;
+              `}
               onMessage={(event) => {
                 // Video can't be embedded (YouTube error 101/150/152...) -> drop it
                 if (String(event?.nativeEvent?.data || '').startsWith('error')) {
