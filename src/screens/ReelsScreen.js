@@ -1003,9 +1003,34 @@ export default function ReelsScreen() {
                 html: `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden}
-iframe{position:fixed;top:0;left:0;width:100%;height:100%;border:0}</style></head><body>
-<iframe src="https://www.youtube.com/embed/${item.videoId}?autoplay=1&mute=${muted ? 1 : 0}&controls=0&loop=1&playlist=${item.videoId}&playsinline=1&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1"
-allow="autoplay; encrypted-media" allowfullscreen></iframe></body></html>`,
+#p,iframe{position:fixed;top:0;left:0;width:100%;height:100%;border:0}</style></head><body>
+<div id="p"></div>
+<script src="https://www.youtube.com/iframe_api"></script>
+<script>
+function send(m){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage(m);}
+function onYouTubeIframeAPIReady(){
+  new YT.Player('p',{
+    videoId:'${item.videoId}',
+    width:'100%',height:'100%',
+    playerVars:{autoplay:1,mute:${muted ? 1 : 0},controls:0,loop:1,playlist:'${item.videoId}',playsinline:1,modestbranding:1,rel:0,iv_load_policy:3,fs:0,disablekb:1,origin:'https://www.youtube.com'},
+    events:{
+      onReady:function(e){try{e.target.playVideo();}catch(x){}},
+      onStateChange:function(e){if(e.data===-1||e.data===5){try{e.target.playVideo();}catch(x){}}},
+      onError:function(e){send('error:'+e.data);}
+    }
+  });
+}
+</script></body></html>`,
+              }}
+              onMessage={(event) => {
+                // Video can't be embedded (YouTube error 101/150/152...) -> drop it
+                if (String(event?.nativeEvent?.data || '').startsWith('error')) {
+                  setDiscoverReels((previous) =>
+                    Array.isArray(previous)
+                      ? previous.filter((v) => v?.videoId !== item.videoId)
+                      : previous
+                  );
+                }
               }}
               allowsInlineMediaPlayback
               mediaPlaybackRequiresUserAction={false}
