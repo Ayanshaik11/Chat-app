@@ -32,9 +32,14 @@ export default function MessagesScreen({navigation}){
       const friendId=friend.id||friend.uid;
       const chat=chats?.[chatIdFor(myId,friendId)]||null;
 
-      const lastMessageAt=toMillis(chat?.lastMessageAt);
-      const updatedAt=toMillis(chat?.updatedAt);
-      const lastActivity=Math.max(lastMessageAt,updatedAt);
+      // toMillis(null) returns "now", which pushed friends with no chat (and
+      // just-sent messages with a pending timestamp) above real conversations.
+      // So only convert real timestamps; no chat = 0 (bottom of the list).
+      const lastMessageAt=chat?.lastMessageAt?toMillis(chat.lastMessageAt):0;
+      const updatedAt=chat?.updatedAt?toMillis(chat.updatedAt):0;
+      let lastActivity=Math.max(lastMessageAt,updatedAt);
+      // message just sent: server timestamp not confirmed yet -> treat as newest
+      if(!lastActivity&&chat?.lastMessage)lastActivity=Date.now();
 
       return{friend,chat,lastActivity};
     }).sort((a,b)=>b.lastActivity-a.lastActivity);
@@ -66,7 +71,7 @@ export default function MessagesScreen({navigation}){
         <T size={13} color={unread?'text':'subtext'} weight={unread?'medium':'regular'} numberOfLines={1}>{preview}</T>
       </View>
       <View style={{alignItems:'flex-end',gap:6}}>
-        {item.lastActivity>0&&<T size={11} color="subtext">{timeAgo(chat?.lastMessageAt||chat?.updatedAt)}</T>}
+        {item.lastActivity>0&&chat?.lastMessage&&<T size={11} color="subtext">{timeAgo(chat?.lastMessageAt||chat?.updatedAt)}</T>}
         {unread>0&&<View style={{backgroundColor:colors.primary,minWidth:20,height:20,borderRadius:10,paddingHorizontal:5,alignItems:'center',justifyContent:'center'}}>
           <T size={11} weight="bold" color="#fff">{unread}</T>
         </View>}
