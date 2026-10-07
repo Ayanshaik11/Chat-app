@@ -860,23 +860,18 @@ export default function ReelsScreen() {
                 html: `<!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden}
-#p,iframe{position:fixed;top:0;left:0;width:100%;height:100%;border:0}</style></head><body>
-<div id="p"></div>
-<script src="https://www.youtube.com/iframe_api"></script>
+iframe{position:fixed;top:0;left:0;width:100%;height:100%;border:0}</style></head><body>
+<iframe id="yt" src="https://www.youtube.com/embed/${item.videoId}?autoplay=1&mute=${muted ? 1 : 0}&controls=0&loop=1&playlist=${item.videoId}&playsinline=1&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1&enablejsapi=1&origin=https%3A%2F%2Fwww.youtube.com"
+allow="autoplay; encrypted-media" allowfullscreen></iframe>
 <script>
-function send(m){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage(m);}
-function onYouTubeIframeAPIReady(){
-  new YT.Player('p',{
-    videoId:'${item.videoId}',
-    width:'100%',height:'100%',
-    playerVars:{autoplay:1,mute:${muted ? 1 : 0},controls:0,loop:1,playlist:'${item.videoId}',playsinline:1,modestbranding:1,rel:0,iv_load_policy:3,fs:0,disablekb:1,origin:'https://www.youtube.com'},
-    events:{
-      onReady:function(e){try{e.target.playVideo();}catch(x){}},
-      onStateChange:function(e){if(e.data===-1||e.data===5){try{e.target.playVideo();}catch(x){}}},
-      onError:function(e){send('error:'+e.data);}
-    }
-  });
-}
+var f=document.getElementById('yt');
+function listen(){try{f.contentWindow.postMessage(JSON.stringify({event:'listening',id:1,channel:'widget'}),'*');}catch(x){}}
+f.addEventListener('load',function(){listen();var n=0;var t=setInterval(function(){listen();if(++n>6)clearInterval(t);},500);});
+window.addEventListener('message',function(e){
+  var d=e.data;
+  if(typeof d==='string'){try{d=JSON.parse(d);}catch(x){return;}}
+  if(d&&d.event==='onError'){window.ReactNativeWebView&&window.ReactNativeWebView.postMessage('error:'+d.info);}
+});
 </script></body></html>`,
               }}
               onMessage={(event) => {
