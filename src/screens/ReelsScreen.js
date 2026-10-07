@@ -28,12 +28,12 @@ import { useAppData } from '../context/AppDataContext';
 
 import { fetchShorts } from '../services/youtube';
 
-import { fetchReels, toggleReelLike } from '../services/reels';
-import {
-  addReelComment,
-  deleteReelComment,
-  fetchReelComments,
-} from '../services/reelComments';
+import { fetchReels, toggleReelLike, deleteReel } from '../services/reels';
+import { getReelCommentCount } from '../services/reelComments';
+import { addNotification } from '../services/notifications';
+import FriendReelItem from '../components/FriendReelItem';
+import ReelCommentsSheet from '../components/ReelCommentsSheet';
+import ReelShareSheet from '../components/ReelShareSheet';
 
 
 /* =======================================================
@@ -79,7 +79,7 @@ export default function ReelsScreen() {
   const navigation = useNavigation();
   const focused = useIsFocused();
 
-  const { friendIds } = useAppData();
+  const { friendIds, friendProfiles, friends } = useAppData();
 
 
   /* -------------------------------------------------------
@@ -127,6 +127,8 @@ export default function ReelsScreen() {
   ] = useState(null);
 
   const [muted, setMuted] = useState(false);
+  const [shareVisible, setShareVisible] = useState(false);
+  const [shareText, setShareText] = useState('');
 
   const [
     searchText,
@@ -651,306 +653,161 @@ export default function ReelsScreen() {
 
 
   /* =======================================================
-     LIKE
+     LIKE (optimistic) — double tap or heart button
   ======================================================= */
 
-  const handleLike =
-    async (item) => {
-      if (
-        !me?.id ||
-        !item?.id
-      ) {
-        return;
-      }
+  const handleLike = async (item, onlyLike = false) => {
+    if (!me?.id || !item?.id) {
+      return;
+    }
 
-      try {
-        const wasLiked =
-          Array.isArray(item.likes) &&
-          item.likes.includes(me.id);
+    const likes = Array.isArray(item.likes) ? item.likes : [];
+    const wasLiked = likes.includes(me.id);
 
-        await toggleReelLike(
-          item.id,
-          me.id,
-          wasLiked
-        );
+    if (onlyLike && wasLiked) {
+      return;
+    }
 
-        const updateList =
-          (list) =>
-            list.map(
-              (reel) => {
-                if (
-                  reel.id !== item.id
-                ) {
-                  return reel;
-                }
-
-                const likes =
-                  Array.isArray(
-                    reel.likes
-                  )
-                    ? reel.likes
-                    : [];
-
-                const alreadyLiked =
-                  likes.includes(
-                    me.id
-                  );
-
-                return {
-                  ...reel,
-
-                  likes:
-                    alreadyLiked
-                      ? likes.filter(
-                          (id) =>
-                            id !==
-                            me.id
-                        )
-                      : [
-                          ...likes,
-                          me.id,
-                        ],
-                };
-              }
-            );
-
-        if (activeTab === 'discover') {
-          setDiscoverReels(updateList);
-        } else {
-          setFriendReels(updateList);
+    const apply = (liked) => (list) =>
+      list.map((reel) => {
+        if (reel.id !== item.id) {
+          return reel;
         }
-      } catch (error) {
-        console.error(
-          'Like error:',
-          error
-        );
+        const current = Array.isArray(reel.likes) ? reel.likes : [];
+        const without = current.filter((id) => id !== me.id);
+        return { ...reel, likes: liked ? [...without, me.id] : without };
+      });
+
+    setFriendReels(apply(!wasLiked));
+
+    try {
+      await toggleReelLike(item.id, me.id, wasLiked);
+
+      if (!wasLiked && item.authorId && item.authorId !== me.id) {
+        addNotification(item.authorId, {
+          type: 'like',
+          fromId: me.id,
+          fromName: me.name || '',
+          fromPhoto: me.photoURL || '',
+          text: `${me.name || 'Someone'} liked your reel`,
+        }).catch(() => {});
       }
-    };
+    } catch (error) {
+      console.error('Like error:', error);
+      setFriendReels(apply(wasLiked));
+    }
+  };
 
 
   /* =======================================================
      COMMENTS
   ======================================================= */
 
-  const openComments =
-    async (item) => {
-      if (!item?.id) {
+  const openComments = (item) => {
+    if (!item?.id) {
+      return;
+    }
+    setSelectedReel(item);
+    setCommentSheetVisible(true);
+  };
+
+  const updateCommentCount = useCallback((reelId, count) => {
+    setCommentCounts((previous) =>
+      previous[reelId] === count ? previous : { ...previous, [reelId]: count }
+    );
+  }, []);
+
+  // load comment counts for the friend reels on screen
+  useEffect(() => {
+    friendReels.forEach((reel) => {
+      if (reel?.id && commentCounts[reel.id] === undefined) {
+        getReelCommentCount(reel.id).then((count) => {
+          if (mountedRef.current) {
+            updateCommentCount(reel.id, count);
+          }
+        });
+      }
+    });
+  }, [friendReels]);
+
+
+  /* =======================================================
+     DELETE (own reels only)
+  ======================================================= */
+
+  const confirmDelete = (item) => {
+    if (!item?.id || item.authorId !== me?.id) {
+      return;
+    }
+
+    Alert.alert(
+      'Delete this video?',
+      'This will remove it for everyone. It cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await deleteReel(item);
+              if (mountedRef.current) {
+                setFriendReels((list) => list.filter((r) => r.id !== item.id));
+              }
+            } catch (error) {
+              Alert.alert('Delete failed', error?.message || 'Could not delete the video.');
+            }
+          },
+        },
+      ]
+    );
+  };
+
+
+  /* =======================================================
+     SHARE (inside King X chats)
+  ======================================================= */
+
+  const openShare = (item) => {
+    if (!item) {
+      return;
+    }
+    let text;
+    if (item.videoId) {
+      text = `🎬 ${item.title || 'YouTube video'}\nhttps://www.youtube.com/shorts/${item.videoId}`;
+    } else {
+      const uri = item.videoURL || item.videoUrl;
+      if (!uri) {
         return;
       }
-
-      setSelectedReel(item);
-
-      setCommentSheetVisible(true);
-
-      try {
-        const result =
-          await fetchReelComments(item.id);
-
-        if (!mountedRef.current) {
-          return;
-        }
-
-        const loadedComments =
-          Array.isArray(result)
-            ? result
-            : Array.isArray(result?.comments)
-              ? result.comments
-              : [];
-
-        setComments(loadedComments);
-
-        setCommentCounts(
-          (previous) => ({
-            ...previous,
-            [item.id]:
-              loadedComments.length,
-          })
-        );
-      } catch (error) {
-        console.error(
-          'Comments error:',
-          error
-        );
-      }
-    };
-
-
-  const submitComment =
-    async (text) => {
-      if (
-        !me?.id ||
-        !selectedReel?.id ||
-        !text?.trim()
-      ) {
-        return;
-      }
-
-      try {
-        await addReelComment(
-          selectedReel.id,
-          me,
-          text.trim()
-        );
-
-        const result =
-          await fetchReelComments(
-            selectedReel.id
-          );
-
-        const loadedComments =
-          Array.isArray(result)
-            ? result
-            : Array.isArray(result?.comments)
-              ? result.comments
-              : [];
-
-        if (!mountedRef.current) {
-          return;
-        }
-
-        setComments(loadedComments);
-
-        setCommentCounts(
-          (previous) => ({
-            ...previous,
-            [selectedReel.id]:
-              loadedComments.length,
-          })
-        );
-      } catch (error) {
-        console.error(
-          'Add comment error:',
-          error
-        );
-      }
-    };
-
-
-  const removeComment =
-    async (commentId) => {
-      if (!commentId || !selectedReel?.id) {
-        return;
-      }
-
-      try {
-        await deleteReelComment(selectedReel.id, commentId);
-
-        if (!selectedReel?.id) {
-          return;
-        }
-
-        const result =
-          await fetchReelComments(
-            selectedReel.id
-          );
-
-        const loadedComments =
-          Array.isArray(result)
-            ? result
-            : Array.isArray(result?.comments)
-              ? result.comments
-              : [];
-
-        if (!mountedRef.current) {
-          return;
-        }
-
-        setComments(loadedComments);
-
-        setCommentCounts(
-          (previous) => ({
-            ...previous,
-            [selectedReel.id]:
-              loadedComments.length,
-          })
-        );
-      } catch (error) {
-        console.error(
-          'Delete comment error:',
-          error
-        );
-      }
-    };
+      text = `🎬 ${me?.name || 'A friend'} shared a video${item.caption ? `: ${item.caption}` : ''}\n${uri}`;
+    }
+    setShareText(text);
+    setShareVisible(true);
+  };
 
 
   /* =======================================================
      FRIEND VIDEO
   ======================================================= */
 
-  const renderFriendVideo =
-    (
-      item,
-      index
-    ) => {
-      const isActive =
-        index === activeIndex;
-
-      const uri =
-        item?.videoURL ||
-    item?.videoUrl ||
-        item?.url ||
-        item?.video ||
-        item?.mediaUrl;
-
-      if (!uri) {
-        return (
-          <View
-            style={{
-              width,
-              height,
-              backgroundColor: '#000',
-            }}
-          />
-        );
-      }
-
-      return (
-        <View
-          style={{
-            width,
-            height,
-            backgroundColor: '#000',
-          }}
-        >
-          <Video
-            source={{ uri }}
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              right: 0,
-              bottom: 0,
-            }}
-            isMuted={muted}
-            resizeMode={ResizeMode.COVER}
-            shouldPlay={isActive && focused}
-            isLooping
-            useNativeControls={false}
-          />
-
-          <View
-            style={{
-              position: 'absolute',
-              left: 16,
-              right: 16,
-              bottom: 35,
-            }}
-          >
-            <Animated.Text
-              style={{
-                color: '#fff',
-                fontSize: 16,
-                fontWeight: '600',
-              }}
-            >
-              {item?.caption ||
-                item?.title ||
-                ''}
-            </Animated.Text>
-          </View>
-        </View>
-      );
-    };
+  const renderFriendVideo = (item, index) => (
+    <FriendReelItem
+      item={item}
+      width={width}
+      height={height}
+      isActive={index === activeIndex && focused}
+      muted={muted}
+      meId={me?.id}
+      author={item.authorId === me?.id ? me : friendProfiles?.[item.authorId]}
+      commentCount={commentCounts[item.id] || 0}
+      onToggleMute={() => setMuted((m) => !m)}
+      onLike={handleLike}
+      onComments={openComments}
+      onShare={openShare}
+      onDelete={confirmDelete}
+    />
+  );
 
 
   /* =======================================================
@@ -1080,6 +937,31 @@ function onYouTubeIframeAPIReady(){
               {item?.authorName || item?.channelTitle || 'YouTube'}
             </Animated.Text>
           </View>
+
+          {/* tap anywhere = mute / unmute */}
+          <Pressable
+            onPress={() => setMuted((m) => !m)}
+            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
+          />
+
+          {/* Share with friends */}
+          <Pressable
+            onPress={() => openShare(item)}
+            hitSlop={12}
+            style={{
+              position: 'absolute',
+              right: 16,
+              bottom: 180,
+              width: 46,
+              height: 46,
+              borderRadius: 23,
+              backgroundColor: 'rgba(0,0,0,0.5)',
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+          >
+            <Ionicons name="paper-plane-outline" size={22} color="#fff" />
+          </Pressable>
 
           {/* Mute / unmute */}
           <Pressable
@@ -1529,20 +1411,21 @@ function onYouTubeIframeAPIReady(){
       />
 
 
-      {/* COMMENT SHEET PLACEHOLDER */}
+      <ReelCommentsSheet
+        visible={commentSheetVisible}
+        reel={selectedReel}
+        me={me}
+        onClose={() => setCommentSheetVisible(false)}
+        onCount={updateCommentCount}
+      />
 
-      {commentSheetVisible && (
-        <View
-          pointerEvents="box-none"
-          style={{
-            position: 'absolute',
-            left: 0,
-            right: 0,
-            bottom: 0,
-          }}
-        />
-      )}
-
+      <ReelShareSheet
+        visible={shareVisible}
+        me={me}
+        friends={friends}
+        text={shareText}
+        onClose={() => setShareVisible(false)}
+      />
     </View>
   );
 }
