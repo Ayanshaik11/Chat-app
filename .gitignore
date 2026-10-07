@@ -1,9 +1,16 @@
 node_modules/
+.expo/
+dist/
+web-build/
 
+# generated native projects (created by `expo prebuild`)
+/android/
+/ios/
+
+# secrets / signing
+.env
+.env.*
+*.keystore
+*.jks
 /google-services.json
 /google-services-base64.txt
-
-.expo/
-
-.expo/
-.env
