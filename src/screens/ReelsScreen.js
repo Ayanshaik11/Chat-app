@@ -18,7 +18,8 @@ import {
   useWindowDimensions,
 } from 'react-native';
 
-import YoutubePlayer from 'react-native-youtube-iframe';
+import { WebView } from 'react-native-webview';
+import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/native';
 import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -75,6 +76,8 @@ export default function ReelsScreen() {
   } = useWindowDimensions();
 
   const { me } = useAuth();
+  const navigation = useNavigation();
+  const focused = useIsFocused();
 
   const { friendIds } = useAppData();
 
@@ -396,6 +399,20 @@ export default function ReelsScreen() {
       [me?.id, friendIds]
     );
 
+
+  const openUpload = () => {
+    friendsLoadedRef.current = false;
+    navigation.navigate('Create', { mode: 'reel' });
+  };
+
+  // Reload my friends' videos when coming back (e.g. after uploading one)
+  useFocusEffect(
+    useCallback(() => {
+      if (activeTab === 'friends' && !friendsLoadedRef.current) {
+        loadFriendReels(true);
+      }
+    }, [activeTab, loadFriendReels])
+  );
 
   /* =======================================================
      INITIAL DISCOVER
@@ -893,18 +910,20 @@ export default function ReelsScreen() {
             width,
             height,
             backgroundColor: '#000',
-            justifyContent: 'center',
-            alignItems: 'center',
           }}
         >
           <Video
             source={{ uri }}
             style={{
-              width,
-              height,
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
             }}
+            isMuted={muted}
             resizeMode={ResizeMode.COVER}
-            shouldPlay={isActive}
+            shouldPlay={isActive && focused}
             isLooping
             useNativeControls={false}
           />
@@ -969,52 +988,34 @@ export default function ReelsScreen() {
         >
           {/* Only the visible video gets a player: it fills the whole
               screen (9:16 shorts fill a portrait box) and autoplays. */}
-          {isActive && (
-            <View
+          {isActive && focused && (
+            <WebView
+              key={`${item.videoId}-${muted ? 'm' : 'u'}`}
               pointerEvents="none"
-              style={{ width, height }}
-            >
-              <YoutubePlayer
-                key={item.videoId}
-                ref={youtubePlayerRef}
-                width={width}
-                height={height}
-                videoId={item.videoId}
-                play
-                mute={muted}
-                forceAndroidAutoplay
-                initialPlayerParams={{
-                  controls: false,
-                  modestbranding: true,
-                  rel: false,
-                  loop: true,
-                  playlist: item.videoId,
-                  iv_load_policy: 3,
-                  playsinline: 1,
-                  preventFullScreen: true,
-                }}
-                webViewStyle={{
-                  backgroundColor: '#000',
-                  opacity: 0.99,
-                }}
-                webViewProps={{
-                  allowsInlineMediaPlayback: true,
-                  mediaPlaybackRequiresUserAction: false,
-                  javaScriptEnabled: true,
-                  domStorageEnabled: true,
-                  androidLayerType: 'hardware',
-                  scrollEnabled: false,
-                  bounces: false,
-                }}
-                onChangeState={(state) => {
-                  if (state === 'ended' || state === 'cued' || state === 'unstarted') {
-                    setTimeout(() => {
-                      youtubePlayerRef.current?.seekTo?.(0, true);
-                    }, 100);
-                  }
-                }}
-              />
-            </View>
+              style={{
+                width,
+                height,
+                backgroundColor: '#000',
+              }}
+              originWhitelist={['*']}
+              source={{
+                baseUrl: 'https://www.youtube.com',
+                html: `<!DOCTYPE html><html><head>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<style>html,body{margin:0;padding:0;width:100%;height:100%;background:#000;overflow:hidden}
+iframe{position:fixed;top:0;left:0;width:100%;height:100%;border:0}</style></head><body>
+<iframe src="https://www.youtube.com/embed/${item.videoId}?autoplay=1&mute=${muted ? 1 : 0}&controls=0&loop=1&playlist=${item.videoId}&playsinline=1&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1"
+allow="autoplay; encrypted-media" allowfullscreen></iframe></body></html>`,
+              }}
+              allowsInlineMediaPlayback
+              mediaPlaybackRequiresUserAction={false}
+              javaScriptEnabled
+              domStorageEnabled
+              scrollEnabled={false}
+              bounces={false}
+              androidLayerType="hardware"
+              setSupportMultipleWindows={false}
+            />
           )}
 
           {/* Title + channel */}
@@ -1184,6 +1185,25 @@ export default function ReelsScreen() {
               ? 'Try another YouTube search.'
               : 'Your friends’ uploaded videos will appear here.'}
           </Animated.Text>
+
+          {activeTab === 'friends' && (
+            <Pressable
+              onPress={openUpload}
+              style={{
+                marginTop: 20,
+                paddingHorizontal: 22,
+                paddingVertical: 12,
+                borderRadius: 24,
+                backgroundColor: '#E11D2A',
+              }}
+            >
+              <Animated.Text
+                style={{ color: '#fff', fontWeight: '700', fontSize: 15 }}
+              >
+                Upload a video
+              </Animated.Text>
+            </Pressable>
+          )}
         </View>
       );
     };
@@ -1285,7 +1305,28 @@ export default function ReelsScreen() {
         </View>
 
 
-        {/* YOUTUBE SEARCH BAR */}
+      {/* UPLOAD BUTTON (friends tab) */}
+        {activeTab === 'friends' && (
+          <Pressable
+            onPress={openUpload}
+            hitSlop={10}
+            style={{
+              position: 'absolute',
+              right: 16,
+              top: 38,
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: '#E11D2A',
+              justifyContent: 'center',
+              alignItems: 'center',
+            }}
+          >
+            <Ionicons name="add" size={26} color="#fff" />
+          </Pressable>
+        )}
+
+          {/* YOUTUBE SEARCH BAR */}
 
         {activeTab === 'discover' && (
           <View
