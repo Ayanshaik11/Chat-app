@@ -33,7 +33,7 @@ export default function useUpdateCheck() {
     setDownloading(true);
     setProgress(0);
     try {
-      await downloadAndInstall(info.url, setProgress);
+      await downloadAndInstall(info.url, setProgress, info.latestVersion);
     } catch (e) {
       setError(e.message || 'Could not install the update.');
     } finally {
