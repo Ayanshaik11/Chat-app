@@ -18,8 +18,7 @@ import {
   useWindowDimensions,
 } from 'react-native';
 
-import { WebView } from 'react-native-webview';
-import PROXY_API_URL from '../config/proxy';
+import YoutubeShortItem from '../components/YoutubeShortItem';
 import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/native';
 import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
@@ -837,178 +836,42 @@ export default function ReelsScreen() {
      YOUTUBE VIDEO
   ======================================================= */
 
-  const renderYoutubeVideo =
-    (item, index) => {
-      const isActive = index === activeIndex;
-
-      if (!item?.videoId) {
-        return (
-          <View
-            style={{
-              width,
-              height,
-              backgroundColor: '#000',
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}
-          >
-            <Ionicons name="logo-youtube" size={50} color="#555" />
-          </View>
-        );
-      }
-
+  const renderYoutubeVideo = (item, index) => {
+    if (!item?.videoId) {
       return (
         <View
           style={{
             width,
             height,
             backgroundColor: '#000',
-            overflow: 'hidden',
+            justifyContent: 'center',
+            alignItems: 'center',
           }}
         >
-          {/* Only the visible video gets a player: it fills the whole
-              screen (9:16 shorts fill a portrait box) and autoplays. */}
-          {isActive && focused && (
-            <WebView
-              key={`${item.videoId}-${muted ? 'm' : 'u'}`}
-              pointerEvents="none"
-              style={{
-                width,
-                height,
-                backgroundColor: '#000',
-              }}
-              originWhitelist={['*']}
-              // Load the embed page directly with a real Referer. YouTube now
-              // rejects embeds without one (the "Error 152/153" screens).
-              source={{
-                uri: `https://www.youtube.com/embed/${item.videoId}?autoplay=1&mute=${muted ? 1 : 0}&controls=0&loop=1&playlist=${item.videoId}&playsinline=1&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1`,
-                headers: { Referer: PROXY_API_URL },
-              }}
-              injectedJavaScript={`
-                (function () {
-                  var n = 0;
-                  var t = setInterval(function () {
-                    n++;
-                    var v = document.querySelector('video');
-                    if (v && v.paused) { try { v.play(); } catch (e) {} }
-                    if (document.querySelector('.ytp-error')) {
-                      window.ReactNativeWebView.postMessage('error:unavailable');
-                      clearInterval(t);
-                    }
-                    if (n > 40) clearInterval(t);
-                  }, 500);
-                })();
-                true;
-              `}
-              onMessage={(event) => {
-                // Video can't be embedded (YouTube error 101/150/152...) -> drop it
-                if (String(event?.nativeEvent?.data || '').startsWith('error')) {
-                  setDiscoverReels((previous) =>
-                    Array.isArray(previous)
-                      ? previous.filter((v) => v?.videoId !== item.videoId)
-                      : previous
-                  );
-                }
-              }}
-              allowsInlineMediaPlayback
-              mediaPlaybackRequiresUserAction={false}
-              javaScriptEnabled
-              domStorageEnabled
-              scrollEnabled={false}
-              bounces={false}
-              androidLayerType="hardware"
-              setSupportMultipleWindows={false}
-            />
-          )}
-
-          {/* Title + channel */}
-          <View
-            pointerEvents="none"
-            style={{
-              position: 'absolute',
-              left: 16,
-              right: 80,
-              bottom: 40,
-            }}
-          >
-            <Animated.Text
-              numberOfLines={2}
-              style={{
-                color: '#fff',
-                fontSize: 16,
-                fontWeight: '700',
-                textShadowColor: 'rgba(0,0,0,0.8)',
-                textShadowOffset: { width: 0, height: 1 },
-                textShadowRadius: 4,
-              }}
-            >
-              {item?.title || 'YouTube Video'}
-            </Animated.Text>
-            <Animated.Text
-              numberOfLines={1}
-              style={{
-                color: '#ddd',
-                fontSize: 13,
-                marginTop: 5,
-                textShadowColor: 'rgba(0,0,0,0.8)',
-                textShadowOffset: { width: 0, height: 1 },
-                textShadowRadius: 4,
-              }}
-            >
-              {item?.authorName || item?.channelTitle || 'YouTube'}
-            </Animated.Text>
-          </View>
-
-          {/* tap anywhere = mute / unmute */}
-          <Pressable
-            onPress={() => setMuted((m) => !m)}
-            style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
-          />
-
-          {/* Share with friends */}
-          <Pressable
-            onPress={() => openShare(item)}
-            hitSlop={12}
-            style={{
-              position: 'absolute',
-              right: 16,
-              bottom: 180,
-              width: 46,
-              height: 46,
-              borderRadius: 23,
-              backgroundColor: 'rgba(0,0,0,0.5)',
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}
-          >
-            <Ionicons name="paper-plane-outline" size={22} color="#fff" />
-          </Pressable>
-
-          {/* Mute / unmute */}
-          <Pressable
-            onPress={() => setMuted((m) => !m)}
-            hitSlop={12}
-            style={{
-              position: 'absolute',
-              right: 16,
-              bottom: 120,
-              width: 46,
-              height: 46,
-              borderRadius: 23,
-              backgroundColor: 'rgba(0,0,0,0.5)',
-              justifyContent: 'center',
-              alignItems: 'center',
-            }}
-          >
-            <Ionicons
-              name={muted ? 'volume-mute' : 'volume-high'}
-              size={24}
-              color="#fff"
-            />
-          </Pressable>
+          <Ionicons name="logo-youtube" size={50} color="#555" />
         </View>
       );
-    };
+    }
+
+    return (
+      <YoutubeShortItem
+        item={item}
+        width={width}
+        height={height}
+        isActive={index === activeIndex && focused}
+        muted={muted}
+        onToggleMute={() => setMuted((m) => !m)}
+        onShare={openShare}
+        onUnavailable={(bad) =>
+          setDiscoverReels((previous) =>
+            Array.isArray(previous)
+              ? previous.filter((v) => v?.videoId !== bad.videoId)
+              : previous
+          )
+        }
+      />
+    );
+  };
 
 
   /* =======================================================
@@ -1371,7 +1234,10 @@ export default function ReelsScreen() {
 
         renderItem={renderItem}
 
-        pagingEnabled
+        snapToInterval={height}
+        snapToAlignment="start"
+        decelerationRate="fast"
+        disableIntervalMomentum
   getItemLayout={(_, i) => ({ length: height, offset: height * i, index: i })}
 
         showsVerticalScrollIndicator={false}
