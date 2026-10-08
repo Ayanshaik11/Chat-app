@@ -1,6 +1,31 @@
 // src/services/youtube.js
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import PROXY_API_URL from '../config/proxy';
+
+const SEEN_KEY = 'king_x_seen_shorts';
+const SEEN_LIMIT = 500;
+
+async function getSeen() {
+  try {
+    const raw = await AsyncStorage.getItem(SEEN_KEY);
+    const list = raw ? JSON.parse(raw) : [];
+    return Array.isArray(list) ? list : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+// Remember a video was watched so it isn't shown again next time
+export async function markShortSeen(videoId) {
+  if (!videoId) return;
+  try {
+    const list = await getSeen();
+    if (list.includes(videoId)) return;
+    const next = [...list, videoId].slice(-SEEN_LIMIT);
+    await AsyncStorage.setItem(SEEN_KEY, JSON.stringify(next));
+  } catch (e) {}
+}
 
 const API_URL =
   `${PROXY_API_URL}/api/youtube-shorts`;
@@ -12,7 +37,8 @@ const API_URL =
 
 export async function fetchShorts(
   pageToken = null,
-  searchQuery = ''
+  searchQuery = '',
+  seed = null
 ) {
   const params =
     new URLSearchParams();
@@ -34,6 +60,10 @@ export async function fetchShorts(
     );
   }
 
+  if (seed) {
+    params.set('seed', String(seed));
+  }
+
   const queryString =
     params.toString();
 
@@ -48,7 +78,7 @@ export async function fetchShorts(
   );
 
   const response =
-    await fetch(url);
+    await fetch(url, { headers: { 'Cache-Control': 'no-cache' } });
 
   let data;
 
@@ -183,8 +213,19 @@ export async function fetchShorts(
       }
     );
 
+  // hide videos the person already watched (default feed only)
+  let finalItems = uniqueItems;
+
+  if (!searchQuery || !searchQuery.trim()) {
+    const seenList = new Set(await getSeen());
+    const fresh = uniqueItems.filter((item) => !seenList.has(item.videoId));
+    if (fresh.length) {
+      finalItems = fresh;
+    }
+  }
+
   return {
-    items: uniqueItems,
+    items: finalItems,
 
     nextPageToken:
       data?.nextPageToken ||
