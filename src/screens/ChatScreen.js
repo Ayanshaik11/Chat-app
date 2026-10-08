@@ -33,6 +33,9 @@ import{
 
 import{db}from'../config/firebase';
 import{sendPushNotification}from'../services/notifications';
+import{uploadFile}from'../services/media';
+import VoiceRecorderBar from'../components/VoiceRecorderBar';
+import VoiceMessageBubble from'../components/VoiceMessageBubble';
 
 import{
   chatIdFor,
@@ -42,6 +45,7 @@ import{
   reactToMessage,
   removeReaction,
   sendMessage,
+  sendVoiceMessage,
   setTyping,
   unsendMessage
 }from'../services/chat';
@@ -419,14 +423,24 @@ function MessageRow({
 
           {/* ================= MESSAGE TEXT ================= */}
 
-          <Text
-            style={[
-              styles.messageText,
-              item.unsent&&styles.unsentText
-            ]}
-          >
-            {String(item.text||'')}
-          </Text>
+          {item.type==='audio'&&item.audioUrl&&!item.unsent
+            ?(
+              <VoiceMessageBubble
+                url={item.audioUrl}
+                duration={item.duration||0}
+              />
+            )
+            :(
+              <Text
+                style={[
+                  styles.messageText,
+                  item.unsent&&styles.unsentText
+                ]}
+              >
+                {String(item.text||'')}
+              </Text>
+            )
+          }
 
 
           {item.unsent&&(
@@ -615,6 +629,44 @@ export default function ChatScreen({
     useRef(
       new Animated.Value(0)
     ).current;
+
+
+  /* =========================================================
+     VOICE MESSAGES
+     ========================================================= */
+
+  const[recordingVoice,setRecordingVoice]=useState(false);
+
+  const sendVoice=async(uri,duration)=>{
+    try{
+      const url=await uploadFile(
+        uri,
+        `voice/${chatId}/${Date.now()}.m4a`,
+        'audio/m4a'
+      );
+
+      await sendVoiceMessage(meId,otherId,url,duration);
+
+      sendPushNotification({
+        toUserId:otherId,
+        title:me.name||'New message',
+        body:'🎤 Voice message',
+        data:{
+          type:'message',
+          fromId:meId,
+          fromName:me.name||'',
+          fromPhoto:me.photoURL||''
+        }
+      }).catch(()=>{});
+    }catch(e){
+      Alert.alert(
+        'Voice message failed',
+        e?.message||'Could not send the voice message.'
+      );
+    }finally{
+      setRecordingVoice(false);
+    }
+  };
 
 
   /* =========================================================
@@ -1391,6 +1443,14 @@ export default function ChatScreen({
 
         {/* ================= COMPOSER ================= */}
 
+        {recordingVoice
+          ?(
+            <VoiceRecorderBar
+              onCancel={()=>setRecordingVoice(false)}
+              onSend={sendVoice}
+            />
+          )
+          :(
         <View style={styles.composer}>
 
           <TextInput
@@ -1408,16 +1468,12 @@ export default function ChatScreen({
           <TouchableOpacity
             style={[
               styles.sendButton,
-              (
-                !text.trim()||
-                sending
-              )&&styles.disabled
+              !!text.trim()&&
+              sending&&
+              styles.disabled
             ]}
-            disabled={
-              !text.trim()||
-              sending
-            }
-            onPress={send}
+            disabled={sending}
+            onPress={text.trim()?send:()=>setRecordingVoice(true)}
           >
 
             {sending
@@ -1430,7 +1486,7 @@ export default function ChatScreen({
 
               :(
                 <Text style={styles.sendText}>
-                  ➤
+                  {text.trim()?'➤':'🎤'}
                 </Text>
               )
             }
@@ -1438,6 +1494,8 @@ export default function ChatScreen({
           </TouchableOpacity>
 
         </View>
+          )
+        }
 
 
         {/* ================= ACTION MENU ================= */}
