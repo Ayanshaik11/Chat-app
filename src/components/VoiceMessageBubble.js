@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { Audio } from 'expo-av';
-import { Ionicons } from '@expo/vector-icons';
+import { FontAwesome, Ionicons } from '@expo/vector-icons';
 
 const BAR_WIDTH = 130;
 
@@ -131,7 +131,7 @@ export default function VoiceMessageBubble({ url, duration = 0 }) {
         </Text>
       </View>
 
-      <Ionicons name="mic" size={16} color="rgba(255,255,255,0.7)" style={{ marginLeft: 10 }} />
+      <FontAwesome name="microphone" size={16} color="rgba(255,255,255,0.7)" style={{ marginLeft: 10 }} />
     </View>
   );
 }
