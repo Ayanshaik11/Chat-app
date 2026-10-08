@@ -375,3 +375,61 @@ export async function deleteMessageForMe(
       arrayUnion(userId),
   });
 }
+
+/* =======================================================
+   SEND VOICE MESSAGE
+   audioUrl is the already-uploaded file; duration is in seconds
+======================================================= */
+
+export async function sendVoiceMessage(me, other, audioUrl, duration = 0, replyTo = null) {
+  if (!me || !other) {
+    throw new Error('Missing chat participants.');
+  }
+
+  if (!audioUrl) {
+    throw new Error('Missing voice message file.');
+  }
+
+  const chatId = chatIdFor(me, other);
+  const chatRef = doc(db, 'chats', chatId);
+  const messageRef = doc(collection(db, 'chats', chatId, 'messages'));
+  const label = '🎤 Voice message';
+
+  const messageData = {
+    senderId: me,
+    receiverId: other,
+    type: 'audio',
+    text: label,
+    audioUrl,
+    duration: Math.round(Number(duration) || 0),
+    createdAt: serverTimestamp(),
+    seenBy: {},
+    reactions: {},
+    unsent: false,
+  };
+
+  if (replyTo) {
+    messageData.replyTo = {
+      id: replyTo.id || null,
+      text: replyTo.text || '',
+      senderId: replyTo.senderId || '',
+      senderName: replyTo.senderName || 'Message',
+    };
+  }
+
+  const batch = writeBatch(db);
+  batch.set(messageRef, messageData);
+  batch.set(
+    chatRef,
+    {
+      members: [me, other],
+      lastMessage: label,
+      lastSender: me,
+      lastMessageAt: serverTimestamp(),
+      updatedAt: serverTimestamp(),
+      unread: { [other]: increment(1) },
+    },
+    { merge: true }
+  );
+  await batch.commit();
+}
