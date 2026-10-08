@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Image, Pressable, Text, View } from 'react-native';
+import { Animated, Pressable, Text, View } from 'react-native';
 import { WebView } from 'react-native-webview';
 import { Ionicons } from '@expo/vector-icons';
 import PROXY_API_URL from '../config/proxy';
@@ -23,10 +23,30 @@ const INJECTED = `
   'html,body{background:#000 !important}';
   document.head.appendChild(css);
 
+  // Hide EVERYTHING that is not the <video> (or one of its parents):
+  // YouTube's own like / share / channel / title / Shorts logo UI.
+  function clean() {
+    var video = document.querySelector('video');
+    if (!video) return;
+    var node = video;
+    while (node && node !== document.documentElement) {
+      var parent = node.parentElement;
+      if (!parent) break;
+      Array.prototype.forEach.call(parent.children, function (child) {
+        if (child !== node && child.tagName !== 'SCRIPT' && child.tagName !== 'STYLE') {
+          child.style.setProperty('display', 'none', 'important');
+        }
+      });
+      node = parent;
+    }
+    video.style.setProperty('object-fit', 'contain', 'important');
+  }
+
   var reported = false;
   var tries = 0;
   var timer = setInterval(function () {
     tries++;
+    clean();
     var v = document.querySelector('video');
     if (v) {
       v.loop = true;
@@ -40,8 +60,8 @@ const INJECTED = `
       window.ReactNativeWebView.postMessage('error:unavailable');
       clearInterval(timer);
     }
-    if (tries > 120) clearInterval(timer);
-  }, 250);
+    if (tries > 400) clearInterval(timer);
+  }, 150);
 })();
 true;
 `;
@@ -139,15 +159,6 @@ export default function YoutubeShortItem({
 
   return (
     <View style={{ width, height, backgroundColor: '#000', overflow: 'hidden' }}>
-      {/* thumbnail shows while the player loads, so there is no black flash */}
-      {!!item.thumbnail && !ready && (
-        <Image
-          source={{ uri: item.thumbnail }}
-          resizeMode="contain"
-          style={{ position: 'absolute', top: 0, left: 0, width, height }}
-        />
-      )}
-
       {isActive && (
         <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, width, height }}>
           <WebView
