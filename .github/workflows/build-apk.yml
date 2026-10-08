@@ -574,6 +574,7 @@ jobs:
           echo "=========================================="
 
           ./gradlew assembleRelease \
+            -PreactNativeArchitectures=armeabi-v7a,arm64-v8a \
             --no-daemon \
             --stacktrace \
             --warning-mode all \
