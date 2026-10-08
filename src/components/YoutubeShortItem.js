@@ -82,6 +82,18 @@ export default function YoutubeShortItem({
     []
   );
 
+  // New player each time this video becomes the active one:
+  //  - start from "loading" (thumbnail visible)
+  //  - never leave the thumbnail stuck: after 3.5s show the player anyway
+  useEffect(() => {
+    if (!isActive) {
+      setReady(false);
+      return undefined;
+    }
+    const timer = setTimeout(() => setReady(true), 3500);
+    return () => clearTimeout(timer);
+  }, [isActive]);
+
   // mute / unmute without reloading
   useEffect(() => {
     webRef.current?.injectJavaScript(`
@@ -128,12 +140,11 @@ export default function YoutubeShortItem({
   return (
     <View style={{ width, height, backgroundColor: '#000', overflow: 'hidden' }}>
       {/* thumbnail shows while the player loads, so there is no black flash */}
-      {!!item.thumbnail && (
+      {!!item.thumbnail && !ready && (
         <Image
           source={{ uri: item.thumbnail }}
           resizeMode="contain"
           style={{ position: 'absolute', top: 0, left: 0, width, height }}
-          blurRadius={ready ? 0 : 2}
         />
       )}
 
