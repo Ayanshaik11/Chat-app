@@ -74,10 +74,7 @@ module.exports = async (req, res) => {
   };
 
   const TOPICS = [
-    'Hindi comedy', 'Bollywood new teasers', 'memes', 'India viral', 'dance', 'music', 'hyderabadi food recipes', 'pranks', 'hindi motivation', 'gaming', 'tech',
-    'cars', 'bikes', 'magic tricks',
-    'life hacks',
-    'trending instagram reels', 'hindi lyrics with songs', 'sports', 'fitness', 'art',
+    'Hindi comedy', 'Bollywood new teasers', 'hindi dank memes', 'India viral', 'hindi dance', 'hindi music','hyderabadi food recipes', 'hindi motivation','gaming','life hacks','trending instagram reels', 'hindi lyrics with songs','drawing anime','drawing nature','anime clips hindi','hindi edits'
   ];
 
   const pickedTopics = shuffle(TOPICS).slice(0, 3);
