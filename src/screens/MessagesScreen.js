@@ -62,13 +62,15 @@ export default function MessagesScreen({navigation}){
   const renderItem=({item})=>{
     const{friend,chat}=item;
     const unread=chat?.unread?.[myId]||0;
-    const preview=chat?.lastMessage?`${chat.lastSender===myId?'You: ':''}${chat.lastMessage}`:'Say hi 👋';
+    const friendId=friend.id||friend.uid;
+    const typing=!!chat?.typing?.[friendId];
+    const preview=typing?'typing...':chat?.lastMessage?`${chat.lastSender===myId?'You: ':''}${chat.lastMessage}`:'Say hi 👋';
 
     return <Pressable onPress={()=>openChat(friend)} style={({pressed})=>({flexDirection:'row',alignItems:'center',paddingHorizontal:16,paddingVertical:10,gap:12,backgroundColor:pressed?colors.inputBg:'transparent'})}>
       <Avatar uri={friend.photoURL||friend.photoUrl||friend.profilePic||friend.avatar} name={friend.name||friend.displayName} size={54} online={isOnline(friend)}/>
       <View style={{flex:1,minWidth:0}}>
         <T weight={unread?'bold':'semibold'} numberOfLines={1}>{friend.name||friend.displayName||'User'}</T>
-        <T size={13} color={unread?'text':'subtext'} weight={unread?'medium':'regular'} numberOfLines={1}>{preview}</T>
+        <T size={13} color={typing?'primary':unread?'text':'subtext'} weight={typing||unread?'medium':'regular'} numberOfLines={1}>{preview}</T>
       </View>
       <View style={{alignItems:'flex-end',gap:6}}>
         {item.lastActivity>0&&chat?.lastMessage&&<T size={11} color="subtext">{timeAgo(chat?.lastMessageAt||chat?.updatedAt)}</T>}
