@@ -92,6 +92,21 @@ jobs:
             "s/\"version\": \"[^\"]*\"/\"version\": \"${VERSION}\"/" \
             app.json
 
+          # Android only accepts an update when versionCode goes UP.
+          # 1.2.3 -> 10203
+          python3 - <<PY
+          import json
+          v = "${VERSION}".split(".")
+          v = [int(x) for x in (v + ["0", "0", "0"])[:3]]
+          code = v[0] * 10000 + v[1] * 100 + v[2]
+          with open("app.json") as f:
+              data = json.load(f)
+          data["expo"]["android"]["versionCode"] = code
+          with open("app.json", "w") as f:
+              json.dump(data, f, indent=2, ensure_ascii=False)
+          print("android.versionCode =", code)
+          PY
+
           echo ""
           echo "Version stamped into:"
           echo "src/config/appVersion.js"
@@ -644,6 +659,7 @@ jobs:
           echo "=========================================="
 
           ./gradlew assembleRelease \
+            -PreactNativeArchitectures=armeabi-v7a,arm64-v8a \
             --no-daemon \
             --stacktrace \
             --warning-mode all \
