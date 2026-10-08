@@ -203,7 +203,15 @@ function MessageRow({
   };
 
 
-  const replySwipe=PanResponder.create({
+  // keep the latest message/callback without rebuilding the gesture
+  const itemRef=useRef(item);
+  itemRef.current=item;
+  const onReplyRef=useRef(onReply);
+  onReplyRef.current=onReply;
+
+  // built once per row (not on every render), so a re-render in the middle of a
+  // swipe can no longer reset the gesture
+  const replySwipe=useMemo(()=>PanResponder.create({
 
     onStartShouldSetPanResponder:()=>false,
 
@@ -262,7 +270,7 @@ function MessageRow({
 
       if(shouldReply){
 
-        onReply(item);
+        onReplyRef.current(itemRef.current);
 
         requestAnimationFrame(()=>{
           inputRef?.current?.focus();
@@ -280,26 +288,7 @@ function MessageRow({
         useNativeDriver:true
       }).start();
     }
-  });
-
-
-  const pressIn=()=>{
-    Animated.timing(scale,{
-      toValue:.97,
-      duration:55,
-      useNativeDriver:true
-    }).start();
-  };
-
-
-  const pressOut=()=>{
-    Animated.spring(scale,{
-      toValue:1,
-      speed:30,
-      bounciness:5,
-      useNativeDriver:true
-    }).start();
-  };
+  }),[mine]);
 
 
   const longPress=async()=>{
@@ -313,6 +302,21 @@ function MessageRow({
         Haptics.ImpactFeedbackStyle.Light
       );
     }catch{}
+
+    // the "press" effect only happens on tap-and-hold (reaction menu)
+    Animated.sequence([
+      Animated.timing(scale,{
+        toValue:.96,
+        duration:90,
+        useNativeDriver:true
+      }),
+      Animated.spring(scale,{
+        toValue:1,
+        speed:30,
+        bounciness:6,
+        useNativeDriver:true
+      })
+    ]).start();
 
     onLongPress(item);
 
@@ -377,8 +381,6 @@ function MessageRow({
       >
 
         <Pressable
-          onPressIn={pressIn}
-          onPressOut={pressOut}
           onLongPress={longPress}
           delayLongPress={300}
           style={[
