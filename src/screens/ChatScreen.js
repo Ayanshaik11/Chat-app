@@ -24,6 +24,7 @@ import*as Haptics from'expo-haptics';
 
 import{
   collection,
+  doc,
   limit,
   onSnapshot,
   orderBy,
@@ -41,6 +42,7 @@ import{
   reactToMessage,
   removeReaction,
   sendMessage,
+  setTyping,
   unsendMessage
 }from'../services/chat';
 
@@ -616,6 +618,56 @@ export default function ChatScreen({
 
 
   /* =========================================================
+     TYPING INDICATOR
+     ========================================================= */
+
+  const[otherTyping,setOtherTyping]=useState(false);
+  const typingActiveRef=useRef(false);
+  const typingTimerRef=useRef(null);
+
+  const stopTyping=()=>{
+    clearTimeout(typingTimerRef.current);
+    if(typingActiveRef.current){
+      typingActiveRef.current=false;
+      setTyping(chatId,meId,false).catch(()=>{});
+    }
+  };
+
+  const handleTextChange=(value)=>{
+    setText(value);
+    if(!meId||!otherId)return;
+    if(!value.trim()){
+      stopTyping();
+      return;
+    }
+    if(!typingActiveRef.current){
+      typingActiveRef.current=true;
+      setTyping(chatId,meId,true).catch(()=>{});
+    }
+    clearTimeout(typingTimerRef.current);
+    typingTimerRef.current=setTimeout(stopTyping,2500);
+  };
+
+  // stop typing when leaving the chat
+  useEffect(()=>()=>{
+    clearTimeout(typingTimerRef.current);
+    if(typingActiveRef.current&&chatId&&meId){
+      setTyping(chatId,meId,false).catch(()=>{});
+    }
+  },[chatId,meId]);
+
+  // watch whether the other person is typing
+  useEffect(()=>{
+    if(!chatId||!otherId)return undefined;
+    return onSnapshot(
+      doc(db,'chats',chatId),
+      snap=>setOtherTyping(!!snap.data()?.typing?.[otherId]),
+      ()=>{}
+    );
+  },[chatId,otherId]);
+
+
+  /* =========================================================
      FIRESTORE LISTENER
      ========================================================= */
 
@@ -1067,6 +1119,7 @@ export default function ChatScreen({
 
 
     setText('');
+    stopTyping();
 
     setReplyingTo(null);
 
@@ -1205,10 +1258,12 @@ export default function ChatScreen({
               {name}
             </Text>
 
-            <Text style={styles.headerStatus}>
-              {profile?.online
-                ?'Online'
-                :'Messages'
+            <Text style={[styles.headerStatus,otherTyping&&{color:'#22C55E'}]}>
+              {otherTyping
+                ?'typing...'
+                :profile?.online
+                  ?'Online'
+                  :'Messages'
               }
             </Text>
 
@@ -1341,7 +1396,7 @@ export default function ChatScreen({
           <TextInput
             ref={inputRef}
             value={text}
-            onChangeText={setText}
+            onChangeText={handleTextChange}
             placeholder="Message..."
             placeholderTextColor="#666"
             multiline
