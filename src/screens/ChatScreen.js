@@ -388,7 +388,10 @@ function MessageRow({
               ?styles.myBubble
               :styles.otherBubble,
 
-            item.unsent&&styles.unsentBubble
+            item.unsent&&styles.unsentBubble,
+
+            // a short reply must still be wide enough to show the quoted message
+            hasReply&&styles.replyBubble
           ]}
         >
 
@@ -2186,6 +2189,10 @@ const styles=StyleSheet.create({
     borderColor:BORDER
   },
 
+  replyBubble:{
+    minWidth:230
+  },
+
   unsentBubble:{
     backgroundColor:'#444',
     opacity:.75
@@ -2235,7 +2242,7 @@ const styles=StyleSheet.create({
     width:'100%',
 
     minHeight:42,
-    maxHeight:60,
+    maxHeight:84,
 
     flexDirection:'row',
 
