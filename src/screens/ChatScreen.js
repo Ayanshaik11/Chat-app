@@ -21,6 +21,7 @@ import{
 
 import*as Clipboard from'expo-clipboard';
 import*as Haptics from'expo-haptics';
+import{FontAwesome}from'@expo/vector-icons';
 
 import{
   collection,
@@ -650,7 +651,7 @@ export default function ChatScreen({
       sendPushNotification({
         toUserId:otherId,
         title:me.name||'New message',
-        body:'🎤 Voice message',
+        body:'Voice message',
         data:{
           type:'message',
           fromId:meId,
@@ -1485,9 +1486,19 @@ export default function ChatScreen({
               )
 
               :(
-                <Text style={styles.sendText}>
-                  {text.trim()?'➤':'🎤'}
-                </Text>
+                text.trim()
+                  ?(
+                    <Text style={styles.sendText}>
+                      ➤
+                    </Text>
+                  )
+                  :(
+                    <FontAwesome
+                      name="microphone"
+                      size={22}
+                      color="#fff"
+                    />
+                  )
               )
             }
 
