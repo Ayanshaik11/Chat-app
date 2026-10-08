@@ -18,7 +18,8 @@
       "supportsTablet": false,
       "infoPlist": {
         "NSPhotoLibraryUsageDescription": "Chat App needs your photos so you can share posts, stories and set a profile picture.",
-        "NSCameraUsageDescription": "Chat App needs the camera so you can take photos for posts and stories."
+        "NSCameraUsageDescription": "Chat App needs the camera so you can take photos for posts and stories.",
+        "NSMicrophoneUsageDescription": "Chat App needs the microphone so you can send voice messages."
       }
     },
     "android": {
@@ -31,7 +32,9 @@
         "VIBRATE",
         "CAMERA",
         "REQUEST_INSTALL_PACKAGES",
-        "POST_NOTIFICATIONS"
+        "POST_NOTIFICATIONS",
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS"
       ],
       "googleServicesFile": "./google-services.json"
     },
@@ -71,6 +74,12 @@
         {
           "icon": "./assets/notification-icon.png",
           "color": "#E11D2A"
+        }
+      ],
+      [
+        "expo-av",
+        {
+          "microphonePermission": "Chat App needs the microphone so you can send voice messages."
         }
       ]
     ]
