@@ -50,9 +50,15 @@ export default function VoiceMessageBubble({ url, duration = 0 }) {
       setTotal(status.durationMillis / 1000);
     }
     if (status.didJustFinish) {
+      // Play once, then stop. stopAsync() also rewinds to the start and turns
+      // "shouldPlay" off — moving the position while it is still on is what
+      // made the message restart again and again.
       setPlaying(false);
       setPosition(0);
-      soundRef.current?.setPositionAsync(0).catch(() => {});
+      if (currentlyPlaying === stopSelf) {
+        currentlyPlaying = null;
+      }
+      soundRef.current?.stopAsync().catch(() => {});
     }
   };
 
@@ -77,12 +83,15 @@ export default function VoiceMessageBubble({ url, duration = 0 }) {
           allowsRecordingIOS: false,
           playsInSilentModeIOS: true,
         });
-        const { sound } = await Audio.Sound.createAsync({ uri: url }, { shouldPlay: false }, onStatus);
+        const { sound } = await Audio.Sound.createAsync({ uri: url }, { shouldPlay: false, isLooping: false }, onStatus);
         soundRef.current = sound;
         setLoading(false);
       }
 
       currentlyPlaying = stopSelf;
+      if (position === 0 || (total > 0 && position >= total - 0.2)) {
+        await soundRef.current.setPositionAsync(0).catch(() => {});
+      }
       await soundRef.current.playAsync();
       setPlaying(true);
     } catch (error) {
