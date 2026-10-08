@@ -27,7 +27,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useAppData } from '../context/AppDataContext';
 
-import { fetchShorts } from '../services/youtube';
+import { fetchShorts, markShortSeen } from '../services/youtube';
 
 import { fetchReels, toggleReelLike, deleteReel } from '../services/reels';
 import { getReelCommentCount } from '../services/reelComments';
@@ -177,6 +177,10 @@ export default function ReelsScreen() {
   const mountedRef =
     useRef(true);
 
+  // new seed each time the app/screen opens or is refreshed = new videos
+  const seedRef =
+    useRef(Date.now());
+
   const friendsLoadedRef =
     useRef(false);
 
@@ -234,12 +238,17 @@ export default function ReelsScreen() {
               ? queryOverride
               : activeSearch;
 
+          if (refresh) {
+            seedRef.current = Date.now();
+          }
+
           const result =
             await fetchShorts(
               refresh
                 ? null
                 : nextPageToken,
-              query
+              query,
+              seedRef.current
             );
 
           if (!mountedRef.current) {
@@ -551,7 +560,8 @@ export default function ReelsScreen() {
           const result =
             await fetchShorts(
               nextPageToken,
-              activeSearch
+              activeSearch,
+              seedRef.current
             );
 
           if (!mountedRef.current) {
@@ -620,6 +630,18 @@ export default function ReelsScreen() {
       ]
     );
 
+
+  // remember watched YouTube videos so they don't come back next time
+  useEffect(() => {
+    if (activeTab !== 'discover') {
+      return;
+    }
+    const current = discoverReels?.[activeIndex];
+    if (current?.videoId) {
+      const timer = setTimeout(() => markShortSeen(current.videoId), 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [activeIndex, activeTab, discoverReels]);
 
   /* =======================================================
      VIEWABILITY
