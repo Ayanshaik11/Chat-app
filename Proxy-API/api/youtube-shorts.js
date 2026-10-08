@@ -41,26 +41,62 @@ module.exports = async (req, res) => {
    * The | operator tells YouTube to search
    * across multiple keyword groups.
    */
-  const defaultQuery =
-    '#shorts Hindi | ' +
-    '#shorts Bollywood | ' +
-    '#shorts comedy | ' +
-    '#shorts India | ' +
-    '#shorts memes | ' +
-    '#shorts entertainment';
-
   /*
-   * If user searches something:
+   * Fresh feed every time the app opens.
    *
-   * "Shah Rukh Khan"
-   *
-   * becomes:
-   *
-   * "#shorts Shah Rukh Khan"
-   *
-   * This is a relevance search, not an exact
-   * phrase-only search.
+   * The app sends a random "seed" for each session. The seed picks
+   * different topics, a different sort order and a different time
+   * window, so the results change on every open — while pages inside
+   * one session stay consistent (same seed = same search, so
+   * pageToken keeps working).
    */
+  const seedRaw = parseInt(req.query?.seed, 10);
+  let seedState = Number.isFinite(seedRaw)
+    ? seedRaw >>> 0
+    : (Date.now() >>> 0);
+
+  const random = () => {
+    // mulberry32 seeded random
+    seedState = (seedState + 0x6d2b79f5) >>> 0;
+    let t = seedState;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+
+  const shuffle = (list) => {
+    const copy = [...list];
+    for (let i = copy.length - 1; i > 0; i -= 1) {
+      const j = Math.floor(random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  };
+
+  const TOPICS = [
+    'Hindi comedy', 'Bollywood', 'funny', 'memes', 'India viral',
+    'desi comedy', 'dance', 'music', 'cricket', 'food', 'travel',
+    'street food', 'prank', 'motivation', 'gaming', 'tech',
+    'cars', 'bikes', 'animals', 'cute', 'magic tricks',
+    'life hacks', 'couple goals', 'school life', 'family comedy',
+    'trending', 'entertainment', 'sports', 'fitness', 'art',
+  ];
+
+  const pickedTopics = shuffle(TOPICS).slice(0, 3);
+
+  const defaultQuery = pickedTopics
+    .map((topic) => `#shorts ${topic}`)
+    .join(' | ');
+
+  const SORTS = ['date', 'viewCount', 'relevance', 'rating'];
+  const order = SORTS[Math.floor(random() * SORTS.length)];
+
+  // look back between 2 and 90 days
+  const daysBack = 2 + Math.floor(random() * 88);
+  const publishedAfter = new Date(
+    Date.now() - daysBack * 24 * 60 * 60 * 1000
+  ).toISOString();
+
   const query = userQuery
     ? `#shorts ${userQuery}`
     : defaultQuery;
@@ -73,7 +109,7 @@ module.exports = async (req, res) => {
 
     relevanceLanguage: 'hi',
 
-    order: 'relevance',
+    order: userQuery ? 'relevance' : order,
 
     /*
      * YouTube "short" means under 4 minutes.
@@ -91,6 +127,10 @@ module.exports = async (req, res) => {
 
     key,
   });
+
+  if (!userQuery) {
+    params.set('publishedAfter', publishedAfter);
+  }
 
   if (pageToken) {
     params.set(
@@ -290,8 +330,10 @@ module.exports = async (req, res) => {
       uniqueItems.push(item);
     }
 
+    res.setHeader('Cache-Control', 'no-store, max-age=0');
+
     return res.status(200).json({
-      items: uniqueItems,
+      items: userQuery ? uniqueItems : shuffle(uniqueItems),
 
       nextPageToken:
         searchData.nextPageToken ||
