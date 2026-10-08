@@ -230,8 +230,10 @@ export function uploadFile(
       'image/jpeg';
 
 
+    // Cloudinary stores audio under the "video" resource type
     const video =
-      mime.startsWith('video/');
+      mime.startsWith('video/') ||
+      mime.startsWith('audio/');
 
 
     // --------------------------------------------------
