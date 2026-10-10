@@ -3,6 +3,7 @@ import{
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
   FlatList,
   Image,
   KeyboardAvoidingView,
@@ -37,6 +38,7 @@ import{sendPushNotification}from'../services/notifications';
 import{uploadFile}from'../services/media';
 import VoiceRecorderBar from'../components/VoiceRecorderBar';
 import TypingDots from'../components/TypingDots';
+import{usePeerTyping}from'../utils/typing';
 import VoiceMessageBubble from'../components/VoiceMessageBubble';
 import SharedLinkCard,{parseSharedLink}from'../components/SharedLinkCard';
 
@@ -676,7 +678,9 @@ export default function ChatScreen({
      TYPING INDICATOR
      ========================================================= */
 
-  const[otherTyping,setOtherTyping]=useState(false);
+  const[peerTypingValue,setPeerTypingValue]=useState(0);
+  const otherTyping=usePeerTyping(peerTypingValue);
+  const lastTypingWrite=useRef(0);
   const typingActiveRef=useRef(false);
   const typingTimerRef=useRef(null);
 
@@ -684,6 +688,7 @@ export default function ChatScreen({
     clearTimeout(typingTimerRef.current);
     if(typingActiveRef.current){
       typingActiveRef.current=false;
+      lastTypingWrite.current=0;
       setTyping(chatId,meId,false).catch(()=>{});
     }
   };
@@ -695,13 +700,27 @@ export default function ChatScreen({
       stopTyping();
       return;
     }
-    if(!typingActiveRef.current){
+    // refresh the timestamp every 3s while typing so the other phone can
+    // tell the difference between "still typing" and "stuck"
+    if(
+      !typingActiveRef.current||
+      Date.now()-lastTypingWrite.current>3000
+    ){
       typingActiveRef.current=true;
+      lastTypingWrite.current=Date.now();
       setTyping(chatId,meId,true).catch(()=>{});
     }
     clearTimeout(typingTimerRef.current);
-    typingTimerRef.current=setTimeout(stopTyping,2500);
+    typingTimerRef.current=setTimeout(stopTyping,3500);
   };
+
+  // stop typing when the app goes to the background
+  useEffect(()=>{
+    const sub=AppState.addEventListener('change',state=>{
+      if(state!=='active')stopTyping();
+    });
+    return()=>sub.remove();
+  },[chatId,meId]);
 
   // stop typing when leaving the chat
   useEffect(()=>()=>{
@@ -716,7 +735,7 @@ export default function ChatScreen({
     if(!chatId||!otherId)return undefined;
     return onSnapshot(
       doc(db,'chats',chatId),
-      snap=>setOtherTyping(!!snap.data()?.typing?.[otherId]),
+      snap=>setPeerTypingValue(snap.data()?.typing?.[otherId]||0),
       ()=>{}
     );
   },[chatId,otherId]);
@@ -1149,7 +1168,7 @@ export default function ChatScreen({
 
     const clean=text.trim();
 
-    if(!clean||sending)return;
+    if(!clean)return;
 
 
     const reply=replyingTo
@@ -1183,12 +1202,19 @@ export default function ChatScreen({
 
     try{
 
-      await sendMessage(
-        meId,
-        otherId,
-        clean,
-        reply
-      );
+      // Firestore queues the message and keeps retrying by itself when the
+      // connection is bad, but its promise only finishes once the server
+      // answers. Waiting for that blocked the whole chat, so after 6 seconds
+      // we let the message continue sending in the background.
+      await Promise.race([
+        sendMessage(
+          meId,
+          otherId,
+          clean,
+          reply
+        ),
+        new Promise(resolve=>setTimeout(resolve,6000))
+      ]);
 
       // Push notification for the receiver (never blocks or fails the send)
       sendPushNotification({
@@ -1214,8 +1240,7 @@ export default function ChatScreen({
 
       Alert.alert(
         'Send failed',
-        e?.message||
-        'Could not send message.'
+        `${e?.message||'Could not send message.'}${e?.code?`\n\n(${e.code})`:''}`
       );
 
       requestAnimationFrame(()=>{
@@ -1487,7 +1512,6 @@ export default function ChatScreen({
               sending&&
               styles.disabled
             ]}
-            disabled={sending}
             onPress={text.trim()?send:()=>setRecordingVoice(true)}
           >
 
