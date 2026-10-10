@@ -19,6 +19,7 @@ import {
 } from 'react-native';
 
 import YoutubeShortItem from '../components/YoutubeShortItem';
+import YoutubeSharedPlayer from '../components/YoutubeSharedPlayer';
 import { useFocusEffect, useIsFocused, useNavigation } from '@react-navigation/native';
 import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
@@ -127,6 +128,8 @@ export default function ReelsScreen() {
   ] = useState(null);
 
   const [muted, setMuted] = useState(false);
+  const [playingId, setPlayingId] = useState(null); // id the shared player is really playing
+  const loadMoreFailedAt = useRef(0);
   const [shareVisible, setShareVisible] = useState(false);
   const [shareText, setShareText] = useState('');
 
@@ -545,20 +548,34 @@ export default function ReelsScreen() {
           return;
         }
 
+        // No next page left (YouTube only gives a few pages per search)?
+        // For the normal feed, start a brand new search with a new seed so
+        // the feed never ends. A text search just ends.
+        const reseed = !nextPageToken && !activeSearch;
+
         if (
           loadingMore ||
           loading ||
-          !nextPageToken
+          (!nextPageToken && !reseed)
         ) {
+          return;
+        }
+
+        // after an error wait 20 seconds before trying again
+        if (Date.now() - loadMoreFailedAt.current < 20000) {
           return;
         }
 
         try {
           setLoadingMore(true);
 
+          if (reseed) {
+            seedRef.current = Date.now();
+          }
+
           const result =
             await fetchShorts(
-              nextPageToken,
+              reseed ? null : nextPageToken,
               activeSearch,
               seedRef.current
             );
@@ -610,6 +627,7 @@ export default function ReelsScreen() {
             null
           );
         } catch (error) {
+          loadMoreFailedAt.current = Date.now();
           console.error(
             'Load more error:',
             error
@@ -635,7 +653,7 @@ export default function ReelsScreen() {
   useEffect(() => {
     if (
       activeTab === 'discover' &&
-      nextPageToken &&
+      (nextPageToken || !activeSearch) &&
       !loadingMore &&
       !loading &&
       Array.isArray(discoverReels) &&
@@ -853,6 +871,11 @@ export default function ReelsScreen() {
      YOUTUBE VIDEO
   ======================================================= */
 
+  const activeYoutubeId =
+    activeTab === 'discover'
+      ? discoverReels?.[activeIndex]?.videoId || null
+      : null;
+
   const renderYoutubeVideo = (item, index) => {
     if (!item?.videoId) {
       return (
@@ -875,18 +898,10 @@ export default function ReelsScreen() {
         item={item}
         width={width}
         height={height}
-        isActive={index === activeIndex && focused}
-        shouldLoad={focused && (index === activeIndex || index === activeIndex + 1)}
+        showVideo={index === activeIndex && playingId === item.videoId}
         muted={muted}
         onToggleMute={() => setMuted((m) => !m)}
         onShare={openShare}
-        onUnavailable={(bad) =>
-          setDiscoverReels((previous) =>
-            Array.isArray(previous)
-              ? previous.filter((v) => v?.videoId !== bad.videoId)
-              : previous
-          )
-        }
       />
     );
   };
@@ -1233,6 +1248,22 @@ export default function ReelsScreen() {
       {/* =================================================
           VIDEO FEED
       ================================================= */}
+
+      {/* ONE shared YouTube player behind the list (see YoutubeSharedPlayer) */}
+      {activeTab === 'discover' && focused && !!activeYoutubeId && (
+        <YoutubeSharedPlayer
+          videoId={activeYoutubeId}
+          muted={muted}
+          onPlaying={setPlayingId}
+          onError={(badId) =>
+            setDiscoverReels((previous) =>
+              Array.isArray(previous)
+                ? previous.filter((v) => v?.videoId !== badId)
+                : previous
+            )
+          }
+        />
+      )}
 
       <FlatList
         ref={listRef}
