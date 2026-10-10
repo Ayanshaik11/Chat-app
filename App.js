@@ -22,6 +22,8 @@ import { navigateToChat } from './src/navigation/navigationRef';
 import { registerForPushNotifications } from './src/services/pushTokens';
 import useUpdateCheck from './src/hooks/useUpdateCheck';
 import UpdateCard from './src/components/UpdateCard';
+import { ShareIntentProvider } from 'expo-share-intent';
+import ShareIntentHandler from './src/components/ShareIntentHandler';
 
 SplashScreen.preventAutoHideAsync().catch(() => {});
 
@@ -224,6 +226,8 @@ function Root() {
 
       <RootNavigator />
 
+      <ShareIntentHandler />
+
       <UpdateCard state={updateState} />
     </View>
   );
@@ -280,6 +284,7 @@ export default function App() {
 
   return (
     <ErrorBoundary>
+      <ShareIntentProvider>
       <SafeAreaProvider>
         <SettingsProvider>
           <AuthProvider>
@@ -289,6 +294,7 @@ export default function App() {
           </AuthProvider>
         </SettingsProvider>
       </SafeAreaProvider>
+      </ShareIntentProvider>
     </ErrorBoundary>
   );
 }
