@@ -74,8 +74,19 @@ module.exports = async (req, res) => {
   };
 
   const TOPICS = [
-    'instagram trending reels','Hindi dark memes','hindi songs','bollywood comedy','hindi anime edits like goku x vegeta x bulma','piccolo x gohan', 'trunks x goten','eren x Mikasa love Hindi edits','Naruto and madara and itachi','sung jinwoo','gojo x sukuna','toji'
- ];
+    'instagram trending reels',
+    'Hindi dark memes',
+    'hindi songs',
+    'bollywood comedy',
+    'hindi anime edits like goku x vegeta x bulma',
+    'piccolo x gohan',
+    'trunks x goten',
+    'eren x Mikasa love Hindi edits',
+    'Naruto and madara and itachi',
+    'sung jinwoo',
+    'gojo x sukuna',
+    'toji',
+  ];
 
   const pickedTopics = shuffle(TOPICS).slice(0, 3);
 
@@ -83,11 +94,12 @@ module.exports = async (req, res) => {
     .map((topic) => `#shorts ${topic}`)
     .join(' | ');
 
-  const SORTS = ['date', 'viewCount', 'relevance', 'rating'];
+  const SORTS = ['date', 'viewCount', 'relevance'];
   const order = SORTS[Math.floor(random() * SORTS.length)];
 
-  // look back between 2 and 90 days
-  const daysBack = 2 + Math.floor(random() * 88);
+  // look back between 7 days and ~6 months (niche anime topics have
+  // too few uploads for a short window)
+  const daysBack = 7 + Math.floor(random() * 173);
   const publishedAfter = new Date(
     Date.now() - daysBack * 24 * 60 * 60 * 1000
   ).toISOString();
@@ -139,13 +151,29 @@ module.exports = async (req, res) => {
      * STEP 1
      * Search YouTube.
      */
-    const searchResponse =
+    let searchResponse =
       await fetch(
         `https://www.googleapis.com/youtube/v3/search?${params.toString()}`
       );
 
-    const searchData =
+    let searchData =
       await searchResponse.json();
+
+    // No results inside the time window? Search again without it.
+    if (
+      searchResponse.ok &&
+      !(searchData.items || []).length &&
+      !userQuery &&
+      !pageToken
+    ) {
+      params.delete('publishedAfter');
+
+      searchResponse = await fetch(
+        `https://www.googleapis.com/youtube/v3/search?${params.toString()}`
+      );
+
+      searchData = await searchResponse.json();
+    }
 
     if (!searchResponse.ok) {
       console.error(
