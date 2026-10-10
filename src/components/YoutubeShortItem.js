@@ -79,14 +79,16 @@ const INJECTED = `
     if (v) {
       v.loop = true;
       if (window.__kxActive === true) {
+        v.muted = window.__kxMuted === true;
         if (v.paused) { try { v.play(); } catch (e) {} }
         if (!reported && !v.paused && v.currentTime > 0.05) {
           reported = true;
           window.ReactNativeWebView.postMessage('playing');
         }
-      } else if (!v.paused) {
-        // preloaded for the next swipe: stay silent until it becomes active
-        try { v.pause(); } catch (e) {}
+      } else {
+        // preloaded for the next swipe: stay silent and paused until active
+        v.muted = true;
+        if (!v.paused) { try { v.pause(); } catch (e) {} }
       }
     }
     if (document.querySelector('.ytp-error')) {
@@ -172,9 +174,14 @@ export default function YoutubeShortItem({
   useEffect(() => {
     webRef.current?.injectJavaScript(`
       window.__kxActive = ${isActive ? 'true' : 'false'};
+      window.__kxMuted = ${muted ? 'true' : 'false'};
       (function(){
         var v = document.querySelector('video');
-        if (v) { ${isActive ? 'try { v.play(); } catch (e) {}' : 'try { v.pause(); } catch (e) {}'} }
+        if (v) {
+          ${isActive
+            ? `v.muted = ${muted ? 'true' : 'false'}; try { v.play(); } catch (e) {}`
+            : "v.muted = true; try { v.pause(); } catch (e) {}"}
+        }
       })(); true;
     `);
   }, [isActive]);
@@ -182,9 +189,10 @@ export default function YoutubeShortItem({
   // mute / unmute without reloading
   useEffect(() => {
     webRef.current?.injectJavaScript(`
+      window.__kxMuted=${muted ? 'true' : 'false'};
       (function(){
         var v=document.querySelector('video');
-        if(v){ v.muted=${muted ? 'true' : 'false'}; if(!${muted ? 'true' : 'false'}){ v.volume=1; } }
+        if(v && window.__kxActive===true){ v.muted=${muted ? 'true' : 'false'}; if(!${muted ? 'true' : 'false'}){ v.volume=1; } }
       })(); true;
     `);
   }, [muted, ready]);
@@ -219,7 +227,7 @@ export default function YoutubeShortItem({
 
   const uri =
     `https://www.youtube.com/embed/${item.videoId}` +
-    `?autoplay=${initialActive.current ? 1 : 0}&mute=${initialMuted.current ? 1 : 0}&controls=0&playsinline=1` +
+    `?autoplay=1&mute=${initialActive.current && !initialMuted.current ? 0 : 1}&controls=0&playsinline=1` +
     `&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1`;
 
   return (
@@ -231,7 +239,7 @@ export default function YoutubeShortItem({
             style={{ width, height, backgroundColor: 'transparent', opacity: ready ? 1 : 0.01 }}
             originWhitelist={['*']}
             source={{ uri, headers: { Referer: PROXY_API_URL } }}
-            injectedJavaScriptBeforeContentLoaded={`${INJECTED_BEFORE} window.__kxActive = ${initialActive.current ? 'true' : 'false'}; true;`}
+            injectedJavaScriptBeforeContentLoaded={`${INJECTED_BEFORE} window.__kxActive = ${initialActive.current ? 'true' : 'false'}; window.__kxMuted = ${initialMuted.current ? 'true' : 'false'}; true;`}
             injectedJavaScript={INJECTED}
             onMessage={(e) => {
               const data = String(e?.nativeEvent?.data || '');
