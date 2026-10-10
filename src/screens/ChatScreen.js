@@ -36,6 +36,7 @@ import{db}from'../config/firebase';
 import{sendPushNotification}from'../services/notifications';
 import{uploadFile}from'../services/media';
 import VoiceRecorderBar from'../components/VoiceRecorderBar';
+import TypingDots from'../components/TypingDots';
 import VoiceMessageBubble from'../components/VoiceMessageBubble';
 import SharedLinkCard,{parseSharedLink}from'../components/SharedLinkCard';
 
@@ -173,7 +174,6 @@ function MessageRow({
   const mine=item.senderId===item._meId;
 
   const x=useRef(new Animated.Value(0)).current;
-  const scale=useRef(new Animated.Value(1)).current;
 
   const long=useRef(false);
 
@@ -304,21 +304,6 @@ function MessageRow({
       );
     }catch{}
 
-    // the "press" effect only happens on tap-and-hold (reaction menu)
-    Animated.sequence([
-      Animated.timing(scale,{
-        toValue:.96,
-        duration:90,
-        useNativeDriver:true
-      }),
-      Animated.spring(scale,{
-        toValue:1,
-        speed:30,
-        bounciness:6,
-        useNativeDriver:true
-      })
-    ]).start();
-
     onLongPress(item);
 
     setTimeout(()=>{
@@ -374,8 +359,7 @@ function MessageRow({
               :'flex-start',
 
             transform:[
-              {translateX:x},
-              {scale}
+              {translateX:x}
             ]
           }
         ]}
@@ -1397,6 +1381,18 @@ export default function ChatScreen({
             />
           )
         }
+
+
+        {/* ================= TYPING ANIMATION ================= */}
+
+        {otherTyping&&!recordingVoice&&(
+          <TypingDots
+            name={
+              (profile?.name||other?.name||'')
+                .split(' ')[0]
+            }
+          />
+        )}
 
 
         {/* ================= REPLY COMPOSER ================= */}
