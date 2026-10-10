@@ -39,7 +39,35 @@ const INJECTED = `
       });
       node = parent;
     }
-    video.style.setProperty('object-fit', 'contain', 'important');
+    sizeVideo(video);
+  }
+
+  // Make the video fill the screen. Portrait videos are cropped to cover it;
+  // wide ones stay fully visible in the middle.
+  function sizeVideo(video) {
+    var vw = video.videoWidth, vh = video.videoHeight;
+    var portrait = vw && vh && (vw / vh) < 0.8;
+    var fit = portrait ? 'cover' : 'contain';
+    var s = video.style;
+    s.setProperty('position', 'fixed', 'important');
+    s.setProperty('top', '0', 'important');
+    s.setProperty('left', '0', 'important');
+    s.setProperty('width', '100vw', 'important');
+    s.setProperty('height', '100vh', 'important');
+    s.setProperty('max-width', 'none', 'important');
+    s.setProperty('max-height', 'none', 'important');
+    s.setProperty('margin', '0', 'important');
+    s.setProperty('transform', 'none', 'important');
+    s.setProperty('object-fit', fit, 'important');
+    var node = video.parentElement;
+    while (node && node !== document.body && node !== document.documentElement) {
+      node.style.setProperty('transform', 'none', 'important');
+      node.style.setProperty('width', '100%', 'important');
+      node.style.setProperty('height', '100%', 'important');
+      node.style.setProperty('top', '0', 'important');
+      node.style.setProperty('left', '0', 'important');
+      node = node.parentElement;
+    }
   }
 
   var reported = false;
@@ -50,17 +78,22 @@ const INJECTED = `
     var v = document.querySelector('video');
     if (v) {
       v.loop = true;
-      if (v.paused) { try { v.play(); } catch (e) {} }
-      if (!reported && !v.paused && v.currentTime > 0.05) {
-        reported = true;
-        window.ReactNativeWebView.postMessage('playing');
+      if (window.__kxActive === true) {
+        if (v.paused) { try { v.play(); } catch (e) {} }
+        if (!reported && !v.paused && v.currentTime > 0.05) {
+          reported = true;
+          window.ReactNativeWebView.postMessage('playing');
+        }
+      } else if (!v.paused) {
+        // preloaded for the next swipe: stay silent until it becomes active
+        try { v.pause(); } catch (e) {}
       }
     }
     if (document.querySelector('.ytp-error')) {
       window.ReactNativeWebView.postMessage('error:unavailable');
       clearInterval(timer);
     }
-    if (tries > 400) clearInterval(timer);
+    if (tries > 1200) clearInterval(timer);
   }, 150);
 })();
 true;
@@ -95,12 +128,14 @@ export default function YoutubeShortItem({
   width,
   height,
   isActive,
+  shouldLoad = true,
   muted,
   onToggleMute,
   onShare,
   onUnavailable,
 }) {
   const webRef = useRef(null);
+  const initialActive = useRef(isActive); // autoplay only if it is on screen at mount
   const initialMuted = useRef(muted); // the URL must never change, or the player reloads
   const [ready, setReady] = useState(false);
   const [liked, setLiked] = useState(false); // in memory only
@@ -131,6 +166,17 @@ export default function YoutubeShortItem({
     }
     const timer = setTimeout(() => setReady(true), 2500);
     return () => clearTimeout(timer);
+  }, [isActive]);
+
+  // start / stop playback when the video becomes (in)active — no reload needed
+  useEffect(() => {
+    webRef.current?.injectJavaScript(`
+      window.__kxActive = ${isActive ? 'true' : 'false'};
+      (function(){
+        var v = document.querySelector('video');
+        if (v) { ${isActive ? 'try { v.play(); } catch (e) {}' : 'try { v.pause(); } catch (e) {}'} }
+      })(); true;
+    `);
   }, [isActive]);
 
   // mute / unmute without reloading
@@ -173,19 +219,19 @@ export default function YoutubeShortItem({
 
   const uri =
     `https://www.youtube.com/embed/${item.videoId}` +
-    `?autoplay=1&mute=${initialMuted.current ? 1 : 0}&controls=0&playsinline=1` +
+    `?autoplay=${initialActive.current ? 1 : 0}&mute=${initialMuted.current ? 1 : 0}&controls=0&playsinline=1` +
     `&modestbranding=1&rel=0&iv_load_policy=3&fs=0&disablekb=1`;
 
   return (
     <View style={{ width, height, backgroundColor: '#000', overflow: 'hidden' }}>
-      {isActive && (
+      {shouldLoad && (
         <View pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, width, height }}>
           <WebView
             ref={webRef}
             style={{ width, height, backgroundColor: 'transparent', opacity: ready ? 1 : 0.01 }}
             originWhitelist={['*']}
             source={{ uri, headers: { Referer: PROXY_API_URL } }}
-            injectedJavaScriptBeforeContentLoaded={INJECTED_BEFORE}
+            injectedJavaScriptBeforeContentLoaded={`${INJECTED_BEFORE} window.__kxActive = ${initialActive.current ? 'true' : 'false'}; true;`}
             injectedJavaScript={INJECTED}
             onMessage={(e) => {
               const data = String(e?.nativeEvent?.data || '');
