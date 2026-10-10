@@ -6,8 +6,8 @@
  */
 
 const DAY_MS = 24 * 60 * 60 * 1000;
-const MIN_PAGE_ITEMS = 10; // keep searching until a page has at least this many playable videos
-const MAX_SEARCH_ROUNDS = 3; // safety limit (each search costs 100 quota units)
+const MIN_PAGE_ITEMS = 8; // keep searching until a page has at least this many playable videos
+const MAX_SEARCH_ROUNDS = 2; // safety limit (each search costs 100 quota units)
 
 module.exports = async (req, res) => {
   const key = process.env.YOUTUBE_API_KEY;
