@@ -1313,6 +1313,11 @@ export default function ChatScreen({
           </TouchableOpacity>
 
 
+          <TouchableOpacity
+            activeOpacity={0.7}
+            style={{flex:1,flexDirection:'row',alignItems:'center'}}
+            onPress={()=>otherId&&navigation?.navigate('UserProfile',{userId:otherId})}
+          >
           <View style={styles.avatar}>
 
             {photo
@@ -1348,6 +1353,7 @@ export default function ChatScreen({
             </Text>
 
           </View>
+          </TouchableOpacity>
 
         </View>
 
