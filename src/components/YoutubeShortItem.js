@@ -13,7 +13,7 @@ const DOUBLE_TAP_MS = 280;
 const INJECTED = `
 (function () {
   var css = document.createElement('style');
-  css.innerHTML = [
+  css.textContent = [
     '.ytp-chrome-top','.ytp-chrome-bottom','.ytp-gradient-top','.ytp-gradient-bottom',
     '.ytp-pause-overlay','.ytp-large-play-button','.ytp-watermark','.ytp-youtube-button',
     '.ytp-impression-link','.ytp-ce-element','.ytp-cards-teaser','.ytp-endscreen-content',
@@ -21,7 +21,7 @@ const INJECTED = `
     '.ytp-paid-content-overlay','.ytp-videowall-still','.ytp-iv-video-content','.annotation'
   ].join(',') + '{display:none !important;opacity:0 !important;visibility:hidden !important}' +
   'html,body{background:#000 !important}';
-  document.head.appendChild(css);
+  (document.head || document.documentElement).appendChild(css);
 
   // Hide EVERYTHING that is not the <video> (or one of its parents):
   // YouTube's own like / share / channel / title / Shorts logo UI.
@@ -66,6 +66,25 @@ const INJECTED = `
 true;
 `;
 
+// Runs BEFORE the page draws, so YouTube's overlays never flash on screen.
+// (textContent, not innerHTML: YouTube blocks innerHTML with Trusted Types.)
+const INJECTED_BEFORE = `
+(function () {
+  try {
+    var css = document.createElement('style');
+    css.textContent = [
+      '.ytp-chrome-top','.ytp-chrome-bottom','.ytp-gradient-top','.ytp-gradient-bottom',
+      '.ytp-pause-overlay','.ytp-large-play-button','.ytp-watermark','.ytp-youtube-button',
+      '.ytp-impression-link','.ytp-ce-element','.ytp-cards-teaser','.ytp-endscreen-content',
+      '.ytp-spinner','.ytp-paid-content-overlay','.ytp-videowall-still','.annotation'
+    ].join(',') + '{display:none !important;opacity:0 !important;visibility:hidden !important}' +
+    'html,body{background:#000 !important}';
+    (document.head || document.documentElement).appendChild(css);
+  } catch (e) {}
+})();
+true;
+`;
+
 /**
  * One full-screen YouTube short.
  *  - single tap  : mute / unmute  (done through JS, the player never reloads)
@@ -104,13 +123,13 @@ export default function YoutubeShortItem({
 
   // New player each time this video becomes the active one:
   //  - start from "loading" (thumbnail visible)
-  //  - never leave the thumbnail stuck: after 3.5s show the player anyway
+  //  - never leave the thumbnail stuck: after 2.5s show the player anyway
   useEffect(() => {
     if (!isActive) {
       setReady(false);
       return undefined;
     }
-    const timer = setTimeout(() => setReady(true), 3500);
+    const timer = setTimeout(() => setReady(true), 2500);
     return () => clearTimeout(timer);
   }, [isActive]);
 
@@ -166,6 +185,7 @@ export default function YoutubeShortItem({
             style={{ width, height, backgroundColor: 'transparent', opacity: ready ? 1 : 0.01 }}
             originWhitelist={['*']}
             source={{ uri, headers: { Referer: PROXY_API_URL } }}
+            injectedJavaScriptBeforeContentLoaded={INJECTED_BEFORE}
             injectedJavaScript={INJECTED}
             onMessage={(e) => {
               const data = String(e?.nativeEvent?.data || '');
