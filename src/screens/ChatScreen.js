@@ -37,6 +37,7 @@ import{sendPushNotification}from'../services/notifications';
 import{uploadFile}from'../services/media';
 import VoiceRecorderBar from'../components/VoiceRecorderBar';
 import VoiceMessageBubble from'../components/VoiceMessageBubble';
+import SharedLinkCard,{parseSharedLink}from'../components/SharedLinkCard';
 
 import{
   chatIdFor,
@@ -437,14 +438,26 @@ function MessageRow({
               />
             )
             :(
-              <Text
-                style={[
-                  styles.messageText,
-                  item.unsent&&styles.unsentText
-                ]}
-              >
-                {String(item.text||'')}
-              </Text>
+              (()=>{
+                const link=item.unsent
+                  ?null
+                  :parseSharedLink(item.text);
+
+                if(link){
+                  return <SharedLinkCard link={link}/>;
+                }
+
+                return(
+                  <Text
+                    style={[
+                      styles.messageText,
+                      item.unsent&&styles.unsentText
+                    ]}
+                  >
+                    {String(item.text||'')}
+                  </Text>
+                );
+              })()
             )
           }
 
