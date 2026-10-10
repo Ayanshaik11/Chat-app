@@ -241,7 +241,8 @@ export async function setTyping(
   await setDoc(
     chatRef,
     {
-      typing: { [userId]: !!value },
+      // a changing timestamp (not true/false): the other phone checks it is fresh
+      typing: { [userId]: value ? Date.now() : 0 },
     },
     {
       merge: true,
@@ -393,7 +394,7 @@ export async function sendVoiceMessage(me, other, audioUrl, duration = 0, replyT
   const chatId = chatIdFor(me, other);
   const chatRef = doc(db, 'chats', chatId);
   const messageRef = doc(collection(db, 'chats', chatId, 'messages'));
-  const label = '🎤 Voice message';
+  const label = 'Voice message';
 
   const messageData = {
     senderId: me,
