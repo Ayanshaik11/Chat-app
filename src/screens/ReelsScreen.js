@@ -630,6 +630,23 @@ export default function ReelsScreen() {
     );
 
 
+  // Keep the feed topped up: when fewer than 4 videos are left ahead,
+  // fetch the next page without waiting for the end of the list.
+  useEffect(() => {
+    if (
+      activeTab === 'discover' &&
+      nextPageToken &&
+      !loadingMore &&
+      !loading &&
+      Array.isArray(discoverReels) &&
+      discoverReels.length - activeIndex < 4
+    ) {
+      handleLoadMore();
+    }
+  }, [activeIndex, discoverReels, nextPageToken, loadingMore, loading, activeTab, handleLoadMore]);
+
+
+
   // remember watched YouTube videos so they don't come back next time
   useEffect(() => {
     if (activeTab !== 'discover') {
@@ -1269,7 +1286,7 @@ export default function ReelsScreen() {
             : undefined
         }
 
-        onEndReachedThreshold={0.6}
+        onEndReachedThreshold={2}
 
         refreshControl={
           <RefreshControl
