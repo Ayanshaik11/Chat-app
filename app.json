@@ -78,6 +78,12 @@
         }
       ],
       [
+        "expo-share-intent",
+        {
+          "androidIntentFilters": ["text/*"]
+        }
+      ],
+      [
         "expo-av",
         {
           "microphonePermission": "Chat App needs the microphone so you can send voice messages."
