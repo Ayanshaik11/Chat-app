@@ -24,6 +24,7 @@ import SettingsScreen from '../screens/SettingsScreen';
 import CreateScreen from '../screens/CreateScreen';
 import StoryViewerScreen from '../screens/StoryViewerScreen';
 import ReelsScreen from '../screens/ReelsScreen';
+import SharePickerScreen from '../screens/SharePickerScreen';
 import { navigationRef } from './navigationRef';
 
 const Stack = createNativeStackNavigator();
@@ -106,6 +107,7 @@ export default function RootNavigator() {
             <Stack.Screen name="EditProfile" component={EditProfileScreen} />
             <Stack.Screen name="Settings" component={SettingsScreen} />
             <Stack.Screen name="Create" component={CreateScreen} />
+            <Stack.Screen name="SharePicker" component={SharePickerScreen} />
             <Stack.Screen name="StoryViewer" component={StoryViewerScreen} options={{ presentation: 'fullScreenModal', animation: 'fade' }} />
           </>
         ) : (
