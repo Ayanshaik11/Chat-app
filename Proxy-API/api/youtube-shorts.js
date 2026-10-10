@@ -74,7 +74,7 @@ module.exports = async (req, res) => {
   };
 
   const TOPICS = [
-    'instagram trending reels','Hindi dark memes','hindi songs','bollywood comedy','hindi anime edits like goku,vegeta,bulma,piccolo,trunks,gohan,eren,Mikasa,Naruto,madara,itachi,sung jinwoo,gojo,sukuna,toji'
+    'instagram trending reels','Hindi dark memes','hindi songs','bollywood comedy','hindi anime edits like goku x vegeta x bulma','piccolo x gohan', 'trunks x goten','eren x Mikasa love Hindi edits','Naruto,madara,itachi','sung jinwoo','gojo x sukuna','toji'
  ];
 
   const pickedTopics = shuffle(TOPICS).slice(0, 3);
