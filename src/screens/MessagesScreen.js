@@ -74,7 +74,9 @@ export default function MessagesScreen({navigation}){
     return <Pressable onPress={()=>openChat(friend)} style={({pressed})=>({flexDirection:'row',alignItems:'center',paddingHorizontal:16,paddingVertical:10,gap:12,backgroundColor:pressed?colors.inputBg:'transparent'})}>
       <Avatar uri={friend.photoURL||friend.photoUrl||friend.profilePic||friend.avatar} name={friend.name||friend.displayName} size={54} online={isOnline(friend)}/>
       <View style={{flex:1,minWidth:0}}>
-        <T weight={unread?'bold':'semibold'} numberOfLines={1}>{friend.name||friend.displayName||'User'}</T>
+        <Pressable onPress={()=>navigation.navigate('UserProfile',{userId:friendId})} hitSlop={6} style={{alignSelf:'flex-start',maxWidth:'100%'}}>
+          <T weight={unread?'bold':'semibold'} numberOfLines={1}>{friend.name||friend.displayName||'User'}</T>
+        </Pressable>
         <PreviewText typingValue={chat?.typing?.[friendId]} preview={preview} unread={unread}/>
       </View>
       <View style={{alignItems:'flex-end',gap:6}}>
