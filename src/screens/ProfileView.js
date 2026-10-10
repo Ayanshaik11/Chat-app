@@ -20,6 +20,7 @@ import { fetchStories } from '../services/stories';
 import { toMillis } from '../utils/helpers';
 
 import Avatar from '../components/Avatar';
+import ProfilePicViewer from '../components/ProfilePicViewer';
 import Btn from '../components/Btn';
 import RelationButton from '../components/RelationButton';
 import EmptyState from '../components/EmptyState';
@@ -60,6 +61,7 @@ export default function ProfileView({ userId, navigation }) {
   const [posts, setPosts] = useState([]);
   const [stories, setStories] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [picOpen, setPicOpen] = useState(false);
 
   useEffect(() => {
     if (isSelf) {
@@ -166,7 +168,11 @@ export default function ProfileView({ userId, navigation }) {
           gap: 8,
         }}
       >
-        <Pressable onPress={openStories}>
+        <Pressable
+          onPress={openStories}
+          onLongPress={() => user.photoURL && setPicOpen(true)}
+          delayLongPress={300}
+        >
           <Avatar
             uri={user.photoURL}
             name={user.name}
@@ -281,6 +287,8 @@ export default function ProfileView({ userId, navigation }) {
   const tile = Math.floor(width / 3);
 
   return (
+    <>
+    <ProfilePicViewer visible={picOpen} uri={user.photoURL} onClose={() => setPicOpen(false)} />
     <FlatList
       data={canSee ? posts : []}
       keyExtractor={(p) => p.id}
@@ -333,5 +341,6 @@ export default function ProfileView({ userId, navigation }) {
         )
       }
     />
+    </>
   );
 }
