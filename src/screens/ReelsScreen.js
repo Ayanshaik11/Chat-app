@@ -859,6 +859,7 @@ export default function ReelsScreen() {
         width={width}
         height={height}
         isActive={index === activeIndex && focused}
+        shouldLoad={focused && (index === activeIndex || index === activeIndex + 1)}
         muted={muted}
         onToggleMute={() => setMuted((m) => !m)}
         onShare={openShare}
