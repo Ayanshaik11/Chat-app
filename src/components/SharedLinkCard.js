@@ -3,10 +3,13 @@ import { Image, Linking, Modal, Pressable, StatusBar, Text, View, useWindowDimen
 import { WebView } from 'react-native-webview';
 import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
+import { LinearGradient } from 'expo-linear-gradient';
 import PROXY_API_URL from '../config/proxy';
 
 const YOUTUBE_RE =
   /(https?:\/\/(?:www\.|m\.)?(?:youtube\.com\/(?:shorts\/|watch\?v=)|youtu\.be\/)([A-Za-z0-9_-]{11})[^\s]*)/i;
+const INSTAGRAM_RE =
+  /(https?:\/\/(?:www\.)?instagram\.com\/(?:[A-Za-z0-9_.]+\/)?(?:reels?|p|tv)\/([A-Za-z0-9_-]+)[^\s]*)/i;
 const VIDEO_FILE_RE = /(https?:\/\/[^\s]+?(?:\.(?:mp4|mov|m4v|webm)|\/video\/upload\/[^\s]+)(?:\?[^\s]*)?)/i;
 
 /** Returns { kind, url, id?, caption } when the message holds a playable link, else null. */
@@ -21,6 +24,16 @@ export function parseSharedLink(text) {
       id: yt[2],
       isShort: /\/shorts\//i.test(yt[1]),
       caption: value.replace(yt[1], '').replace(/^\s*🎬\s*/, '').trim(),
+    };
+  }
+
+  const ig = value.match(INSTAGRAM_RE);
+  if (ig) {
+    return {
+      kind: 'instagram',
+      url: ig[1],
+      id: ig[2],
+      caption: value.replace(ig[1], '').replace(/^\s*🎬\s*/, '').trim(),
     };
   }
 
@@ -55,13 +68,24 @@ export default function SharedLinkCard({ link }) {
         <View
           style={{
             width: CARD_W,
-            height: link.kind === 'youtube' && link.isShort ? 300 : 140,
+            height: link.kind === 'instagram' ? 300 : link.kind === 'youtube' && link.isShort ? 300 : 140,
             borderRadius: 12,
             overflow: 'hidden',
             backgroundColor: '#000',
           }}
         >
-          {thumb ? (
+          {link.kind === 'instagram' ? (
+            <LinearGradient
+              colors={['#515BD4', '#8134AF', '#DD2A7B', '#F58529']}
+              start={{ x: 0, y: 1 }}
+              end={{ x: 1, y: 0 }}
+              style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
+            >
+              <Ionicons name="logo-instagram" size={64} color="rgba(255,255,255,0.9)" />
+              <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700', marginTop: 8 }}>Instagram Reel</Text>
+              <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 2 }}>Tap to watch</Text>
+            </LinearGradient>
+          ) : thumb ? (
             <Image source={{ uri: thumb }} resizeMode="cover" style={{ width: '100%', height: '100%' }} />
           ) : (
             <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#161616' }}>
@@ -84,7 +108,7 @@ export default function SharedLinkCard({ link }) {
             </View>
           </View>
 
-          {link.kind === 'youtube' && (
+          {(link.kind === 'youtube' || link.kind === 'instagram') && (
             <View
               style={{
                 position: 'absolute',
@@ -98,9 +122,13 @@ export default function SharedLinkCard({ link }) {
                 paddingVertical: 3,
               }}
             >
-              <Ionicons name="logo-youtube" size={14} color="#FF0000" />
+              <Ionicons
+                name={link.kind === 'instagram' ? 'logo-instagram' : 'logo-youtube'}
+                size={14}
+                color={link.kind === 'instagram' ? '#E1306C' : '#FF0000'}
+              />
               <Text style={{ color: '#fff', fontSize: 11, fontWeight: '600', marginLeft: 4 }}>
-                {link.isShort ? 'Shorts' : 'YouTube'}
+                {link.kind === 'instagram' ? 'Reels' : link.isShort ? 'Shorts' : 'YouTube'}
               </Text>
             </View>
           )}
@@ -134,6 +162,20 @@ export default function SharedLinkCard({ link }) {
             />
           )}
 
+          {open && link.kind === 'instagram' && (
+            <WebView
+              style={{ flex: 1, backgroundColor: '#000', marginTop: 90 }}
+              originWhitelist={['*']}
+              source={{ uri: `https://www.instagram.com/reel/${link.id}/embed/` }}
+              allowsInlineMediaPlayback
+              mediaPlaybackRequiresUserAction={false}
+              javaScriptEnabled
+              domStorageEnabled
+              allowsFullscreenVideo
+              setSupportMultipleWindows={false}
+            />
+          )}
+
           {open && link.kind === 'file' && (
             <Video
               source={{ uri: link.url }}
@@ -163,12 +205,14 @@ export default function SharedLinkCard({ link }) {
             <Ionicons name="close" size={24} color="#fff" />
           </Pressable>
 
-          {link.kind === 'youtube' && (
+          {(link.kind === 'youtube' || link.kind === 'instagram') && (
             <Pressable
               onPress={() => Linking.openURL(link.url).catch(() => {})}
               style={{ position: 'absolute', top: 50, right: 16 }}
             >
-              <Text style={{ color: '#ddd', fontSize: 13 }}>Open in YouTube</Text>
+              <Text style={{ color: '#ddd', fontSize: 13 }}>
+                {link.kind === 'instagram' ? 'Open in Instagram' : 'Open in YouTube'}
+              </Text>
             </Pressable>
           )}
         </View>
