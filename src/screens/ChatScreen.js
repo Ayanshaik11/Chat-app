@@ -41,6 +41,7 @@ import TypingDots from'../components/TypingDots';
 import{usePeerTyping}from'../utils/typing';
 import VoiceMessageBubble from'../components/VoiceMessageBubble';
 import SharedLinkCard,{parseSharedLink}from'../components/SharedLinkCard';
+import LinkText from'../components/LinkText';
 
 import{
   chatIdFor,
@@ -434,14 +435,14 @@ function MessageRow({
                 }
 
                 return(
-                  <Text
+                  <LinkText
                     style={[
                       styles.messageText,
                       item.unsent&&styles.unsentText
                     ]}
                   >
                     {String(item.text||'')}
-                  </Text>
+                  </LinkText>
                 );
               })()
             )
