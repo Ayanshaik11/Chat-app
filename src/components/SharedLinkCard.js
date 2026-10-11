@@ -79,11 +79,10 @@ export default function SharedLinkCard({ link }) {
               colors={['#515BD4', '#8134AF', '#DD2A7B', '#F58529']}
               start={{ x: 0, y: 1 }}
               end={{ x: 1, y: 0 }}
-              style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}
+              style={{ flex: 1, alignItems: 'center', justifyContent: 'flex-start', paddingTop: 26 }}
             >
               <Ionicons name="logo-instagram" size={64} color="rgba(255,255,255,0.9)" />
               <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700', marginTop: 8 }}>Instagram Reel</Text>
-              <Text style={{ color: 'rgba(255,255,255,0.85)', fontSize: 12, marginTop: 2 }}>Tap to watch</Text>
             </LinearGradient>
           ) : thumb ? (
             <Image source={{ uri: thumb }} resizeMode="cover" style={{ width: '100%', height: '100%' }} />
