@@ -1,2815 +1,720 @@
-import React,{useCallback,useEffect,useMemo,useRef,useState}from'react';
-import{
-  ActivityIndicator,
-  Alert,
-  Animated,
-  AppState,
-  FlatList,
-  Image,
-  KeyboardAvoidingView,
-  Modal,
-  PanResponder,
-  Platform,
-  Pressable,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  TextInput,
-  TouchableOpacity,
-  View
-}from'react-native';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator, Alert, Animated, AppState, FlatList, Image, KeyboardAvoidingView, Modal, PanResponder,
+  Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
+} from 'react-native';
+import * as Clipboard from 'expo-clipboard';
+import * as Haptics from 'expo-haptics';
+import { FontAwesome } from '@expo/vector-icons';
+import { collection, doc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 
-import*as Clipboard from'expo-clipboard';
-import*as Haptics from'expo-haptics';
-import{FontAwesome}from'@expo/vector-icons';
+import { db } from '../config/firebase';
+import { sendPushNotification } from '../services/notifications';
+import { uploadFile, pickMedia, mimeOf } from '../services/media';
+import { usePeerTyping } from '../utils/typing';
+import {
+  chatIdFor, deleteMessageForMe, markChatRead, markMessagesSeen, reactToMessage, removeReaction,
+  sendImageMessage, sendMessage, sendVoiceMessage, setTyping, unsendMessage,
+} from '../services/chat';
 
-import{
-  collection,
-  doc,
-  limit,
-  onSnapshot,
-  orderBy,
-  query
-}from'firebase/firestore';
+import VoiceRecorderBar from '../components/VoiceRecorderBar';
+import VoiceMessageBubble from '../components/VoiceMessageBubble';
+import TypingDots from '../components/TypingDots';
+import SharedLinkCard, { parseSharedLink } from '../components/SharedLinkCard';
+import LinkText from '../components/LinkText';
+import ChatGalleryPicker from '../components/ChatGalleryPicker';
+import ChatImageBubble from '../components/ChatImageBubble';
 
-import{db}from'../config/firebase';
-import{sendPushNotification}from'../services/notifications';
-import{uploadFile}from'../services/media';
-import VoiceRecorderBar from'../components/VoiceRecorderBar';
-import TypingDots from'../components/TypingDots';
-import{usePeerTyping}from'../utils/typing';
-import VoiceMessageBubble from'../components/VoiceMessageBubble';
-import SharedLinkCard,{parseSharedLink}from'../components/SharedLinkCard';
-import LinkText from'../components/LinkText';
-
-import{
-  chatIdFor,
-  deleteMessageForMe,
-  markChatRead,
-  markMessagesSeen,
-  reactToMessage,
-  removeReaction,
-  sendMessage,
-  sendVoiceMessage,
-  setTyping,
-  unsendMessage
-}from'../services/chat';
-
-
-const RED='#E11D2A';
-const BG='#080808';
-const CARD='#171717';
-const BORDER='#292929';
-const TEXT='#FFF';
-const MUTED='#8F8F8F';
-
-const QUICK=['❤️','😂','😅','😢','🔥','👍'];
-
-const EXTRA=[
-  '👎','👏','🙌','😍','🥰','😘','🤣','😎','🤔','😮',
-  '😱','😡','😭','🥹','🤗','😴','🤩','💀','🤝','🙏',
-  '💯','✨','🎉','💔','❤️‍🔥','🫶','👀','🚀','😈','🍌'
+const RED = '#E11D2A', BG = '#080808', CARD = '#171717', BORDER = '#292929', MUTED = '#8F8F8F';
+const MAX_PHOTOS = 10;
+const QUICK = ['❤️', '😂', '😅', '😢', '🔥', '👍'];
+const EXTRA = [
+  '👎', '👏', '🙌', '😍', '🥰', '😘', '🤣', '😎', '🤔', '😮', '😱', '😡', '😭', '🥹', '🤗',
+  '😴', '🤩', '💀', '🤝', '🙏', '💯', '✨', '🎉', '💔', '❤️‍🔥', '🫶', '👀', '🚀', '😈', '🍌',
 ];
 
+/* ---------- small helpers ---------- */
 
-function millis(v){
-  try{
-    if(!v)return 0;
+const ms = (v) => {
+  try { return v?.toMillis?.() ?? v?.toDate?.().getTime() ?? (v ? new Date(v).getTime() || 0 : 0); } catch { return 0; }
+};
 
-    if(typeof v.toMillis==='function'){
-      return v.toMillis();
-    }
+const seenTime = (v) => {
+  const m = ms(v), d = Date.now() - m;
+  if (!m || d < 6e4) return 'Seen just now';
+  if (d < 36e5) return `Seen ${Math.floor(d / 6e4)}m ago`;
+  if (d < 864e5) return `Seen ${Math.floor(d / 36e5)}h ago`;
+  return `Seen ${new Date(m).toLocaleDateString()}`;
+};
 
-    if(typeof v.toDate==='function'){
-      return v.toDate().getTime();
-    }
+// replied-message fields can be stored under slightly different keys
+const rText = (r) => String(r?.text ?? r?.message ?? r?.content ?? r?.body ?? '');
+const rSender = (r) => r?.senderId ?? r?.uid ?? r?.userId ?? null;
+const rName = (r) => r?.senderName ?? r?.name ?? r?.displayName ?? '';
+const photoOf = (p) => p?.photoURL || p?.photoUrl || p?.profilePic || p?.avatar || '';
+const nameOf = (p) => p?.displayName || p?.name || 'User';
 
-    if(v instanceof Date){
-      return v.getTime();
-    }
+const Avatar = ({ uri, name, size = 40 }) => (
+  <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: RED, alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+    {uri
+      ? <Image source={{ uri }} style={{ width: '100%', height: '100%' }} />
+      : <Text style={{ color: '#fff', fontWeight: '800', fontSize: size * 0.42 }}>{name.charAt(0).toUpperCase()}</Text>}
+  </View>
+);
 
-    const n=new Date(v).getTime();
-
-    return Number.isNaN(n)?0:n;
-  }catch{
-    return 0;
-  }
-}
-
-
-function seenTime(v){
-  const m=millis(v);
-
-  if(!m)return'Seen just now';
-
-  const d=Math.max(0,Date.now()-m);
-
-  if(d<60000)return'Seen just now';
-
-  if(d<3600000){
-    return`Seen ${Math.floor(d/60000)}m ago`;
-  }
-
-  if(d<86400000){
-    return`Seen ${Math.floor(d/3600000)}h ago`;
-  }
-
-  return`Seen ${new Date(m).toLocaleDateString()}`;
-}
-
-
-/*
-  Different versions of chat data can sometimes store the
-  replied message text under slightly different keys.
-
-  This helper makes the UI tolerant of all of them.
-*/
-function getReplyText(reply){
-  if(!reply)return'';
-
-  return String(
-    reply.text ??
-    reply.message ??
-    reply.content ??
-    reply.body ??
-    ''
-  );
-}
-
-
-function getReplySenderId(reply){
-  if(!reply)return null;
-
-  return(
-    reply.senderId ??
-    reply.uid ??
-    reply.userId ??
-    null
-  );
-}
-
-
-function getReplySenderName(reply){
-  if(!reply)return'';
-
-  return(
-    reply.senderName ??
-    reply.name ??
-    reply.displayName ??
-    ''
-  );
-}
-
+const MenuItem = ({ icon, label, onPress, danger }) => (
+  <TouchableOpacity style={styles.menuItem} onPress={onPress}>
+    <View style={[styles.menuIcon, danger && { backgroundColor: 'rgba(225,29,42,.16)' }]}>
+      <FontAwesome name={icon} size={16} color={danger ? RED : '#fff'} />
+    </View>
+    <Text style={[styles.menuLabel, danger && { color: RED }]}>{label}</Text>
+  </TouchableOpacity>
+);
 
 /* =========================================================
-   MESSAGE ROW
+   ONE MESSAGE (swipe to reply, long press for the menu)
    ========================================================= */
 
-function MessageRow({
-  item,
-  showSeen,
-  onLongPress,
-  onReply,
-  onReactionPress,
-  inputRef
-}){
-  const mine=item.senderId===item._meId;
+function MessageRow({ item, showSeen, onLongPress, onReply, onReactionPress, inputRef }) {
+  const mine = item.senderId === item._meId;
+  const dir = mine ? -1 : 1; // your messages swipe right-to-left, friends' left-to-right
+  const x = useRef(new Animated.Value(0)).current;
+  const longRef = useRef(false);
+  const itemRef = useRef(item); itemRef.current = item;
+  const replyRef = useRef(onReply); replyRef.current = onReply;
 
-  const x=useRef(new Animated.Value(0)).current;
-
-  const long=useRef(false);
-
-  /*
-    IMPORTANT SWIPE RULE:
-
-    Friend message:
-      LEFT -> RIGHT
-      dx > 0
-
-    Your message:
-      RIGHT -> LEFT
-      dx < 0
-  */
-
-  const allowedDirection=mine?'left':'right';
-
-  const shouldSwipe=(dx,dy)=>{
-    if(Math.abs(dx)<8)return false;
-
-    if(Math.abs(dx)<=Math.abs(dy)+5)return false;
-
-    if(allowedDirection==='left'){
-      return dx<0;
-    }
-
-    return dx>0;
-  };
-
-
-  // keep the latest message/callback without rebuilding the gesture
-  const itemRef=useRef(item);
-  itemRef.current=item;
-  const onReplyRef=useRef(onReply);
-  onReplyRef.current=onReply;
-
-  // built once per row (not on every render), so a re-render in the middle of a
-  // swipe can no longer reset the gesture
-  const replySwipe=useMemo(()=>PanResponder.create({
-
-    onStartShouldSetPanResponder:()=>false,
-
-    onMoveShouldSetPanResponderCapture:(_,g)=>{
-      return shouldSwipe(g.dx,g.dy);
-    },
-
-    onMoveShouldSetPanResponder:(_,g)=>{
-      return shouldSwipe(g.dx,g.dy);
-    },
-
-    onPanResponderTerminationRequest:()=>false,
-
-    onShouldBlockNativeResponder:()=>true,
-
-
-    onPanResponderMove:(_,g)=>{
-
-      if(mine){
-
-        /*
-          Your message:
-          only allow RIGHT -> LEFT
-        */
-
-        if(g.dx<0){
-          x.setValue(Math.max(g.dx,-90));
+  // built once per row, so a re-render in the middle of a swipe can't reset it
+  const swipe = useMemo(() => {
+    const back = () => Animated.spring(x, { toValue: 0, speed: 30, bounciness: 4, useNativeDriver: true }).start();
+    const ok = (dx, dy) => Math.abs(dx) >= 8 && Math.abs(dx) > Math.abs(dy) + 5 && dx * dir > 0;
+    return PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, g) => ok(g.dx, g.dy),
+      onMoveShouldSetPanResponderCapture: (_, g) => ok(g.dx, g.dy),
+      onPanResponderTerminationRequest: () => false,
+      onShouldBlockNativeResponder: () => true,
+      onPanResponderMove: (_, g) => { if (g.dx * dir > 0) x.setValue(Math.max(-90, Math.min(90, g.dx))); },
+      onPanResponderRelease: (_, g) => {
+        back();
+        if (g.dx * dir >= 55) {
+          replyRef.current(itemRef.current);
+          requestAnimationFrame(() => inputRef?.current?.focus());
         }
+      },
+      onPanResponderTerminate: back,
+    });
+  }, [mine]);
 
-      }else{
-
-        /*
-          Friend message:
-          only allow LEFT -> RIGHT
-        */
-
-        if(g.dx>0){
-          x.setValue(Math.min(g.dx,90));
-        }
-      }
-    },
-
-
-    onPanResponderRelease:(_,g)=>{
-
-      const shouldReply=mine
-        ?g.dx<=-55
-        :g.dx>=55;
-
-      Animated.spring(x,{
-        toValue:0,
-        speed:30,
-        bounciness:4,
-        useNativeDriver:true
-      }).start();
-
-      if(shouldReply){
-
-        onReplyRef.current(itemRef.current);
-
-        requestAnimationFrame(()=>{
-          inputRef?.current?.focus();
-        });
-      }
-    },
-
-
-    onPanResponderTerminate:()=>{
-
-      Animated.spring(x,{
-        toValue:0,
-        speed:30,
-        bounciness:4,
-        useNativeDriver:true
-      }).start();
-    }
-  }),[mine]);
-
-
-  const longPress=async()=>{
-
-    if(long.current)return;
-
-    long.current=true;
-
-    try{
-      await Haptics.impactAsync(
-        Haptics.ImpactFeedbackStyle.Light
-      );
-    }catch{}
-
+  const longPress = async () => {
+    if (longRef.current) return;
+    longRef.current = true;
+    try { await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
     onLongPress(item);
-
-    setTimeout(()=>{
-      long.current=false;
-    },250);
+    setTimeout(() => { longRef.current = false; }, 250);
   };
 
+  const counts = {};
+  Object.values(item.reactions || {}).forEach((e) => e && (counts[e] = (counts[e] || 0) + 1));
 
-  const counts={};
+  const hasReply = !!item.replyTo && !item.unsent;
+  const replyName = rSender(item.replyTo) === item._meId ? 'You' : rName(item.replyTo) || 'Message';
 
-  Object.values(item.reactions||{}).forEach(e=>{
-    if(e){
-      counts[e]=(counts[e]||0)+1;
+  const body = () => {
+    if (item.unsent) return <Text style={[styles.text, styles.unsentText]}>{item.text}</Text>;
+    if (item.type === 'image' && item.images?.length) {
+      return (
+        <View>
+          <ChatImageBubble images={item.images} />
+          {!!item.caption && <LinkText style={[styles.text, { marginTop: 6 }]}>{item.caption}</LinkText>}
+        </View>
+      );
     }
-  });
+    if (item.type === 'audio' && item.audioUrl) return <VoiceMessageBubble url={item.audioUrl} duration={item.duration || 0} />;
+    const link = parseSharedLink(item.text);
+    return link ? <SharedLinkCard link={link} /> : <LinkText style={styles.text}>{String(item.text || '')}</LinkText>;
+  };
 
-
-  const hasReply=
-    !!item.replyTo &&
-    !item.unsent;
-
-
-  const replySenderId=getReplySenderId(item.replyTo);
-
-  const replyName=
-    replySenderId===item._meId
-      ?'You'
-      :getReplySenderName(item.replyTo)||'Message';
-
-
-  const replyText=getReplyText(item.replyTo);
-
-
-  return(
-    <View
-      style={[
-        styles.messageOuter,
-        {
-          alignItems:mine
-            ?'flex-end'
-            :'flex-start'
-        }
-      ]}
-    >
-
+  return (
+    <View style={[styles.row, { alignItems: mine ? 'flex-end' : 'flex-start' }]}>
       <Animated.View
-        {...replySwipe.panHandlers}
-        style={[
-          styles.messageAnimated,
-          {
-            alignSelf:mine
-              ?'flex-end'
-              :'flex-start',
-
-            transform:[
-              {translateX:x}
-            ]
-          }
-        ]}
+        {...swipe.panHandlers}
+        style={{ maxWidth: '78%', flexShrink: 1, minWidth: 0, alignSelf: mine ? 'flex-end' : 'flex-start', transform: [{ translateX: x }] }}
       >
-
         <Pressable
           onLongPress={longPress}
           delayLongPress={300}
-          style={[
-            styles.messageBubble,
-
-            mine
-              ?styles.myBubble
-              :styles.otherBubble,
-
-            item.unsent&&styles.unsentBubble,
-
-            // a short reply must still be wide enough to show the quoted message
-            hasReply&&styles.replyBubble
-          ]}
+          style={[styles.bubble, mine ? styles.mine : styles.theirs, item.unsent && styles.unsent, hasReply && { minWidth: 230 }]}
         >
-
-          {/* ================= REPLY PREVIEW ================= */}
-
-          {hasReply&&(
-            <View style={styles.replyQuote}>
-
-              <View style={styles.replyAccent}/>
-
-              <View style={styles.replyQuoteContent}>
-
-                <Text
-                  style={styles.replyQuoteTitle}
-                  numberOfLines={1}
-                >
-                  {replyName}
-                </Text>
-
-                <Text
-                  style={styles.replyQuoteText}
-                  numberOfLines={2}
-                  ellipsizeMode="tail"
-                >
-                  {replyText||'Message'}
-                </Text>
-
+          {hasReply && (
+            <View style={styles.quote}>
+              <View style={styles.quoteBar} />
+              <View style={styles.quoteBody}>
+                <Text style={styles.quoteName} numberOfLines={1}>{replyName}</Text>
+                <Text style={styles.quoteText} numberOfLines={2}>{rText(item.replyTo) || 'Message'}</Text>
               </View>
-
             </View>
           )}
-
-
-          {/* ================= MESSAGE TEXT ================= */}
-
-          {item.type==='audio'&&item.audioUrl&&!item.unsent
-            ?(
-              <VoiceMessageBubble
-                url={item.audioUrl}
-                duration={item.duration||0}
-              />
-            )
-            :(
-              (()=>{
-                const link=item.unsent
-                  ?null
-                  :parseSharedLink(item.text);
-
-                if(link){
-                  return <SharedLinkCard link={link}/>;
-                }
-
-                return(
-                  <LinkText
-                    style={[
-                      styles.messageText,
-                      item.unsent&&styles.unsentText
-                    ]}
-                  >
-                    {String(item.text||'')}
-                  </LinkText>
-                );
-              })()
-            )
-          }
-
-
-          {item.unsent&&(
-            <Text style={styles.unsentLabel}>
-              Unsent message
-            </Text>
-          )}
-
+          {body()}
+          {item.unsent && <Text style={styles.unsentLabel}>Unsent message</Text>}
         </Pressable>
 
-
-        {/* ================= REACTIONS ================= */}
-
-        {Object.keys(counts).length>0&&(
-          <View
-            style={[
-              styles.reactionRow,
-              {
-                justifyContent:mine
-                  ?'flex-end'
-                  :'flex-start'
-              }
-            ]}
-          >
-            {Object.entries(counts).map(([e,c])=>(
-              <TouchableOpacity
-                key={e}
-                style={styles.reactionChip}
-                onPress={()=>onReactionPress(item,e)}
-              >
-                <Text style={styles.reactionEmoji}>
-                  {e}
-                </Text>
-
-                {c>1&&(
-                  <Text style={styles.reactionCount}>
-                    {c}
-                  </Text>
-                )}
+        {Object.keys(counts).length > 0 && (
+          <View style={[styles.reactions, { justifyContent: mine ? 'flex-end' : 'flex-start' }]}>
+            {Object.entries(counts).map(([e, c]) => (
+              <TouchableOpacity key={e} style={styles.chip} onPress={() => onReactionPress(item, e)}>
+                <Text style={{ fontSize: 15 }}>{e}</Text>
+                {c > 1 && <Text style={styles.chipCount}>{c}</Text>}
               </TouchableOpacity>
             ))}
           </View>
         )}
-
       </Animated.View>
 
-
-      {showSeen&&(
-        <Text style={styles.seenText}>
-          {seenTime(item.seenBy?.[item._otherId])}
-        </Text>
-      )}
-
+      {showSeen && <Text style={styles.seen}>{seenTime(item.seenBy?.[item._otherId])}</Text>}
     </View>
   );
 }
-
 
 /* =========================================================
    CHAT SCREEN
    ========================================================= */
 
-export default function ChatScreen({
-  route,
-  navigation
-}){
+export default function ChatScreen({ route, navigation }) {
+  const { user, otherUser, friendProfiles = {} } = route.params || {};
+  const me = user || {}, other = otherUser || {};
+  const meId = me.id || me.uid || null;
+  const otherId = other.id || other.uid || null;
+  const chatId = chatIdFor(meId, otherId);
+  const profile = friendProfiles?.[otherId] || other;
+  const name = nameOf(profile);
 
-  const{
-    user,
-    otherUser,
-    friendProfiles={}
-  }=route.params||{};
+  const [messages, setMessages] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [text, setText] = useState('');
+  const [replyingTo, setReplyingTo] = useState(null);
+  const [menuMessage, setMenuMessage] = useState(null);
+  const [reactionMessage, setReactionMessage] = useState(null);
+  const [extra, setExtra] = useState(false);
+  const [forward, setForward] = useState(false);
+  const [selected, setSelected] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [recordingVoice, setRecordingVoice] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [pending, setPending] = useState([]);
+  const [sendingPhotos, setSendingPhotos] = useState(false);
+  const [peerTypingValue, setPeerTypingValue] = useState(0);
 
+  const inputRef = useRef(null);
+  const menuAnim = useRef(new Animated.Value(0)).current;
+  const typingOn = useRef(false);
+  const typingWrite = useRef(0);
+  const typingTimer = useRef(null);
+  const otherTyping = usePeerTyping(peerTypingValue);
 
-  const me=user||{};
-  const other=otherUser||{};
+  /* ---------- typing ---------- */
 
-
-  const meId=
-    me.id||
-    me.uid||
-    null;
-
-
-  const otherId=
-    other.id||
-    other.uid||
-    null;
-
-
-  const chatId=
-    chatIdFor(
-      meId,
-      otherId
-    );
-
-
-  const profile=
-    friendProfiles?.[otherId]||
-    other;
-
-
-  const photo=
-    profile?.photoURL||
-    profile?.photoUrl||
-    profile?.profilePic||
-    profile?.avatar||
-    '';
-
-
-  const name=
-    profile?.displayName||
-    profile?.name||
-    'User';
-
-
-  const[
-    messages,
-    setMessages
-  ]=useState([]);
-
-
-  const[
-    loading,
-    setLoading
-  ]=useState(true);
-
-
-  const[
-    text,
-    setText
-  ]=useState('');
-
-
-  const[
-    replyingTo,
-    setReplyingTo
-  ]=useState(null);
-
-
-  const[
-    menuMessage,
-    setMenuMessage
-  ]=useState(null);
-
-
-  const[
-    reactionMessage,
-    setReactionMessage
-  ]=useState(null);
-
-
-  const[
-    reactionEmoji,
-    setReactionEmoji
-  ]=useState(null);
-
-
-  const[
-    extra,
-    setExtra
-  ]=useState(false);
-
-
-  const[
-    forward,
-    setForward
-  ]=useState(false);
-
-
-  const[
-    selected,
-    setSelected
-  ]=useState([]);
-
-
-  const[
-    sending,
-    setSending
-  ]=useState(false);
-
-
-  const inputRef=useRef(null);
-
-  const menuAnim=
-    useRef(
-      new Animated.Value(0)
-    ).current;
-
-
-  /* =========================================================
-     VOICE MESSAGES
-     ========================================================= */
-
-  const[recordingVoice,setRecordingVoice]=useState(false);
-
-  const sendVoice=async(uri,duration)=>{
-    try{
-      const url=await uploadFile(
-        uri,
-        `voice/${chatId}/${Date.now()}.m4a`,
-        'audio/m4a'
-      );
-
-      await sendVoiceMessage(meId,otherId,url,duration);
-
-      sendPushNotification({
-        toUserId:otherId,
-        title:me.name||'New message',
-        body:'Voice message',
-        data:{
-          type:'message',
-          fromId:meId,
-          fromName:me.name||'',
-          fromPhoto:me.photoURL||''
-        }
-      }).catch(()=>{});
-    }catch(e){
-      Alert.alert(
-        'Voice message failed',
-        e?.message||'Could not send the voice message.'
-      );
-    }finally{
-      setRecordingVoice(false);
-    }
+  const stopTyping = () => {
+    clearTimeout(typingTimer.current);
+    if (!typingOn.current) return;
+    typingOn.current = false;
+    typingWrite.current = 0;
+    setTyping(chatId, meId, false).catch(() => {});
   };
 
-
-  /* =========================================================
-     TYPING INDICATOR
-     ========================================================= */
-
-  const[peerTypingValue,setPeerTypingValue]=useState(0);
-  const otherTyping=usePeerTyping(peerTypingValue);
-  const lastTypingWrite=useRef(0);
-  const typingActiveRef=useRef(false);
-  const typingTimerRef=useRef(null);
-
-  const stopTyping=()=>{
-    clearTimeout(typingTimerRef.current);
-    if(typingActiveRef.current){
-      typingActiveRef.current=false;
-      lastTypingWrite.current=0;
-      setTyping(chatId,meId,false).catch(()=>{});
-    }
-  };
-
-  const handleTextChange=(value)=>{
+  const onChangeText = (value) => {
     setText(value);
-    if(!meId||!otherId)return;
-    if(!value.trim()){
-      stopTyping();
-      return;
+    if (!meId || !otherId) return;
+    if (!value.trim()) return stopTyping();
+    // refresh the timestamp every 3s so the other phone can tell "typing" from "stuck"
+    if (!typingOn.current || Date.now() - typingWrite.current > 3000) {
+      typingOn.current = true;
+      typingWrite.current = Date.now();
+      setTyping(chatId, meId, true).catch(() => {});
     }
-    // refresh the timestamp every 3s while typing so the other phone can
-    // tell the difference between "still typing" and "stuck"
-    if(
-      !typingActiveRef.current||
-      Date.now()-lastTypingWrite.current>3000
-    ){
-      typingActiveRef.current=true;
-      lastTypingWrite.current=Date.now();
-      setTyping(chatId,meId,true).catch(()=>{});
-    }
-    clearTimeout(typingTimerRef.current);
-    typingTimerRef.current=setTimeout(stopTyping,3500);
+    clearTimeout(typingTimer.current);
+    typingTimer.current = setTimeout(stopTyping, 3500);
   };
 
-  // stop typing when the app goes to the background
-  useEffect(()=>{
-    const sub=AppState.addEventListener('change',state=>{
-      if(state!=='active')stopTyping();
-    });
-    return()=>sub.remove();
-  },[chatId,meId]);
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => s !== 'active' && stopTyping());
+    return () => sub.remove();
+  }, [chatId, meId]);
 
-  // stop typing when leaving the chat
-  useEffect(()=>()=>{
-    clearTimeout(typingTimerRef.current);
-    if(typingActiveRef.current&&chatId&&meId){
-      setTyping(chatId,meId,false).catch(()=>{});
-    }
-  },[chatId,meId]);
+  useEffect(() => () => {
+    clearTimeout(typingTimer.current);
+    if (typingOn.current && chatId && meId) setTyping(chatId, meId, false).catch(() => {});
+  }, [chatId, meId]);
 
-  // watch whether the other person is typing
-  useEffect(()=>{
-    if(!chatId||!otherId)return undefined;
-    return onSnapshot(
-      doc(db,'chats',chatId),
-      snap=>setPeerTypingValue(snap.data()?.typing?.[otherId]||0),
-      ()=>{}
-    );
-  },[chatId,otherId]);
+  useEffect(() => {
+    if (!chatId || !otherId) return undefined;
+    return onSnapshot(doc(db, 'chats', chatId), (s) => setPeerTypingValue(s.data()?.typing?.[otherId] || 0), () => {});
+  }, [chatId, otherId]);
 
+  /* ---------- messages ---------- */
 
-  /* =========================================================
-     FIRESTORE LISTENER
-     ========================================================= */
-
-  useEffect(()=>{
-
-    if(!meId||!otherId){
-
-      setLoading(false);
-
-      return;
-    }
-
-
-    const q=query(
-      collection(
-        db,
-        'chats',
-        chatId,
-        'messages'
-      ),
-      orderBy(
-        'createdAt',
-        'desc'
-      ),
-      limit(80)
-    );
-
-
+  useEffect(() => {
+    if (!meId || !otherId) { setLoading(false); return undefined; }
+    const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('createdAt', 'desc'), limit(80));
     return onSnapshot(
       q,
-
-      async snap=>{
-
-        const data=
-          snap.docs
-            .map(d=>({
-              id:d.id,
-              ...d.data()
-            }))
-            .filter(
-              m=>!(m.deletedFor||[])
-                .includes(meId)
-            );
-
-
-        const mapped=
-          data.map(m=>({
-            ...m,
-            _meId:meId,
-            _otherId:otherId
-          }));
-
-
-        setMessages(mapped);
+      async (snap) => {
+        const list = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }))
+          .filter((m) => !(m.deletedFor || []).includes(meId))
+          .map((m) => ({ ...m, _meId: meId, _otherId: otherId }));
+        setMessages(list);
         setLoading(false);
-
-
-        try{
-
-          await markChatRead(
-            chatId,
-            meId
-          );
-
-          await markMessagesSeen(
-            chatId,
-            mapped,
-            meId
-          );
-
-        }catch(e){
-
-          console.log(
-            'Read/seen:',
-            e?.message||e
-          );
-        }
-
+        try { await markChatRead(chatId, meId); await markMessagesSeen(chatId, list, meId); }
+        catch (e) { console.log('Read/seen:', e?.message || e); }
       },
-
-      e=>{
-
-        console.log(
-          'Messages:',
-          e?.message||e
-        );
-
-        setLoading(false);
-      }
+      (e) => { console.log('Messages:', e?.message || e); setLoading(false); }
     );
+  }, [chatId, meId, otherId]);
 
-  },[
-    chatId,
-    meId,
-    otherId
-  ]);
-
-
-  /* =========================================================
-     LATEST SEEN
-     ========================================================= */
-
-  const latestSeen=useMemo(
-    ()=>messages.find(
-      m=>
-        m.senderId===meId&&
-        m.seenBy?.[otherId]
-    )?.id||null,
-    [
-      messages,
-      meId,
-      otherId
-    ]
+  const latestSeen = useMemo(
+    () => messages.find((m) => m.senderId === meId && m.seenBy?.[otherId])?.id || null,
+    [messages, meId, otherId]
   );
 
+  /* ---------- action menu ---------- */
 
-  /* =========================================================
-     MENU
-     ========================================================= */
+  const closeMenu = useCallback(() => {
+    Animated.timing(menuAnim, { toValue: 0, duration: 80, useNativeDriver: true }).start(() => setMenuMessage(null));
+  }, [menuAnim]);
 
-  const closeMenu=useCallback(
-    ()=>{
+  const openMenu = useCallback((m) => {
+    setMenuMessage(m);
+    menuAnim.setValue(0);
+    requestAnimationFrame(() => Animated.timing(menuAnim, { toValue: 1, duration: 100, useNativeDriver: true }).start());
+  }, [menuAnim]);
 
-      Animated.timing(
-        menuAnim,
-        {
-          toValue:0,
-          duration:80,
-          useNativeDriver:true
-        }
-      ).start(
-        ()=>setMenuMessage(null)
-      );
+  const handleReply = useCallback((m) => {
+    if (!m || m.unsent) return;
+    setReplyingTo(m);
+    closeMenu();
+    requestAnimationFrame(() => inputRef.current?.focus());
+  }, [closeMenu]);
 
-    },
-    [menuAnim]
-  );
+  const fail = (title) => (e) => Alert.alert(title, e?.message || 'Something went wrong.');
 
-
-  const openMenu=useCallback(
-    m=>{
-
-      setMenuMessage(m);
-
-      menuAnim.setValue(0);
-
-      requestAnimationFrame(()=>{
-        Animated.timing(
-          menuAnim,
-          {
-            toValue:1,
-            duration:100,
-            useNativeDriver:true
-          }
-        ).start();
-      });
-
-    },
-    [menuAnim]
-  );
-
-
-  /* =========================================================
-     REPLY
-     ========================================================= */
-
-  const handleReply=useCallback(
-    m=>{
-
-      if(!m||m.unsent)return;
-
-      setReplyingTo(m);
-
-      closeMenu();
-
-      requestAnimationFrame(()=>{
-        inputRef.current?.focus();
-      });
-
-    },
-    [closeMenu]
-  );
-
-
-  /* =========================================================
-     REACTION
-     ========================================================= */
-
-  const react=async e=>{
-
-    if(!menuMessage?.id)return;
-
-    try{
-
-      await reactToMessage(
-        chatId,
-        menuMessage.id,
-        meId,
-        e
-      );
-
-      setExtra(false);
-
-      closeMenu();
-
-    }catch(err){
-
-      Alert.alert(
-        'Reaction failed',
-        err?.message||
-        'Unable to react.'
-      );
-    }
+  const react = async (emoji) => {
+    if (!menuMessage?.id) return;
+    try { await reactToMessage(chatId, menuMessage.id, meId, emoji); setExtra(false); closeMenu(); }
+    catch (e) { fail('Reaction failed')(e); }
   };
 
+  // tapping your own reaction offers to remove it; any other reaction opens the menu
+  const reactionPress = (m, emoji) => (m.reactions?.[meId] === emoji ? setReactionMessage(m) : openMenu(m));
 
-  const reactionPress=(m,e)=>{
-
-    if(
-      m.reactions?.[meId]===e
-    ){
-
-      setReactionMessage(m);
-      setReactionEmoji(e);
-
-    }else{
-
-      setMenuMessage(m);
-
-      menuAnim.setValue(0);
-
-      requestAnimationFrame(()=>{
-        Animated.timing(
-          menuAnim,
-          {
-            toValue:1,
-            duration:100,
-            useNativeDriver:true
-          }
-        ).start();
-      });
-    }
-  };
-
-
-  const removeReact=async()=>{
-
-    if(!reactionMessage?.id)return;
-
-    try{
-
-      await removeReaction(
-        chatId,
-        reactionMessage.id,
-        meId
-      );
-
-    }catch(e){
-
-      Alert.alert(
-        'Error',
-        e?.message||
-        'Could not remove reaction.'
-      );
-    }
-
+  const removeReact = async () => {
+    try { await removeReaction(chatId, reactionMessage.id, meId); } catch (e) { fail('Error')(e); }
     setReactionMessage(null);
-    setReactionEmoji(null);
   };
 
-
-  /* =========================================================
-     UNSEND / DELETE / COPY
-     ========================================================= */
-
-  const unsend=async()=>{
-
-    if(!menuMessage?.id)return;
-
+  const unsend = async () => {
+    const id = menuMessage?.id;
     closeMenu();
-
-    try{
-
-      await unsendMessage(
-        chatId,
-        menuMessage.id,
-        meId
-      );
-
-    }catch(e){
-
-      Alert.alert(
-        'Error',
-        e?.message||
-        'Could not unsend message.'
-      );
-    }
+    if (id) unsendMessage(chatId, id, meId).catch(fail('Could not unsend'));
   };
 
-
-  const deleteForMe=async()=>{
-
-    if(!menuMessage?.id)return;
-
+  const deleteForMe = async () => {
+    const id = menuMessage?.id;
     closeMenu();
-
-    try{
-
-      await deleteMessageForMe(
-        chatId,
-        menuMessage.id,
-        meId
-      );
-
-    }catch(e){
-
-      Alert.alert(
-        'Error',
-        e?.message||
-        'Could not delete message.'
-      );
-    }
+    if (id) deleteMessageForMe(chatId, id, meId).catch(fail('Could not delete'));
   };
 
-
-  const copy=async()=>{
-
-    if(menuMessage?.text){
-
-      try{
-
-        await Clipboard.setStringAsync(
-          menuMessage.text
-        );
-
-      }catch{}
-    }
-
+  const copy = async () => {
+    try { if (menuMessage?.text) await Clipboard.setStringAsync(menuMessage.text); } catch {}
     closeMenu();
   };
 
+  /* ---------- forward ---------- */
 
-  /* =========================================================
-     FORWARD
-     ========================================================= */
+  const friends = Object.values(friendProfiles || {}).map((f) => ({ ...f, id: f?.id || f?.uid })).filter((f) => f.id && f.id !== meId);
 
-  const toggleFriend=id=>
-    setSelected(
-      x=>
-        x.includes(id)
-          ?x.filter(v=>v!==id)
-          :[...x,id]
-    );
-
-
-  const openForward=()=>{
-
-    if(!menuMessage)return;
-
+  const openForward = () => {
     setSelected([]);
-
     closeMenu();
-
-    setTimeout(
-      ()=>setForward(true),
-      100
-    );
+    setTimeout(() => setForward(true), 100);
   };
 
-
-  const doForward=async()=>{
-
-    if(!menuMessage?.text)return;
-
-    if(!selected.length){
-
-      Alert.alert(
-        'Select friends',
-        'Choose at least one friend.'
-      );
-
-      return;
-    }
-
-
-    try{
-
-      setSending(true);
-
-      for(const id of selected){
-
-        await sendMessage(
-          meId,
-          id,
-          menuMessage.text
-        );
-      }
-
-
-      setForward(false);
-      setSelected([]);
-      setMenuMessage(null);
-
-    }catch(e){
-
-      Alert.alert(
-        'Forward failed',
-        e?.message||
-        'Could not forward message.'
-      );
-
-    }finally{
-
-      setSending(false);
-    }
+  const doForward = async () => {
+    if (!menuMessage?.text) return;
+    setBusy(true);
+    try {
+      for (const id of selected) await sendMessage(meId, id, menuMessage.text);
+      setForward(false); setSelected([]); setMenuMessage(null);
+    } catch (e) { fail('Forward failed')(e); }
+    setBusy(false);
   };
 
+  /* ---------- sending ---------- */
 
-  /* =========================================================
-     SEND MESSAGE
-     ========================================================= */
+  const replyData = () => replyingTo && {
+    id: replyingTo.id,
+    text: rText(replyingTo),
+    senderId: replyingTo.senderId,
+    senderName: replyingTo.senderId === meId ? 'You' : replyingTo.senderName || name,
+  };
 
-  const send=async()=>{
+  const notify = (body) => sendPushNotification({
+    toUserId: otherId,
+    title: me.name || 'New message',
+    body,
+    data: { type: 'message', fromId: meId, fromName: me.name || '', fromPhoto: me.photoURL || '' },
+  }).catch(() => {});
 
-    const clean=text.trim();
-
-    if(!clean)return;
-
-
-    const reply=replyingTo
-      ?{
-          id:replyingTo.id,
-
-          text:getReplyText(
-            replyingTo
-          ),
-
-          senderId:
-            replyingTo.senderId,
-
-          senderName:
-            replyingTo.senderId===meId
-              ?'You'
-              :replyingTo.senderName||
-                name||
-                'Message'
-        }
-      :null;
-
-
-    setText('');
-    stopTyping();
-
-    setReplyingTo(null);
-
-    setSending(true);
-
-
-    try{
-
-      // Firestore queues the message and keeps retrying by itself when the
-      // connection is bad, but its promise only finishes once the server
-      // answers. Waiting for that blocked the whole chat, so after 6 seconds
-      // we let the message continue sending in the background.
-      await Promise.race([
-        sendMessage(
-          meId,
-          otherId,
-          clean,
-          reply
-        ),
-        new Promise(resolve=>setTimeout(resolve,6000))
-      ]);
-
-      // Push notification for the receiver (never blocks or fails the send)
-      sendPushNotification({
-        toUserId:otherId,
-        title:me.name||'New message',
-        body:clean,
-        data:{
-          type:'message',
-          fromId:meId,
-          fromName:me.name||'',
-          fromPhoto:me.photoURL||''
-        }
-      }).catch(()=>{});
-
-
-      requestAnimationFrame(()=>{
-        inputRef.current?.focus();
-      });
-
-    }catch(e){
-
+  const send = async () => {
+    const clean = text.trim();
+    if (!clean) return;
+    const reply = replyData();
+    setText(''); setReplyingTo(null); stopTyping();
+    try {
+      // Firestore keeps retrying by itself on a bad connection but only answers once the
+      // server does; after 6s we stop waiting so the chat is never blocked.
+      await Promise.race([sendMessage(meId, otherId, clean, reply), new Promise((r) => setTimeout(r, 6000))]);
+      notify(clean);
+      requestAnimationFrame(() => inputRef.current?.focus());
+    } catch (e) {
       setText(clean);
-
-      Alert.alert(
-        'Send failed',
-        `${e?.message||'Could not send message.'}${e?.code?`\n\n(${e.code})`:''}`
-      );
-
-      requestAnimationFrame(()=>{
-        inputRef.current?.focus();
-      });
-
-    }finally{
-
-      setSending(false);
+      Alert.alert('Send failed', `${e?.message || 'Could not send message.'}${e?.code ? `\n\n(${e.code})` : ''}`);
     }
   };
 
+  const sendVoice = async (uri, duration) => {
+    try {
+      const url = await uploadFile(uri, `voice/${chatId}/${Date.now()}.m4a`, 'audio/m4a');
+      await sendVoiceMessage(meId, otherId, url, duration);
+      notify('Voice message');
+    } catch (e) { fail('Voice message failed')(e); }
+    setRecordingVoice(false);
+  };
 
-  /* =========================================================
-     FRIENDS
-     ========================================================= */
+  const addPhotos = (list) => setPending((p) => [...p, ...list].slice(0, MAX_PHOTOS));
 
-  const friends=
-    Object.values(
-      friendProfiles||{}
-    )
-    .map(f=>{
+  const takePhoto = async () => {
+    const photo = await pickMedia({ source: 'camera' });
+    if (photo) addPhotos([photo]);
+  };
 
-      const id=
-        f?.id||
-        f?.uid;
+  const sendPhotos = async () => {
+    const files = pending, caption = text.trim(), reply = replyData();
+    setPending([]); setText(''); setReplyingTo(null); stopTyping(); setSendingPhotos(true);
+    try {
+      const urls = await Promise.all(files.map((f, i) => uploadFile(f.uri, `chat/${chatId}/${Date.now()}_${i}.jpg`, mimeOf(f))));
+      await sendImageMessage(meId, otherId, urls, caption, reply);
+      notify(caption || (urls.length > 1 ? `${urls.length} photos` : 'Photo'));
+    } catch (e) {
+      setPending(files); setText(caption);
+      fail('Photo failed')(e);
+    }
+    setSendingPhotos(false);
+  };
 
-      return{
-        ...f,
-        id
-      };
+  const canSend = !!text.trim() || pending.length > 0;
+  const onSendPress = () => !sendingPhotos && (pending.length ? sendPhotos() : send());
 
-    })
-    .filter(
-      f=>
-        f.id&&
-        f.id!==meId
-    );
+  /* ---------- screen ---------- */
 
-
-  /* =========================================================
-     UI
-     ========================================================= */
-
-  return(
+  return (
     <SafeAreaView style={styles.safe}>
+      <KeyboardAvoidingView style={styles.safe} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
-      <KeyboardAvoidingView
-        style={styles.container}
-        behavior={
-          Platform.OS==='ios'
-            ?'padding'
-            :undefined
-        }
-      >
-
-        {/* ================= HEADER ================= */}
-
+        {/* header */}
         <View style={styles.header}>
-
-          <TouchableOpacity
-            style={styles.backButton}
-            onPress={()=>
-              navigation?.goBack()
-            }
-          >
-            <Text style={styles.backText}>
-              ‹
-            </Text>
+          <TouchableOpacity style={styles.back} onPress={() => navigation?.goBack()}>
+            <Text style={styles.backText}>‹</Text>
           </TouchableOpacity>
-
-
           <TouchableOpacity
             activeOpacity={0.7}
-            style={{flex:1,flexDirection:'row',alignItems:'center'}}
-            onPress={()=>otherId&&navigation?.navigate('UserProfile',{userId:otherId})}
+            style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
+            onPress={() => otherId && navigation?.navigate('UserProfile', { userId: otherId })}
           >
-          <View style={styles.avatar}>
-
-            {photo
-              ?(
-                <Image
-                  source={{uri:photo}}
-                  style={styles.avatarImage}
-                />
-              )
-              :(
-                <Text style={styles.avatarText}>
-                  {name.charAt(0).toUpperCase()}
-                </Text>
-              )
-            }
-
-          </View>
-
-
-          <View style={styles.headerInfo}>
-
-            <Text style={styles.headerName}>
-              {name}
-            </Text>
-
-            <Text style={[styles.headerStatus,otherTyping&&{color:'#22C55E'}]}>
-              {otherTyping
-                ?'typing...'
-                :profile?.online
-                  ?'Online'
-                  :'Messages'
-              }
-            </Text>
-
-          </View>
+            <Avatar uri={photoOf(profile)} name={name} />
+            <View style={{ flex: 1, marginLeft: 10 }}>
+              <Text style={styles.headerName}>{name}</Text>
+              <Text style={[styles.headerStatus, otherTyping && { color: '#22C55E' }]}>
+                {otherTyping ? 'typing...' : profile?.online ? 'Online' : 'Messages'}
+              </Text>
+            </View>
           </TouchableOpacity>
-
         </View>
 
-
-        {/* ================= MESSAGES ================= */}
-
-        {loading
-
-          ?(
-            <View style={styles.loading}>
-              <ActivityIndicator
-                size="large"
-                color={RED}
+        {/* messages */}
+        {loading ? (
+          <View style={styles.center}><ActivityIndicator size="large" color={RED} /></View>
+        ) : (
+          <FlatList
+            inverted
+            data={messages}
+            keyExtractor={(m) => m.id}
+            keyboardShouldPersistTaps="handled"
+            contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 14 }}
+            renderItem={({ item }) => (
+              <MessageRow
+                item={item}
+                showSeen={item.id === latestSeen}
+                onLongPress={openMenu}
+                onReply={handleReply}
+                onReactionPress={reactionPress}
+                inputRef={inputRef}
               />
-            </View>
-          )
-
-          :(
-            <FlatList
-              inverted
-              data={messages}
-              keyExtractor={x=>x.id}
-              keyboardShouldPersistTaps="handled"
-              contentContainerStyle={
-                styles.messagesList
-              }
-
-              renderItem={({item})=>(
-                <MessageRow
-                  item={item}
-                  showSeen={
-                    item.id===latestSeen
-                  }
-                  onLongPress={openMenu}
-                  onReply={handleReply}
-                  onReactionPress={
-                    reactionPress
-                  }
-                  inputRef={inputRef}
-                />
-              )}
-
-              ListEmptyComponent={
-                <View style={styles.empty}>
-
-                  <Text style={styles.emptyTitle}>
-                    No messages yet
-                  </Text>
-
-                  <Text style={styles.emptyText}>
-                    Start the conversation 👋
-                  </Text>
-
-                </View>
-              }
-            />
-          )
-        }
-
-
-        {/* ================= TYPING ANIMATION ================= */}
-
-        {otherTyping&&!recordingVoice&&(
-          <TypingDots
-            name={
-              (profile?.name||other?.name||'')
-                .split(' ')[0]
+            )}
+            ListEmptyComponent={
+              <View style={{ alignItems: 'center', paddingTop: 250 }}>
+                <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>No messages yet</Text>
+                <Text style={{ color: '#777', marginTop: 5 }}>Start the conversation 👋</Text>
+              </View>
             }
           />
         )}
 
+        {otherTyping && !recordingVoice && <TypingDots name={name.split(' ')[0]} />}
 
-        {/* ================= REPLY COMPOSER ================= */}
-
-        {replyingTo&&(
-
-          <View style={styles.replyComposer}>
-
-            <View
-              style={
-                styles.replyComposerAccent
-              }
-            />
-
-            <View
-              style={
-                styles.replyComposerContent
-              }
-            >
-
-              <Text
-                style={
-                  styles.replyComposerTitle
-                }
-              >
-                Replying to{' '}
-                {
-                  replyingTo.senderId===meId
-                    ?'yourself'
-                    :replyingTo.senderName||
-                      name
-                }
+        {/* reply banner */}
+        {replyingTo && (
+          <View style={styles.replyBar}>
+            <View style={{ width: 4, height: 44, backgroundColor: RED }} />
+            <View style={{ flex: 1, minWidth: 0, padding: 8 }}>
+              <Text style={{ color: RED, fontWeight: '800', fontSize: 12 }}>
+                Replying to {replyingTo.senderId === meId ? 'yourself' : replyingTo.senderName || name}
               </Text>
-
-              <Text
-                style={
-                  styles.replyComposerText
-                }
-                numberOfLines={2}
-              >
-                {getReplyText(
-                  replyingTo
-                )||'Message'}
-              </Text>
-
+              <Text style={{ color: '#AAA', fontSize: 12 }} numberOfLines={2}>{rText(replyingTo) || 'Message'}</Text>
             </View>
-
-
-            <TouchableOpacity
-              onPress={()=>
-                setReplyingTo(null)
-              }
-              style={styles.replyClose}
-            >
-              <Text style={styles.replyCloseText}>
-                ×
-              </Text>
+            <TouchableOpacity onPress={() => setReplyingTo(null)} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+              <FontAwesome name="times" size={20} color="#999" />
             </TouchableOpacity>
-
           </View>
         )}
 
-
-        {/* ================= COMPOSER ================= */}
-
-        {recordingVoice
-          ?(
-            <VoiceRecorderBar
-              onCancel={()=>setRecordingVoice(false)}
-              onSend={sendVoice}
-            />
-          )
-          :(
-        <View style={styles.composer}>
-
-          <TextInput
-            ref={inputRef}
-            value={text}
-            onChangeText={handleTextChange}
-            placeholder="Message..."
-            placeholderTextColor="#666"
-            multiline
-            maxLength={4000}
-            style={styles.input}
-          />
-
-
-          <TouchableOpacity
-            style={[
-              styles.sendButton,
-              !!text.trim()&&
-              sending&&
-              styles.disabled
-            ]}
-            onPress={text.trim()?send:()=>setRecordingVoice(true)}
-          >
-
-            {sending
-
-              ?(
-                <ActivityIndicator
-                  color="#fff"
-                />
-              )
-
-              :(
-                text.trim()
-                  ?(
-                    <Text style={styles.sendText}>
-                      ➤
-                    </Text>
-                  )
-                  :(
-                    <FontAwesome
-                      name="microphone"
-                      size={22}
-                      color="#fff"
-                    />
-                  )
-              )
-            }
-
-          </TouchableOpacity>
-
-        </View>
-          )
-        }
-
-
-        {/* ================= ACTION MENU ================= */}
-
-        <Modal
-          visible={!!menuMessage}
-          transparent
-          animationType="none"
-          onRequestClose={closeMenu}
-        >
-
-          <View style={styles.backdrop}>
-
-            <Pressable
-              style={StyleSheet.absoluteFill}
-              onPress={closeMenu}
-            />
-
-
-            <Animated.View
-              style={[
-                styles.actionSheet,
-                {
-                  opacity:menuAnim,
-
-                  transform:[
-                    {
-                      translateY:
-                        menuAnim.interpolate({
-                          inputRange:[0,1],
-                          outputRange:[12,0]
-                        })
-                    },
-                    {
-                      scale:
-                        menuAnim.interpolate({
-                          inputRange:[0,1],
-                          outputRange:[.98,1]
-                        })
-                    }
-                  ]
-                }
-              ]}
-            >
-
-              <View style={styles.quickRow}>
-
-                {QUICK.map(e=>(
-
-                  <TouchableOpacity
-                    key={e}
-                    style={styles.quick}
-                    onPress={()=>react(e)}
-                  >
-                    <Text style={styles.quickText}>
-                      {e}
-                    </Text>
-                  </TouchableOpacity>
-
+        {/* message box: camera | text | mic | send */}
+        {recordingVoice ? (
+          <VoiceRecorderBar onCancel={() => setRecordingVoice(false)} onSend={sendVoice} />
+        ) : (
+          <View>
+            {pending.length > 0 && (
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.strip} contentContainerStyle={{ padding: 8 }}>
+                {pending.map((p, i) => (
+                  <View key={p.uri + i} style={{ marginRight: 8 }}>
+                    <Image source={{ uri: p.uri }} style={{ width: 64, height: 64, borderRadius: 10 }} />
+                    <TouchableOpacity style={styles.stripX} onPress={() => setPending((x) => x.filter((_, j) => j !== i))}>
+                      <Text style={{ color: '#fff', fontSize: 15, lineHeight: 17, fontWeight: '800' }}>×</Text>
+                    </TouchableOpacity>
+                  </View>
                 ))}
+              </ScrollView>
+            )}
 
+            <View style={styles.composer}>
+              <TouchableOpacity style={styles.round} onPress={() => setPickerOpen(true)}>
+                <FontAwesome name="camera" size={19} color="#fff" />
+              </TouchableOpacity>
 
-                <TouchableOpacity
-                  style={[
-                    styles.quick,
-                    styles.plus
-                  ]}
-                  onPress={()=>
-                    setExtra(true)
-                  }
-                >
-                  <Text style={styles.plusText}>
-                    +
-                  </Text>
+              <TextInput
+                ref={inputRef}
+                value={text}
+                onChangeText={onChangeText}
+                placeholder={pending.length ? 'Add a caption...' : 'Message...'}
+                placeholderTextColor="#666"
+                multiline
+                maxLength={4000}
+                style={styles.input}
+              />
+
+              <TouchableOpacity style={styles.round} onPress={() => setRecordingVoice(true)}>
+                <FontAwesome name="microphone" size={21} color="#fff" />
+              </TouchableOpacity>
+
+              <TouchableOpacity style={[styles.round, styles.sendBtn, !canSend && { opacity: 0.45 }]} disabled={!canSend} onPress={onSendPress}>
+                {sendingPhotos ? <ActivityIndicator color="#fff" /> : <FontAwesome name="send" size={18} color="#fff" />}
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
+        <ChatGalleryPicker
+          visible={pickerOpen}
+          max={MAX_PHOTOS - pending.length}
+          onClose={() => setPickerOpen(false)}
+          onDone={(list) => { setPickerOpen(false); addPhotos(list); }}
+          onOpenCamera={() => setTimeout(takePhoto, 300)}
+        />
+
+        {/* long-press menu */}
+        <Modal visible={!!menuMessage} transparent animationType="none" onRequestClose={closeMenu}>
+          <View style={styles.backdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={closeMenu} />
+            <Animated.View
+              style={[styles.sheet, {
+                opacity: menuAnim,
+                transform: [{ translateY: menuAnim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }],
+              }]}
+            >
+              <View style={{ flexDirection: 'row', justifyContent: 'center', paddingVertical: 5 }}>
+                {QUICK.map((e) => (
+                  <TouchableOpacity key={e} style={styles.quick} onPress={() => react(e)}>
+                    <Text style={{ fontSize: 25 }}>{e}</Text>
+                  </TouchableOpacity>
+                ))}
+                <TouchableOpacity style={[styles.quick, { backgroundColor: RED, borderColor: RED }]} onPress={() => setExtra(true)}>
+                  <FontAwesome name="plus" size={20} color="#fff" />
                 </TouchableOpacity>
+              </View>
+              <View style={{ height: 1, backgroundColor: BORDER, marginVertical: 8 }} />
+              <MenuItem icon="reply" label="Reply" onPress={() => handleReply(menuMessage)} />
+              <MenuItem icon="share" label="Forward" onPress={openForward} />
+              <MenuItem icon="copy" label="Copy" onPress={copy} />
+              {menuMessage?.senderId === meId && !menuMessage?.unsent && <MenuItem icon="undo" label="Unsend" danger onPress={unsend} />}
+              <MenuItem icon="trash" label="Delete for you" danger onPress={deleteForMe} />
+              <MenuItem icon="times" label="Cancel" onPress={closeMenu} />
+            </Animated.View>
+          </View>
+        </Modal>
 
+        {/* more reactions */}
+        <Modal visible={extra} transparent animationType="slide" onRequestClose={() => setExtra(false)}>
+          <View style={styles.backdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setExtra(false)} />
+            <View style={[styles.sheet, { maxHeight: '70%', padding: 15 }]}>
+              <View style={styles.handle} />
+              <Text style={styles.sheetTitle}>Choose reaction</Text>
+              <ScrollView contentContainerStyle={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' }}>
+                {EXTRA.map((e) => (
+                  <TouchableOpacity key={e} style={styles.emoji} onPress={() => react(e)}>
+                    <Text style={{ fontSize: 28 }}>{e}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
+        {/* remove my reaction */}
+        <Modal visible={!!reactionMessage} transparent animationType="fade" onRequestClose={() => setReactionMessage(null)}>
+          <View style={[styles.backdrop, { justifyContent: 'center' }]}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setReactionMessage(null)} />
+            <View style={styles.popup}>
+              <Text style={{ fontSize: 40 }}>{reactionMessage?.reactions?.[meId]}</Text>
+              <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700', marginVertical: 18 }}>Remove your reaction?</Text>
+              <TouchableOpacity style={styles.bigBtn} onPress={removeReact}>
+                <Text style={{ color: '#fff', fontWeight: '800' }}>Remove</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={{ height: 48, justifyContent: 'center' }} onPress={() => setReactionMessage(null)}>
+                <Text style={{ color: '#999' }}>Cancel</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* forward */}
+        <Modal visible={forward} transparent animationType="slide" onRequestClose={() => setForward(false)}>
+          <View style={styles.backdrop}>
+            <View style={[styles.sheet, { maxHeight: '82%', padding: 15 }]}>
+              <View style={styles.handle} />
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={styles.sheetTitle}>Forward to</Text>
+                <TouchableOpacity onPress={() => setForward(false)}><FontAwesome name="times" size={22} color="#999" /></TouchableOpacity>
               </View>
 
-
-              <View style={styles.divider}/>
-
-
-              <ActionButton
-                icon="↩"
-                label="Reply"
-                onPress={()=>
-                  handleReply(menuMessage)
-                }
-              />
-
-
-              <ActionButton
-                icon="➤"
-                label="Forward"
-                onPress={openForward}
-              />
-
-
-              <ActionButton
-                icon="⧉"
-                label="Copy"
-                onPress={copy}
-              />
-
-
-              {menuMessage?.senderId===meId&&
-                !menuMessage?.unsent&&(
-
-                <ActionButton
-                  icon="↶"
-                  label="Unsend"
-                  danger
-                  onPress={unsend}
-                />
-
+              {!friends.length ? (
+                <Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center', paddingVertical: 50 }}>No friends available</Text>
+              ) : (
+                <ScrollView style={{ maxHeight: 440 }}>
+                  {friends.map((f) => {
+                    const on = selected.includes(f.id);
+                    return (
+                      <TouchableOpacity
+                        key={f.id}
+                        style={styles.friendRow}
+                        onPress={() => setSelected((s) => (on ? s.filter((v) => v !== f.id) : [...s, f.id]))}
+                      >
+                        <Avatar uri={photoOf(f)} name={nameOf(f)} size={44} />
+                        <View style={{ flex: 1, marginLeft: 11, minWidth: 0 }}>
+                          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>{nameOf(f)}</Text>
+                          <Text style={{ color: '#777', fontSize: 12 }}>{f.username ? `@${f.username}` : 'Friend'}</Text>
+                        </View>
+                        <View style={[styles.check, on && { backgroundColor: RED, borderColor: RED }]}>
+                          {on && <FontAwesome name="check" size={12} color="#fff" />}
+                        </View>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
               )}
 
-
-              <ActionButton
-                icon="⌫"
-                label="Delete for you"
-                danger
-                onPress={deleteForMe}
-              />
-
-
-              <ActionButton
-                icon="×"
-                label="Cancel"
-                onPress={closeMenu}
-              />
-
-            </Animated.View>
-
-          </View>
-
-        </Modal>
-
-
-        {/* ================= EXTRA REACTIONS ================= */}
-
-        <Modal
-          visible={extra}
-          transparent
-          animationType="slide"
-          onRequestClose={()=>
-            setExtra(false)
-          }
-        >
-
-          <View style={styles.backdrop}>
-
-            <Pressable
-              style={StyleSheet.absoluteFill}
-              onPress={()=>
-                setExtra(false)
-              }
-            />
-
-
-            <View style={styles.sheet}>
-
-              <View style={styles.handle}/>
-
-              <Text style={styles.sheetTitle}>
-                Choose reaction
-              </Text>
-
-
-              <ScrollView
-                contentContainerStyle={
-                  styles.grid
-                }
-              >
-
-                {EXTRA.map(e=>(
-
-                  <TouchableOpacity
-                    key={e}
-                    style={styles.emojiButton}
-                    onPress={()=>
-                      react(e)
-                    }
-                  >
-
-                    <Text style={styles.bigEmoji}>
-                      {e}
-                    </Text>
-
-                  </TouchableOpacity>
-
-                ))}
-
-              </ScrollView>
-
-            </View>
-
-          </View>
-
-        </Modal>
-
-
-        {/* ================= REMOVE REACTION ================= */}
-
-        <Modal
-          visible={!!reactionMessage}
-          transparent
-          animationType="fade"
-        >
-
-          <View style={styles.backdrop}>
-
-            <Pressable
-              style={StyleSheet.absoluteFill}
-              onPress={()=>{
-                setReactionMessage(null);
-                setReactionEmoji(null);
-              }}
-            />
-
-
-            <View style={styles.popup}>
-
-              <Text style={styles.popupEmoji}>
-                {reactionEmoji}
-              </Text>
-
-              <Text style={styles.popupTitle}>
-                Remove your reaction?
-              </Text>
-
-
               <TouchableOpacity
-                style={styles.redButton}
-                onPress={removeReact}
-              >
-                <Text style={styles.redButtonText}>
-                  Remove
-                </Text>
-              </TouchableOpacity>
-
-
-              <TouchableOpacity
-                style={styles.cancelButton}
-                onPress={()=>{
-                  setReactionMessage(null);
-                  setReactionEmoji(null);
-                }}
-              >
-                <Text style={styles.cancelText}>
-                  Cancel
-                </Text>
-              </TouchableOpacity>
-
-            </View>
-
-          </View>
-
-        </Modal>
-
-
-        {/* ================= FORWARD ================= */}
-
-        <Modal
-          visible={forward}
-          transparent
-          animationType="slide"
-          onRequestClose={()=>
-            setForward(false)
-          }
-        >
-
-          <View style={styles.backdrop}>
-
-            <View style={styles.forwardSheet}>
-
-              <View style={styles.handle}/>
-
-
-              <View style={styles.forwardHeader}>
-
-                <Text style={styles.sheetTitle}>
-                  Forward to
-                </Text>
-
-                <TouchableOpacity
-                  onPress={()=>
-                    setForward(false)
-                  }
-                >
-                  <Text style={styles.close}>
-                    ×
-                  </Text>
-                </TouchableOpacity>
-
-              </View>
-
-
-              {!friends.length
-
-                ?(
-                  <View style={styles.noFriends}>
-                    <Text style={styles.noFriendsTitle}>
-                      No friends available
-                    </Text>
-                  </View>
-                )
-
-                :(
-                  <ScrollView
-                    style={styles.friendScroll}
-                  >
-
-                    {friends.map(f=>{
-
-                      const chosen=
-                        selected.includes(f.id);
-
-                      const fp=
-                        f.photoURL||
-                        f.photoUrl||
-                        f.profilePic||
-                        f.avatar||
-                        '';
-
-                      const fn=
-                        f.displayName||
-                        f.name||
-                        'User';
-
-
-                      return(
-                        <TouchableOpacity
-                          key={f.id}
-                          style={styles.friendRow}
-                          onPress={()=>
-                            toggleFriend(f.id)
-                          }
-                        >
-
-                          <View
-                            style={
-                              styles.friendAvatar
-                            }
-                          >
-
-                            {fp
-
-                              ?(
-                                <Image
-                                  source={{uri:fp}}
-                                  style={
-                                    styles.friendAvatarImage
-                                  }
-                                />
-                              )
-
-                              :(
-                                <Text
-                                  style={
-                                    styles.friendAvatarText
-                                  }
-                                >
-                                  {fn.charAt(0).toUpperCase()}
-                                </Text>
-                              )
-                            }
-
-                          </View>
-
-
-                          <View
-                            style={
-                              styles.friendInfo
-                            }
-                          >
-
-                            <Text
-                              style={
-                                styles.friendName
-                              }
-                            >
-                              {fn}
-                            </Text>
-
-                            <Text
-                              style={
-                                styles.friendUsername
-                              }
-                            >
-                              {
-                                f.username
-                                  ?`@${f.username}`
-                                  :'Friend'
-                              }
-                            </Text>
-
-                          </View>
-
-
-                          <View
-                            style={[
-                              styles.checkbox,
-                              chosen&&
-                                styles.checkboxSelected
-                            ]}
-                          >
-                            {chosen&&(
-                              <Text
-                                style={
-                                  styles.checkmark
-                                }
-                              >
-                                ✓
-                              </Text>
-                            )}
-                          </View>
-
-                        </TouchableOpacity>
-                      );
-
-                    })}
-
-                  </ScrollView>
-                )
-              }
-
-
-              <TouchableOpacity
-                style={[
-                  styles.forwardButton,
-                  (
-                    !selected.length||
-                    sending
-                  )&&styles.disabled
-                ]}
-                disabled={
-                  !selected.length||
-                  sending
-                }
+                style={[styles.bigBtn, { height: 50, marginTop: 12 }, (!selected.length || busy) && { opacity: 0.45 }]}
+                disabled={!selected.length || busy}
                 onPress={doForward}
               >
-
-                {sending
-
-                  ?(
-                    <ActivityIndicator
-                      color="#fff"
-                    />
-                  )
-
-                  :(
-                    <Text style={styles.forwardText}>
-                      Forward
-                      {
-                        selected.length
-                          ?` (${selected.length})`
-                          :''
-                      }
-                    </Text>
-                  )
-                }
-
+                {busy ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '800' }}>Forward{selected.length ? ` (${selected.length})` : ''}</Text>}
               </TouchableOpacity>
-
             </View>
-
           </View>
-
         </Modal>
 
       </KeyboardAvoidingView>
-
     </SafeAreaView>
   );
 }
-
-
-/* =========================================================
-   ACTION BUTTON
-   ========================================================= */
-
-function ActionButton({
-  icon,
-  label,
-  onPress,
-  danger=false
-}){
-
-  return(
-    <TouchableOpacity
-      style={styles.actionButton}
-      onPress={onPress}
-    >
-
-      <View
-        style={[
-          styles.actionIcon,
-          danger&&styles.dangerIcon
-        ]}
-      >
-
-        <Text
-          style={[
-            styles.actionIconText,
-            danger&&styles.dangerText
-          ]}
-        >
-          {icon}
-        </Text>
-
-      </View>
-
-
-      <Text
-        style={[
-          styles.actionLabel,
-          danger&&styles.dangerText
-        ]}
-      >
-        {label}
-      </Text>
-
-    </TouchableOpacity>
-  );
-}
-
 
 /* =========================================================
    STYLES
    ========================================================= */
 
-const styles=StyleSheet.create({
-
-  safe:{
-    flex:1,
-    backgroundColor:BG
-  },
-
-  container:{
-    flex:1,
-    backgroundColor:BG
-  },
-
-
-  /* HEADER */
-
-  header:{
-    height:64,
-    flexDirection:'row',
-    alignItems:'center',
-    paddingHorizontal:14,
-    borderBottomWidth:1,
-    borderBottomColor:BORDER,
-    backgroundColor:'#0C0C0C'
-  },
-
-  backButton:{
-    width:38,
-    height:42,
-    justifyContent:'center',
-    alignItems:'center'
-  },
-
-  backText:{
-    color:'#fff',
-    fontSize:38,
-    fontWeight:'300'
-  },
-
-  avatar:{
-    width:40,
-    height:40,
-    borderRadius:20,
-    backgroundColor:RED,
-    justifyContent:'center',
-    alignItems:'center',
-    overflow:'hidden'
-  },
-
-  avatarImage:{
-    width:'100%',
-    height:'100%'
-  },
-
-  avatarText:{
-    color:'#fff',
-    fontSize:17,
-    fontWeight:'800'
-  },
-
-  headerInfo:{
-    flex:1,
-    marginLeft:10
-  },
-
-  headerName:{
-    color:TEXT,
-    fontSize:16,
-    fontWeight:'700'
-  },
-
-  headerStatus:{
-    color:MUTED,
-    fontSize:12,
-    marginTop:2
-  },
-
-
-  /* LOADING */
-
-  loading:{
-    flex:1,
-    justifyContent:'center',
-    alignItems:'center'
-  },
-
-
-  /* MESSAGE LIST */
-
-  messagesList:{
-    paddingHorizontal:12,
-    paddingVertical:14
-  },
-
-  messageOuter:{
-    width:'100%',
-    marginVertical:4,
-
-    /*
-      Prevent children from forcing the row wider.
-    */
-    overflow:'visible'
-  },
-
-
-  /*
-    IMPORTANT:
-    Do not give this a fixed width.
-
-    The bubble naturally sizes to its content,
-    while maxWidth prevents it from becoming
-    wider than the screen.
-  */
-
-  messageAnimated:{
-    maxWidth:'78%',
-    flexShrink:1,
-    minWidth:0
-  },
-
-
-  messageBubble:{
-    maxWidth:'100%',
-    minWidth:50,
-
-    borderRadius:18,
-
-    paddingHorizontal:13,
-    paddingVertical:9,
-
-    /*
-      Critical for long messages.
-    */
-    alignSelf:'stretch'
-  },
-
-  myBubble:{
-    backgroundColor:RED,
-    borderBottomRightRadius:5
-  },
-
-  otherBubble:{
-    backgroundColor:CARD,
-    borderBottomLeftRadius:5,
-    borderWidth:1,
-    borderColor:BORDER
-  },
-
-  replyBubble:{
-    minWidth:230
-  },
-
-  unsentBubble:{
-    backgroundColor:'#444',
-    opacity:.75
-  },
-
-
-  /*
-    Critical fix:
-    Text is now allowed to shrink/wrap instead
-    of pushing outside the bubble.
-  */
-
-  messageText:{
-    color:'#fff',
-    fontSize:15,
-    lineHeight:21,
-    flexShrink:1,
-    maxWidth:'100%'
-  },
-
-  unsentText:{
-    color:'#D0D0D0',
-    fontStyle:'italic'
-  },
-
-  unsentLabel:{
-    color:'#AAA',
-    fontSize:10,
-    marginTop:3,
-    fontStyle:'italic'
-  },
-
-
-  /* =====================================================
-     REPLY QUOTE
-
-     This is the important fix for the screenshot.
-
-     The previous version used a flex child inside an
-     auto-sized row which could cause the reply block
-     to stretch vertically / become huge.
-
-     Now the quote is explicitly constrained.
-     ===================================================== */
-
-  replyQuote:{
-    width:'100%',
-
-    minHeight:42,
-    maxHeight:84,
-
-    flexDirection:'row',
-
-    backgroundColor:'#350B10',
-
-    borderRadius:8,
-
-    marginBottom:8,
-
-    borderWidth:1,
-    borderColor:'#61151C',
-
-    overflow:'hidden',
-
-    alignSelf:'stretch'
-  },
-
-  replyAccent:{
-    width:4,
-    flexShrink:0,
-    backgroundColor:RED
-  },
-
-  replyQuoteContent:{
-    flex:1,
-    flexGrow:1,
-    flexShrink:1,
-
-    minWidth:0,
-
-    paddingHorizontal:9,
-    paddingVertical:6,
-
-    justifyContent:'center'
-  },
-
-  replyQuoteTitle:{
-    color:'#FF5962',
-    fontSize:11,
-    lineHeight:14,
-    fontWeight:'900',
-    marginBottom:2,
-    flexShrink:1
-  },
-
-  replyQuoteText:{
-    color:'#D6A6AA',
-    fontSize:12,
-    lineHeight:16,
-
-    flexShrink:1,
-
-    maxWidth:'100%'
-  },
-
-
-  /* REACTIONS */
-
-  reactionRow:{
-    flexDirection:'row',
-    marginTop:-4
-  },
-
-  reactionChip:{
-    minHeight:27,
-    paddingHorizontal:7,
-    borderRadius:15,
-    backgroundColor:'#202020',
-    borderWidth:1,
-    borderColor:'#333',
-    flexDirection:'row',
-    alignItems:'center',
-    marginRight:4
-  },
-
-  reactionEmoji:{
-    fontSize:15
-  },
-
-  reactionCount:{
-    color:'#fff',
-    fontSize:11,
-    marginLeft:3,
-    fontWeight:'700'
-  },
-
-
-  seenText:{
-    color:'#777',
-    fontSize:10,
-    marginTop:3,
-    marginHorizontal:4,
-    alignSelf:'flex-end'
-  },
-
-
-  /* EMPTY */
-
-  empty:{
-    alignItems:'center',
-    paddingTop:250
-  },
-
-  emptyTitle:{
-    color:'#fff',
-    fontSize:18,
-    fontWeight:'700'
-  },
-
-  emptyText:{
-    color:'#777',
-    marginTop:5
-  },
-
-
-  /* =====================================================
-     REPLY COMPOSER
-     ===================================================== */
-
-  replyComposer:{
-    minHeight:62,
-    maxHeight:82,
-
-    backgroundColor:'#101010',
-
-    borderTopWidth:1,
-    borderTopColor:BORDER,
-
-    flexDirection:'row',
-    alignItems:'center'
-  },
-
-  replyComposerAccent:{
-    width:4,
-    height:44,
-    backgroundColor:RED
-  },
-
-  replyComposerContent:{
-    flex:1,
-    minWidth:0,
-    padding:8
-  },
-
-  replyComposerTitle:{
-    color:RED,
-    fontWeight:'800',
-    fontSize:12
-  },
-
-  replyComposerText:{
-    color:'#AAA',
-    fontSize:12,
-    flexShrink:1
-  },
-
-  replyClose:{
-    width:44,
-    height:44,
-    justifyContent:'center',
-    alignItems:'center'
-  },
-
-  replyCloseText:{
-    color:'#999',
-    fontSize:27
-  },
-
-
-  /* =====================================================
-     INPUT
-     ===================================================== */
-
-  composer:{
-    minHeight:64,
-    padding:8,
-    paddingHorizontal:10,
-    flexDirection:'row',
-    alignItems:'flex-end',
-    backgroundColor:'#0C0C0C',
-    borderTopWidth:1,
-    borderTopColor:BORDER
-  },
-
-  input:{
-    flex:1,
-    maxHeight:120,
-    minHeight:46,
-    backgroundColor:'#171717',
-    color:'#fff',
-    borderRadius:23,
-    paddingHorizontal:17,
-    paddingTop:12,
-    paddingBottom:10,
-    fontSize:15,
-    borderWidth:1,
-    borderColor:BORDER
-  },
-
-  sendButton:{
-    width:46,
-    height:46,
-    borderRadius:23,
-    backgroundColor:RED,
-    marginLeft:8,
-    justifyContent:'center',
-    alignItems:'center'
-  },
-
-  disabled:{
-    opacity:.45
-  },
-
-  sendText:{
-    color:'#fff',
-    fontSize:20,
-    fontWeight:'800'
-  },
-
-
-  /* =====================================================
-     ACTION SHEET
-     ===================================================== */
-
-  backdrop:{
-    flex:1,
-    backgroundColor:'rgba(0,0,0,.72)',
-    justifyContent:'flex-end'
-  },
-
-  actionSheet:{
-    backgroundColor:'#151515',
-    borderTopLeftRadius:24,
-    borderTopRightRadius:24,
-    padding:12
-  },
-
-  quickRow:{
-    flexDirection:'row',
-    justifyContent:'center',
-    paddingVertical:5
-  },
-
-  quick:{
-    width:49,
-    height:49,
-    borderRadius:25,
-    backgroundColor:'#222',
-    justifyContent:'center',
-    alignItems:'center',
-    marginHorizontal:4,
-    borderWidth:1,
-    borderColor:'#333'
-  },
-
-  quickText:{
-    fontSize:25
-  },
-
-  plus:{
-    backgroundColor:RED,
-    borderColor:RED
-  },
-
-  plusText:{
-    color:'#fff',
-    fontSize:28
-  },
-
-  divider:{
-    height:1,
-    backgroundColor:'#292929',
-    marginVertical:8
-  },
-
-  actionButton:{
-    minHeight:50,
-    flexDirection:'row',
-    alignItems:'center',
-    paddingHorizontal:8
-  },
-
-  actionIcon:{
-    width:36,
-    height:36,
-    borderRadius:18,
-    backgroundColor:'#252525',
-    justifyContent:'center',
-    alignItems:'center',
-    marginRight:12
-  },
-
-  dangerIcon:{
-    backgroundColor:'rgba(225,29,42,.16)'
-  },
-
-  actionIconText:{
-    color:'#fff',
-    fontSize:18
-  },
-
-  dangerText:{
-    color:RED
-  },
-
-  actionLabel:{
-    color:'#fff',
-    fontSize:15,
-    fontWeight:'600'
-  },
-
-
-  /* =====================================================
-     REACTION SHEET
-     ===================================================== */
-
-  sheet:{
-    maxHeight:'70%',
-    backgroundColor:'#151515',
-    borderTopLeftRadius:24,
-    borderTopRightRadius:24,
-    padding:15
-  },
-
-  handle:{
-    width:42,
-    height:4,
-    borderRadius:3,
-    backgroundColor:'#555',
-    alignSelf:'center',
-    marginBottom:13
-  },
-
-  sheetTitle:{
-    color:'#fff',
-    fontSize:18,
-    fontWeight:'800',
-    marginBottom:12
-  },
-
-  grid:{
-    flexDirection:'row',
-    flexWrap:'wrap',
-    justifyContent:'center'
-  },
-
-  emojiButton:{
-    width:56,
-    height:56,
-    justifyContent:'center',
-    alignItems:'center',
-    borderRadius:12,
-    backgroundColor:'#202020',
-    margin:4
-  },
-
-  bigEmoji:{
-    fontSize:28
-  },
-
-
-  /* =====================================================
-     REMOVE REACTION POPUP
-     ===================================================== */
-
-  popup:{
-    alignSelf:'center',
-    width:'84%',
-    backgroundColor:'#161616',
-    borderRadius:22,
-    padding:22,
-    alignItems:'center',
-    borderWidth:1,
-    borderColor:BORDER
-  },
-
-  popupEmoji:{
-    fontSize:40
-  },
-
-  popupTitle:{
-    color:'#fff',
-    fontSize:16,
-    fontWeight:'700',
-    marginVertical:18
-  },
-
-  redButton:{
-    width:'100%',
-    height:48,
-    borderRadius:12,
-    backgroundColor:RED,
-    justifyContent:'center',
-    alignItems:'center'
-  },
-
-  redButtonText:{
-    color:'#fff',
-    fontWeight:'800'
-  },
-
-  cancelButton:{
-    height:48,
-    justifyContent:'center'
-  },
-
-  cancelText:{
-    color:'#999'
-  },
-
-
-  /* =====================================================
-     FORWARD
-     ===================================================== */
-
-  forwardSheet:{
-    maxHeight:'82%',
-    backgroundColor:'#151515',
-    borderTopLeftRadius:24,
-    borderTopRightRadius:24,
-    padding:15
-  },
-
-  forwardHeader:{
-    flexDirection:'row',
-    justifyContent:'space-between',
-    alignItems:'center'
-  },
-
-  close:{
-    color:'#999',
-    fontSize:30
-  },
-
-  friendScroll:{
-    maxHeight:440
-  },
-
-  friendRow:{
-    minHeight:66,
-    flexDirection:'row',
-    alignItems:'center',
-    borderBottomWidth:1,
-    borderBottomColor:'#222'
-  },
-
-  friendAvatar:{
-    width:44,
-    height:44,
-    borderRadius:22,
-    backgroundColor:RED,
-    justifyContent:'center',
-    alignItems:'center',
-    overflow:'hidden'
-  },
-
-  friendAvatarImage:{
-    width:'100%',
-    height:'100%'
-  },
-
-  friendAvatarText:{
-    color:'#fff',
-    fontWeight:'800'
-  },
-
-  friendInfo:{
-    flex:1,
-    marginLeft:11,
-    minWidth:0
-  },
-
-  friendName:{
-    color:'#fff',
-    fontSize:15,
-    fontWeight:'700'
-  },
-
-  friendUsername:{
-    color:'#777',
-    fontSize:12
-  },
-
-  checkbox:{
-    width:25,
-    height:25,
-    borderRadius:13,
-    borderWidth:2,
-    borderColor:'#555',
-    justifyContent:'center',
-    alignItems:'center'
-  },
-
-  checkboxSelected:{
-    backgroundColor:RED,
-    borderColor:RED
-  },
-
-  checkmark:{
-    color:'#fff',
-    fontWeight:'900'
-  },
-
-  forwardButton:{
-    height:50,
-    borderRadius:13,
-    backgroundColor:RED,
-    justifyContent:'center',
-    alignItems:'center',
-    marginTop:12
-  },
-
-  forwardText:{
-    color:'#fff',
-    fontWeight:'800'
-  },
-
-  noFriends:{
-    paddingVertical:50,
-    alignItems:'center'
-  },
-
-  noFriendsTitle:{
-    color:'#fff',
-    fontWeight:'700'
-  }
-
+const styles = StyleSheet.create({
+  safe: { flex: 1, backgroundColor: BG },
+  center: { flex: 1, justifyContent: 'center', alignItems: 'center' },
+
+  header: { height: 64, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: BORDER, backgroundColor: '#0C0C0C' },
+  back: { width: 38, height: 42, justifyContent: 'center', alignItems: 'center' },
+  backText: { color: '#fff', fontSize: 38, fontWeight: '300' },
+  headerName: { color: '#FFF', fontSize: 16, fontWeight: '700' },
+  headerStatus: { color: MUTED, fontSize: 12, marginTop: 2 },
+
+  row: { width: '100%', marginVertical: 4 },
+  bubble: { maxWidth: '100%', minWidth: 50, borderRadius: 18, paddingHorizontal: 13, paddingVertical: 9, alignSelf: 'stretch' },
+  mine: { backgroundColor: RED, borderBottomRightRadius: 5 },
+  theirs: { backgroundColor: CARD, borderBottomLeftRadius: 5, borderWidth: 1, borderColor: BORDER },
+  unsent: { backgroundColor: '#444', opacity: 0.75 },
+  text: { color: '#fff', fontSize: 15, lineHeight: 21, flexShrink: 1, maxWidth: '100%' },
+  unsentText: { color: '#D0D0D0', fontStyle: 'italic' },
+  unsentLabel: { color: '#AAA', fontSize: 10, marginTop: 3, fontStyle: 'italic' },
+  seen: { color: '#777', fontSize: 10, marginTop: 3, marginHorizontal: 4, alignSelf: 'flex-end' },
+
+  quote: { width: '100%', minHeight: 42, maxHeight: 84, flexDirection: 'row', backgroundColor: '#350B10', borderRadius: 8, marginBottom: 8, borderWidth: 1, borderColor: '#61151C', overflow: 'hidden' },
+  quoteBar: { width: 4, flexShrink: 0, backgroundColor: RED },
+  quoteBody: { flex: 1, minWidth: 0, paddingHorizontal: 9, paddingVertical: 6, justifyContent: 'center' },
+  quoteName: { color: '#FF5962', fontSize: 11, lineHeight: 14, fontWeight: '900', marginBottom: 2 },
+  quoteText: { color: '#D6A6AA', fontSize: 12, lineHeight: 16 },
+
+  reactions: { flexDirection: 'row', marginTop: -4 },
+  chip: { minHeight: 27, paddingHorizontal: 7, borderRadius: 15, backgroundColor: '#202020', borderWidth: 1, borderColor: '#333', flexDirection: 'row', alignItems: 'center', marginRight: 4 },
+  chipCount: { color: '#fff', fontSize: 11, marginLeft: 3, fontWeight: '700' },
+
+  replyBar: { minHeight: 62, maxHeight: 82, backgroundColor: '#101010', borderTopWidth: 1, borderTopColor: BORDER, flexDirection: 'row', alignItems: 'center' },
+
+  strip: { backgroundColor: '#101010', borderTopWidth: 1, borderTopColor: BORDER },
+  stripX: { position: 'absolute', top: -6, right: -6, width: 22, height: 22, borderRadius: 11, backgroundColor: RED, justifyContent: 'center', alignItems: 'center' },
+
+  composer: { minHeight: 64, padding: 8, paddingHorizontal: 10, flexDirection: 'row', alignItems: 'flex-end', backgroundColor: '#0C0C0C', borderTopWidth: 1, borderTopColor: BORDER },
+  input: { flex: 1, maxHeight: 120, minHeight: 46, backgroundColor: CARD, color: '#fff', borderRadius: 23, paddingHorizontal: 17, paddingTop: 12, paddingBottom: 10, fontSize: 15, borderWidth: 1, borderColor: BORDER },
+  round: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#222', marginHorizontal: 4, justifyContent: 'center', alignItems: 'center' },
+  sendBtn: { backgroundColor: RED },
+
+  backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,.72)', justifyContent: 'flex-end' },
+  sheet: { backgroundColor: '#151515', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 12 },
+  handle: { width: 42, height: 4, borderRadius: 3, backgroundColor: '#555', alignSelf: 'center', marginBottom: 13 },
+  sheetTitle: { color: '#fff', fontSize: 18, fontWeight: '800', marginBottom: 12 },
+  quick: { width: 49, height: 49, borderRadius: 25, backgroundColor: '#222', justifyContent: 'center', alignItems: 'center', marginHorizontal: 4, borderWidth: 1, borderColor: '#333' },
+  emoji: { width: 56, height: 56, justifyContent: 'center', alignItems: 'center', borderRadius: 12, backgroundColor: '#202020', margin: 4 },
+  menuItem: { minHeight: 50, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 8 },
+  menuIcon: { width: 36, height: 36, borderRadius: 18, backgroundColor: '#252525', justifyContent: 'center', alignItems: 'center', marginRight: 12 },
+  menuLabel: { color: '#fff', fontSize: 15, fontWeight: '600' },
+
+  popup: { alignSelf: 'center', width: '84%', backgroundColor: '#161616', borderRadius: 22, padding: 22, alignItems: 'center', borderWidth: 1, borderColor: BORDER, },
+  bigBtn: { width: '100%', height: 48, borderRadius: 12, backgroundColor: RED, justifyContent: 'center', alignItems: 'center' },
+
+  friendRow: { minHeight: 66, flexDirection: 'row', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: '#222' },
+  check: { width: 25, height: 25, borderRadius: 13, borderWidth: 2, borderColor: '#555', justifyContent: 'center', alignItems: 'center' },
 });
