@@ -66,6 +66,8 @@ export function AppDataProvider({ children }) {
     );
 
     let firstC = true;
+    const lastMsgAt = {}; // chatId -> time of the last message we already knew about
+    let lastBuzz = 0;
     unsubs.push(
       onSnapshot(
         query(collection(db, 'chats'), where('members', 'array-contains', meId)),
@@ -73,17 +75,22 @@ export function AppDataProvider({ children }) {
           const map = {};
           snap.docs.forEach((d) => (map[d.id] = { id: d.id, ...d.data() }));
           setChats(map);
-          const incomingMsg = snap.docChanges().some((c) => {
-            const x = c.doc.data();
-            return (
-              !c.doc.metadata.hasPendingWrites &&
-              c.type !== 'removed' &&
-              x.lastSender &&
-              x.lastSender !== meId &&
-              (x.unread?.[meId] || 0) > 0
-            );
+          // The chat document also changes when someone is typing or reads a chat.
+          // Only a genuinely NEWER last-message time counts as a new message.
+          let incomingMsg = false;
+          snap.docs.forEach((d) => {
+            const x = d.data();
+            const t = x.lastMessageAt?.toMillis?.() || 0;
+            if (t && t > (lastMsgAt[d.id] || 0)) {
+              if (!d.metadata.hasPendingWrites && x.lastSender && x.lastSender !== meId && (x.unread?.[meId] || 0) > 0) incomingMsg = true;
+              lastMsgAt[d.id] = t;
+            }
           });
-          if (!firstC && incomingMsg) vibrateRef.current(80);
+          // at most one buzz every 3 seconds
+          if (!firstC && incomingMsg && Date.now() - lastBuzz > 3000) {
+            lastBuzz = Date.now();
+            vibrateRef.current(80);
+          }
           firstC = false;
         },
         noop
