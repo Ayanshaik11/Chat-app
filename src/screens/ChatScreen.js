@@ -75,7 +75,7 @@ const MenuItem = ({ icon, label, onPress, danger }) => (
    ONE MESSAGE (swipe to reply, long press for the menu)
    ========================================================= */
 
-function MessageRow({ item, showSeen, onLongPress, onReply, onReactionPress, inputRef }) {
+function MessageRow({ item, seenText, onLongPress, onReply, onReactionPress, inputRef }) {
   const mine = item.senderId === item._meId;
   const dir = mine ? -1 : 1; // your messages swipe right-to-left, friends' left-to-right
   const x = useRef(new Animated.Value(0)).current;
@@ -170,7 +170,7 @@ function MessageRow({ item, showSeen, onLongPress, onReply, onReactionPress, inp
         )}
       </Animated.View>
 
-      {showSeen && <Text style={styles.seen}>{seenTime(item.seenBy?.[item._otherId])}</Text>}
+      {!!seenText && <Text style={styles.seen}>{seenText}</Text>}
     </View>
   );
 }
@@ -203,6 +203,8 @@ export default function ChatScreen({ route, navigation }) {
   const [pending, setPending] = useState([]);
   const [sendingPhotos, setSendingPhotos] = useState(false);
   const [peerTypingValue, setPeerTypingValue] = useState(0);
+  const [peerRead, setPeerRead] = useState(0); // when the other person last read this chat
+  const [tick, setTick] = useState(0); // re-renders the "Seen 2m ago" text
 
   const inputRef = useRef(null);
   const menuAnim = useRef(new Animated.Value(0)).current;
@@ -247,8 +249,21 @@ export default function ChatScreen({ route, navigation }) {
 
   useEffect(() => {
     if (!chatId || !otherId) return undefined;
-    return onSnapshot(doc(db, 'chats', chatId), (s) => setPeerTypingValue(s.data()?.typing?.[otherId] || 0), () => {});
+    return onSnapshot(
+      doc(db, 'chats', chatId),
+      (s) => {
+        setPeerTypingValue(s.data()?.typing?.[otherId] || 0);
+        setPeerRead(ms(s.data()?.lastRead?.[otherId]));
+      },
+      () => {}
+    );
   }, [chatId, otherId]);
+
+  // refresh "Seen 2m ago" every 30 seconds
+  useEffect(() => {
+    const t = setInterval(() => setTick((x) => x + 1), 30000);
+    return () => clearInterval(t);
+  }, []);
 
   /* ---------- messages ---------- */
 
@@ -264,6 +279,8 @@ export default function ChatScreen({ route, navigation }) {
           .map((m) => ({ ...m, _meId: meId, _otherId: otherId }));
         setMessages(list);
         setLoading(false);
+        const unseen = list.some((m) => m.senderId !== meId && !m.seenBy?.[meId]);
+        if (!unseen) return;
         try { await markChatRead(chatId, meId); await markMessagesSeen(chatId, list, meId); }
         catch (e) { console.log('Read/seen:', e?.message || e); }
       },
@@ -271,10 +288,9 @@ export default function ChatScreen({ route, navigation }) {
     );
   }, [chatId, meId, otherId]);
 
-  const latestSeen = useMemo(
-    () => messages.find((m) => m.senderId === meId && m.seenBy?.[otherId])?.id || null,
-    [messages, meId, otherId]
-  );
+  const isSeen = (m) => m.senderId === meId && (!!m.seenBy?.[otherId] || (peerRead > 0 && ms(m.createdAt) > 0 && ms(m.createdAt) <= peerRead));
+  const latestSeenMsg = useMemo(() => messages.find(isSeen) || null, [messages, peerRead, meId, otherId]);
+  const seenText = latestSeenMsg ? seenTime(peerRead || latestSeenMsg.seenBy?.[otherId]) : '';
 
   /* ---------- action menu ---------- */
 
@@ -449,11 +465,12 @@ export default function ChatScreen({ route, navigation }) {
             data={messages}
             keyExtractor={(m) => m.id}
             keyboardShouldPersistTaps="handled"
+            extraData={`${tick}-${peerRead}`}
             contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 14 }}
             renderItem={({ item }) => (
               <MessageRow
                 item={item}
-                showSeen={item.id === latestSeen}
+                seenText={item.id === latestSeenMsg?.id ? seenText : ''}
                 onLongPress={openMenu}
                 onReply={handleReply}
                 onReactionPress={reactionPress}
