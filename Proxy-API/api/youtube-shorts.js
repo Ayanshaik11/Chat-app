@@ -72,7 +72,6 @@ module.exports = async (req, res) => {
     'bollywood comedy',
     'hindi anime edits like goku x vegeta x bulma',
     'piccolo x gohan',
-    'trunks x goten',
     'eren x Mikasa love Hindi edits',
     'Naruto and madara and itachi',
     'sung jinwoo',
