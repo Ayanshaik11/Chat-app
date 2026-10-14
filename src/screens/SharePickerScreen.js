@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, FlatList, Pressable, TextInput, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useAppData } from '../context/AppDataContext';
@@ -32,7 +32,7 @@ export default function SharePickerScreen({ route, navigation }) {
     if (sendingId) return;
     setSendingId(friendId);
     try {
-      await sendMessage(me.id, friendId, text);
+      await sendMessage(me.id, friendId, text, null, { notify: { name: me.name, photo: me.photoURL } });
       navigation.replace('Chat', {
         user: me,
         otherUser: {
@@ -44,6 +44,9 @@ export default function SharePickerScreen({ route, navigation }) {
       });
     } catch (e) {
       console.warn('share send failed', e);
+      if (e?.code === 'E2E_NO_KEY') {
+        Alert.alert('Not encrypted yet', `${friend.name || 'This friend'} has not opened the updated King X yet. Ask them to open the app once, then try again.`);
+      }
       setSendingId(null);
     }
   };
