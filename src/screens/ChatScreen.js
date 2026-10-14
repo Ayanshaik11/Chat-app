@@ -9,7 +9,9 @@ import { FontAwesome } from '@expo/vector-icons';
 import { collection, doc, limit, onSnapshot, orderBy, query } from 'firebase/firestore';
 
 import { db } from '../config/firebase';
-import { sendPushNotification } from '../services/notifications';
+import * as Notifications from 'expo-notifications';
+import { decryptFrom, CANT_DECRYPT, useE2EReady, setPeerKey } from '../services/crypto';
+import { setActiveChatUser } from '../services/pushTokens';
 import { uploadFile, pickMedia, mimeOf } from '../services/media';
 import { usePeerTyping } from '../utils/typing';
 import {
@@ -75,7 +77,7 @@ const MenuItem = ({ icon, label, onPress, danger }) => (
    ONE MESSAGE (swipe to reply, long press for the menu)
    ========================================================= */
 
-function MessageRow({ item, seenText, onLongPress, onReply, onReactionPress, inputRef }) {
+const MessageRow = React.memo(function MessageRow({ item, seenText, onLongPress, onReply, onReactionPress, inputRef }) {
   const mine = item.senderId === item._meId;
   const dir = mine ? -1 : 1; // your messages swipe right-to-left, friends' left-to-right
   const x = useRef(new Animated.Value(0)).current;
@@ -170,10 +172,11 @@ function MessageRow({ item, seenText, onLongPress, onReply, onReactionPress, inp
         )}
       </Animated.View>
 
-      {!!seenText && <Text style={styles.seen}>{seenText}</Text>}
+      {item._pending && mine && !item.unsent && <Text style={styles.seen}>Sending…</Text>}
+      {!!seenText && !item._pending && <Text style={styles.seen}>{seenText}</Text>}
     </View>
   );
-}
+});
 
 /* =========================================================
    CHAT SCREEN
@@ -188,7 +191,9 @@ export default function ChatScreen({ route, navigation }) {
   const profile = friendProfiles?.[otherId] || other;
   const name = nameOf(profile);
 
-  const [messages, setMessages] = useState([]);
+  const [rawMessages, setRawMessages] = useState([]);
+  const [limitN, setLimitN] = useState(40);
+  const e2eReady = useE2EReady();
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState('');
   const [replyingTo, setReplyingTo] = useState(null);
@@ -265,28 +270,99 @@ export default function ChatScreen({ route, navigation }) {
     return () => clearInterval(t);
   }, []);
 
-  /* ---------- messages ---------- */
+  /* ---------- messages ----------
+     - unchanged messages keep the same object, so the list does not re-render / flicker
+     - read receipts are written only for real, server-confirmed, unseen incoming messages
+       (no write -> snapshot -> write loop)                                                  */
+
+  const sigCache = useRef(new Map());
+  const seenSent = useRef(new Set());
 
   useEffect(() => {
     if (!meId || !otherId) { setLoading(false); return undefined; }
-    const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('createdAt', 'desc'), limit(80));
+    sigCache.current = new Map();
+    const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('createdAt', 'desc'), limit(limitN));
     return onSnapshot(
       q,
-      async (snap) => {
-        const list = snap.docs
-          .map((d) => ({ id: d.id, ...d.data() }))
-          .filter((m) => !(m.deletedFor || []).includes(meId))
-          .map((m) => ({ ...m, _meId: meId, _otherId: otherId }));
-        setMessages(list);
+      { includeMetadataChanges: true },
+      (snap) => {
+        const prev = sigCache.current;
+        const next = new Map();
+        const list = [];
+
+        snap.docs.forEach((d) => {
+          const m = d.data();
+          if ((m.deletedFor || []).includes(meId)) return;
+          const pending = d.metadata.hasPendingWrites;
+          const sig = [
+            m.createdAt?.seconds || 0, m.enc?.n || m.text || '', m.unsent ? 1 : 0, pending ? 1 : 0,
+            JSON.stringify(m.reactions || {}), Object.keys(m.seenBy || {}).filter((k) => m.seenBy[k]).join(','),
+            m.replyTo?.id || '', m.audioUrl || '', (m.images || []).length,
+          ].join('|');
+
+          const old = prev.get(d.id);
+          if (old && old.sig === sig) { next.set(d.id, old); list.push(old.item); return; }
+
+          const item = { id: d.id, ...m, _pending: pending, _meId: meId, _otherId: otherId };
+          next.set(d.id, { sig, item });
+          list.push(item);
+        });
+
+        sigCache.current = next;
+        setRawMessages((old) => (old.length === list.length && old.every((x, i) => x === list[i]) ? old : list));
         setLoading(false);
-        const unseen = list.some((m) => m.senderId !== meId && !m.seenBy?.[meId]);
-        if (!unseen) return;
-        try { await markChatRead(chatId, meId); await markMessagesSeen(chatId, list, meId); }
-        catch (e) { console.log('Read/seen:', e?.message || e); }
+
+        const unseen = list.filter((m) => m.senderId !== meId && !m.seenBy?.[meId] && !m._pending && !seenSent.current.has(m.id));
+        if (unseen.length && AppState.currentState === 'active') {
+          unseen.forEach((m) => seenSent.current.add(m.id));
+          markChatRead(chatId, meId).catch(() => {});
+          markMessagesSeen(chatId, unseen, meId).catch((e) => console.log('Read/seen:', e?.message || e));
+        }
       },
       (e) => { console.log('Messages:', e?.message || e); setLoading(false); }
     );
-  }, [chatId, meId, otherId]);
+  }, [chatId, meId, otherId, limitN]);
+
+  // load older messages when scrolling to the top
+  const loadOlder = useCallback(() => {
+    if (rawMessages.length >= limitN) setLimitN((n) => n + 40);
+  }, [rawMessages.length, limitN]);
+
+  // decrypt (cached per message object, so each one is only decrypted once)
+  const decrypted = useRef(new WeakMap());
+  const decryptedFor = useRef(false);
+  const messages = useMemo(() => {
+    if (decryptedFor.current !== e2eReady) { decryptedFor.current = e2eReady; decrypted.current = new WeakMap(); }
+    return rawMessages.map((m) => {
+      if (m.unsent || (!m.enc && !m.replyTo?.enc)) return m;
+      const hit = decrypted.current.get(m);
+      if (hit) return hit;
+
+      const out = { ...m };
+      if (m.enc) {
+        const plain = e2eReady ? decryptFrom(m.enc, m.senderId) : null;
+        const shown = plain ?? (e2eReady ? CANT_DECRYPT : '🔒 …');
+        if (m.type === 'image') { out.caption = shown; out.text = shown; } else out.text = shown;
+      }
+      if (m.replyTo?.enc) out.replyTo = { ...m.replyTo, text: e2eReady ? decryptFrom(m.replyTo.enc, m.senderId) ?? '' : '' };
+      if (e2eReady) decrypted.current.set(m, out);
+      return out;
+    });
+  }, [rawMessages, e2eReady]);
+
+  // keep the friend's public key fresh (used when sending)
+  useEffect(() => {
+    if (!otherId) return undefined;
+    return onSnapshot(doc(db, 'users', otherId), (s) => setPeerKey(otherId, s.data()?.publicKey), () => {});
+  }, [otherId]);
+
+  // no banner for this chat while it is open, and clear its old notifications
+  useEffect(() => {
+    if (!otherId) return undefined;
+    setActiveChatUser(otherId);
+    Notifications.dismissAllNotificationsAsync().catch(() => {});
+    return () => setActiveChatUser(null);
+  }, [otherId]);
 
   const isSeen = (m) => m.senderId === meId && (!!m.seenBy?.[otherId] || (peerRead > 0 && ms(m.createdAt) > 0 && ms(m.createdAt) <= peerRead));
   const latestSeenMsg = useMemo(() => messages.find(isSeen) || null, [messages, peerRead, meId, otherId]);
@@ -320,7 +396,7 @@ export default function ChatScreen({ route, navigation }) {
   };
 
   // tapping your own reaction offers to remove it; any other reaction opens the menu
-  const reactionPress = (m, emoji) => (m.reactions?.[meId] === emoji ? setReactionMessage(m) : openMenu(m));
+  const reactionPress = useCallback((m, emoji) => (m.reactions?.[meId] === emoji ? setReactionMessage(m) : openMenu(m)), [meId, openMenu]);
 
   const removeReact = async () => {
     try { await removeReaction(chatId, reactionMessage.id, meId); } catch (e) { fail('Error')(e); }
@@ -358,7 +434,7 @@ export default function ChatScreen({ route, navigation }) {
     if (!menuMessage?.text) return;
     setBusy(true);
     try {
-      for (const id of selected) await sendMessage(meId, id, menuMessage.text);
+      for (const id of selected) await sendMessage(meId, id, menuMessage.text, null, { notify: { name: me.name, photo: me.photoURL } });
       setForward(false); setSelected([]); setMenuMessage(null);
     } catch (e) { fail('Forward failed')(e); }
     setBusy(false);
@@ -373,12 +449,19 @@ export default function ChatScreen({ route, navigation }) {
     senderName: replyingTo.senderId === meId ? 'You' : replyingTo.senderName || name,
   };
 
-  const notify = (body) => sendPushNotification({
-    toUserId: otherId,
-    title: me.name || 'New message',
-    body,
-    data: { type: 'message', fromId: meId, fromName: me.name || '', fromPhoto: me.photoURL || '' },
-  }).catch(() => {});
+  // pushed together with the message itself (see services/chat.js)
+  const sendOpts = () => ({
+    notify: { name: me.name, photo: me.photoURL },
+    onError: (e) => Alert.alert('Message not sent', e?.message || 'The server rejected this message.'),
+  });
+
+  const sendFailed = (title) => (e) => {
+    if (e?.code === 'E2E_NO_KEY') {
+      Alert.alert('Not encrypted yet', `${name} has not opened the updated King X yet, so this cannot be end-to-end encrypted. Ask them to open the app once, then try again.`);
+    } else {
+      Alert.alert(title, `${e?.message || 'Something went wrong.'}${e?.code ? `\n\n(${e.code})` : ''}`);
+    }
+  };
 
   const send = async () => {
     const clean = text.trim();
@@ -386,22 +469,20 @@ export default function ChatScreen({ route, navigation }) {
     const reply = replyData();
     setText(''); setReplyingTo(null); stopTyping();
     try {
-      // Firestore keeps retrying by itself on a bad connection but only answers once the
-      // server does; after 6s we stop waiting so the chat is never blocked.
-      await Promise.race([sendMessage(meId, otherId, clean, reply), new Promise((r) => setTimeout(r, 6000))]);
-      notify(clean);
+      // encrypts, shows the message instantly and notifies the friend at the same moment;
+      // nothing here waits for the server
+      await sendMessage(meId, otherId, clean, reply, sendOpts());
       requestAnimationFrame(() => inputRef.current?.focus());
     } catch (e) {
       setText(clean);
-      Alert.alert('Send failed', `${e?.message || 'Could not send message.'}${e?.code ? `\n\n(${e.code})` : ''}`);
+      sendFailed('Send failed')(e);
     }
   };
 
   const sendVoice = async (uri, duration) => {
     try {
       const url = await uploadFile(uri, `voice/${chatId}/${Date.now()}.m4a`, 'audio/m4a');
-      await sendVoiceMessage(meId, otherId, url, duration);
-      notify('Voice message');
+      await sendVoiceMessage(meId, otherId, url, duration, null, sendOpts());
     } catch (e) { fail('Voice message failed')(e); }
     setRecordingVoice(false);
   };
@@ -418,11 +499,10 @@ export default function ChatScreen({ route, navigation }) {
     setPending([]); setText(''); setReplyingTo(null); stopTyping(); setSendingPhotos(true);
     try {
       const urls = await Promise.all(files.map((f, i) => uploadFile(f.uri, `chat/${chatId}/${Date.now()}_${i}.jpg`, mimeOf(f))));
-      await sendImageMessage(meId, otherId, urls, caption, reply);
-      notify(caption || (urls.length > 1 ? `${urls.length} photos` : 'Photo'));
+      await sendImageMessage(meId, otherId, urls, caption, reply, sendOpts());
     } catch (e) {
       setPending(files); setText(caption);
-      fail('Photo failed')(e);
+      sendFailed('Photo failed')(e);
     }
     setSendingPhotos(false);
   };
@@ -466,6 +546,12 @@ export default function ChatScreen({ route, navigation }) {
             keyExtractor={(m) => m.id}
             keyboardShouldPersistTaps="handled"
             extraData={`${tick}-${peerRead}`}
+            onEndReached={loadOlder}
+            onEndReachedThreshold={0.4}
+            initialNumToRender={15}
+            maxToRenderPerBatch={10}
+            windowSize={9}
+            removeClippedSubviews={false}
             contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 14 }}
             renderItem={({ item }) => (
               <MessageRow
