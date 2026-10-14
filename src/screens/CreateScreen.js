@@ -13,10 +13,11 @@ import { createReel } from '../services/reels';
 import Screen from '../components/Screen';
 import ScreenHeader from '../components/ScreenHeader';
 import StoryEditor from '../components/StoryEditor';
+import EditedVideo from '../components/EditedVideo';
 import Btn from '../components/Btn';
 import T from '../components/T';
 
-// mode = 'post' -> photos only | 'story' -> photo (with editor) or video | 'reel' -> video only
+// mode = 'post' -> photo | 'story' -> photo or video | 'reel' -> video. All of them open the editor.
 const TITLES = { post: 'New post', story: 'New story', reel: 'New reel' };
 
 export default function CreateScreen({ route, navigation }) {
@@ -26,21 +27,17 @@ export default function CreateScreen({ route, navigation }) {
   const { colors, fonts } = useTheme();
   const { width, height } = useWindowDimensions();
 
-  const [asset, setAsset] = useState(null); // what gets uploaded (the edited picture for stories)
-  const [original, setOriginal] = useState(null); // the photo picked for the story editor
+  const [asset, setAsset] = useState(null); // what gets uploaded (edited picture, or video + edit)
+  const [original, setOriginal] = useState(null); // what was picked, kept for the editor
   const [editing, setEditing] = useState(false);
   const [caption, setCaption] = useState('');
   const [progress, setProgress] = useState(null);
   const uploading = progress !== null;
-  const canEdit = isStory && original && !uploading;
 
-  // opens the picker directly; story photos go on to the editor
   const pick = async () => {
     try {
-      const a = await pickMedia({ source: 'gallery', video: isStory || isReel, square: !isStory && !isReel });
-      if (!a) return;
-      if (isStory && !isVideo(a)) { setOriginal(a); setEditing(true); }
-      else { setOriginal(null); setAsset(a); }
+      const a = await pickMedia({ source: 'gallery', video: isStory || isReel });
+      if (a) { setOriginal(a); setEditing(true); }
     } catch (e) {
       Alert.alert('Could not open', e?.message || 'Unable to open your photos and videos.');
     }
@@ -64,6 +61,7 @@ export default function CreateScreen({ route, navigation }) {
   const boxH = isReel ? Math.min(height * 0.6, boxW * 1.78) : isStory ? boxW * 1.7 : boxW;
   const input = { alignSelf: 'stretch', backgroundColor: colors.inputBg, borderRadius: 14, padding: 14, textAlignVertical: 'top', fontFamily: fonts.regular, fontSize: 15, color: colors.text };
   const hint = (text) => <T size={12} color="subtext" style={{ textAlign: 'center' }}>{text}</T>;
+  const full = { width: '100%', height: '100%' };
 
   return (
     <Screen edges={['top', 'bottom']}>
@@ -81,9 +79,11 @@ export default function CreateScreen({ route, navigation }) {
             }}
           >
             {asset ? (
-              isVideo(asset)
-                ? <Video source={{ uri: asset.uri }} style={{ width: '100%', height: '100%' }} resizeMode={ResizeMode.COVER} shouldPlay isLooping isMuted />
-                : <Image source={{ uri: asset.uri }} style={{ width: '100%', height: '100%' }} />
+              !isVideo(asset)
+                ? <Image source={{ uri: asset.uri }} style={full} />
+                : asset.edit
+                  ? <EditedVideo uri={asset.uri} edit={asset.edit} width={boxW} height={boxH} shouldPlay isLooping isMuted />
+                  : <Video source={{ uri: asset.uri }} style={full} resizeMode={ResizeMode.COVER} shouldPlay isLooping isMuted />
             ) : (
               <View style={{ alignItems: 'center', gap: 8 }}>
                 <Ionicons name={isReel ? 'videocam-outline' : 'images-outline'} size={40} color={colors.primary} />
@@ -94,7 +94,7 @@ export default function CreateScreen({ route, navigation }) {
 
           {asset && !uploading ? (
             <View style={{ flexDirection: 'row', gap: 10 }}>
-              {canEdit && <Btn small variant="soft" label="Edit" icon="color-wand-outline" onPress={() => setEditing(true)} />}
+              <Btn small variant="soft" label="Edit" icon="color-wand-outline" onPress={() => setEditing(true)} />
               <Btn small variant="soft" label="Change" icon="swap-horizontal-outline" onPress={pick} />
             </View>
           ) : null}
@@ -119,7 +119,8 @@ export default function CreateScreen({ route, navigation }) {
       {editing && original ? (
         <StoryEditor
           asset={original}
-          onCancel={() => { setEditing(false); if (!asset) setOriginal(null); }}
+          ratio={isStory || isReel ? 9 / 16 : 1}
+          onCancel={() => setEditing(false)}
           onDone={(edited) => { setAsset(edited); setEditing(false); }}
         />
       ) : null}
