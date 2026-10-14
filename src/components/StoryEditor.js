@@ -1,22 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Alert, Animated, Image, Modal, PanResponder, Pressable, ScrollView, StatusBar, Text, TextInput, View, useWindowDimensions } from 'react-native';
+import { Video, ResizeMode } from 'expo-av';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { captureRef } from 'react-native-view-shot';
+import { isVideo } from '../services/media';
+import { FILTERS, textBox, textStyle } from './EditedVideo';
 
 const RED = '#E11D2A';
 const COLORS = ['#ffffff', '#000000', '#E11D2A', '#FFD60A', '#34C759', '#0A84FF', '#BF5AF2', '#FF9F0A'];
-// "effects" are colour layers on top of the photo
-const FILTERS = [
-  { n: 'Normal' },
-  { n: 'Warm', c: ['rgba(255,150,40,.28)', 'rgba(255,90,0,.12)'] },
-  { n: 'Cool', c: ['rgba(40,140,255,.28)', 'rgba(0,60,200,.12)'] },
-  { n: 'Vintage', c: ['rgba(170,120,60,.38)', 'rgba(90,60,30,.25)'] },
-  { n: 'Fade', c: ['rgba(255,255,255,.3)', 'rgba(255,255,255,.18)'] },
-  { n: 'Rose', c: ['rgba(255,80,140,.3)', 'rgba(255,150,80,.14)'] },
-  { n: 'Dream', c: ['rgba(150,90,255,.32)', 'rgba(255,120,200,.16)'] },
-  { n: 'Noir', c: ['rgba(0,0,0,.5)', 'rgba(0,0,0,.22)'] },
-];
+const fill = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 };
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const dist = (a, b) => Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
@@ -53,28 +46,27 @@ function useTransform({ min = 0.5, max = 8, rotate = false, onTap } = {}) {
   })).current;
 
   const style = { transform: [{ translateX: v.x }, { translateY: v.y }, { rotate: v.r.interpolate({ inputRange: [-100, 100], outputRange: ['-100rad', '100rad'] }) }, { scale: v.s }] };
-  return { pan: pan.panHandlers, style };
+  return { pan: pan.panHandlers, style, get: () => ({ ...t }) };
 }
 
-function TextItem({ it, onTap }) {
+function TextItem({ it, onTap, reg }) {
   const tr = useTransform({ rotate: true, min: 0.4, max: 5, onTap: () => onTap(it) });
-  const dark = ['#ffffff', '#FFD60A', '#34C759'].includes(it.color);
+  reg[it.id] = tr.get; // so "Done" can read where the text ended up
   return (
-    <Animated.View {...tr.pan} style={[{ position: 'absolute', left: 20, right: 20, top: '40%', alignItems: 'center' }, tr.style]}>
-      <Text style={{
-        color: it.bg ? (dark ? '#000' : '#fff') : it.color, backgroundColor: it.bg ? it.color : 'transparent',
-        fontSize: it.size, fontWeight: it.bold ? '800' : '400', textAlign: 'center', paddingHorizontal: it.bg ? 12 : 0, paddingVertical: it.bg ? 4 : 0,
-        borderRadius: 8, overflow: 'hidden', textShadowColor: it.bg ? 'transparent' : 'rgba(0,0,0,.45)', textShadowRadius: 5,
-      }}>{it.text}</Text>
+    <Animated.View {...tr.pan} style={[textBox, tr.style]}>
+      <Text style={textStyle(it, it.size)}>{it.text}</Text>
     </Animated.View>
   );
 }
 
-// Full-screen story editor: zoom/move the photo, pick an effect, add text, then save as one picture.
-export default function StoryEditor({ asset, onCancel, onDone }) {
+// Full-screen editor for stories, posts and reels: zoom/move, effects and text.
+// Photos are saved as one edited picture; videos keep the original file plus an `edit` description.
+export default function StoryEditor({ asset, ratio = 9 / 16, onCancel, onDone }) {
   const { width, height } = useWindowDimensions();
-  const fh = Math.min(height - 250, (width * 16) / 9), fw = (fh * 9) / 16;
+  const vid = isVideo(asset);
+  const fh = Math.min(height - 250, (width - 24) / ratio), fw = fh * ratio;
   const frame = useRef(null);
+  const reg = useRef({}).current;
   const img = useTransform();
   const [size, setSize] = useState({ w: asset.width || 0, h: asset.height || 0 });
   const [filter, setFilter] = useState(0);
@@ -82,7 +74,7 @@ export default function StoryEditor({ asset, onCancel, onDone }) {
   const [edit, setEdit] = useState(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => { if (!size.w) Image.getSize(asset.uri, (w, h) => setSize({ w, h }), () => setSize({ w: 1080, h: 1920 })); }, []);
+  useEffect(() => { if (!vid && !size.w) Image.getSize(asset.uri, (w, h) => setSize({ w, h }), () => setSize({ w: 1080, h: 1920 })); }, []);
   const k = size.w ? Math.max(fw / size.w, fh / size.h) : 1; // "cover" size inside the frame
 
   const newText = () => setEdit({ id: null, text: '', color: '#ffffff', bg: false, bold: true, size: 30 });
@@ -96,8 +88,14 @@ export default function StoryEditor({ asset, onCancel, onDone }) {
   const save = async () => {
     setBusy(true);
     try {
-      const uri = await captureRef(frame, { format: 'jpg', quality: 0.92, result: 'tmpfile', width: 1080, height: 1920 });
-      onDone({ uri, type: 'image', mimeType: 'image/jpeg', width: 1080, height: 1920 });
+      if (vid) {
+        const m = img.get();
+        const t = texts.map((it) => { const p = reg[it.id](); return { text: it.text, color: it.color, bg: it.bg, bold: it.bold, sz: it.size / fw, x: p.x / fw, y: p.y / fh, s: p.s, r: p.r }; });
+        onDone({ ...asset, edit: { a: ratio, s: m.s, x: m.x / fw, y: m.y / fh, f: filter, t } });
+      } else {
+        const uri = await captureRef(frame, { format: 'jpg', quality: 0.92, result: 'tmpfile', width: 1080, height: Math.round(1080 / ratio) });
+        onDone({ uri, type: 'image', mimeType: 'image/jpeg', width: 1080, height: Math.round(1080 / ratio) });
+      }
     } catch (e) {
       setBusy(false);
       Alert.alert('Could not save', e?.message || 'Please try again.');
@@ -106,6 +104,9 @@ export default function StoryEditor({ asset, onCancel, onDone }) {
 
   const chip = { width: 22, height: 22, borderRadius: 11, marginRight: 8, borderWidth: 2 };
   const tool = (on) => ({ paddingHorizontal: 12, height: 34, borderRadius: 17, justifyContent: 'center', backgroundColor: on ? '#fff' : '#ffffff22' });
+  const btn = (label, on, key, extra) => (
+    <Pressable key={key || label} onPress={() => setEdit(extra)} style={tool(on)}><Text style={{ color: on ? '#000' : '#fff', fontWeight: '700' }}>{label}</Text></Pressable>
+  );
 
   return (
     <Modal visible animationType="slide" onRequestClose={onCancel} statusBarTranslucent>
@@ -118,16 +119,19 @@ export default function StoryEditor({ asset, onCancel, onDone }) {
           <Pressable onPress={newText} hitSlop={10} style={tool(false)}><Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Aa</Text></Pressable>
         </View>
 
-        {/* the picture that gets saved */}
+        {/* what gets saved */}
         <View style={{ alignItems: 'center' }}>
           <View ref={frame} collapsable={false} style={{ width: fw, height: fh, backgroundColor: '#000', overflow: 'hidden', borderRadius: 14 }}>
-            <Animated.Image
-              source={{ uri: asset.uri }}
-              style={[{ position: 'absolute', left: (fw - size.w * k) / 2, top: (fh - size.h * k) / 2, width: size.w * k, height: size.h * k }, img.style]}
-            />
-            {FILTERS[filter].c && <LinearGradient colors={FILTERS[filter].c} pointerEvents="none" style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />}
-            <View {...img.pan} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />
-            {texts.map((it) => <TextItem key={it.id} it={it} onTap={setEdit} />)}
+            {vid ? (
+              <Animated.View style={[{ width: fw, height: fh }, img.style]}>
+                <Video source={{ uri: asset.uri }} style={{ width: fw, height: fh }} resizeMode={ResizeMode.COVER} shouldPlay isLooping isMuted />
+              </Animated.View>
+            ) : (
+              <Animated.Image source={{ uri: asset.uri }} style={[{ position: 'absolute', left: (fw - size.w * k) / 2, top: (fh - size.h * k) / 2, width: size.w * k, height: size.h * k }, img.style]} />
+            )}
+            {FILTERS[filter].c && <LinearGradient colors={FILTERS[filter].c} pointerEvents="none" style={fill} />}
+            <View {...img.pan} style={fill} />
+            {texts.map((it) => <TextItem key={it.id} it={it} onTap={setEdit} reg={reg} />)}
           </View>
         </View>
 
@@ -136,9 +140,9 @@ export default function StoryEditor({ asset, onCancel, onDone }) {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ paddingHorizontal: 14 }}>
             {FILTERS.map((f, i) => (
               <Pressable key={f.n} onPress={() => setFilter(i)} style={{ marginRight: 10, alignItems: 'center' }}>
-                <View style={{ width: 52, height: 68, borderRadius: 10, overflow: 'hidden', borderWidth: 2, borderColor: i === filter ? RED : 'transparent' }}>
-                  <Image source={{ uri: asset.uri }} style={{ width: '100%', height: '100%' }} />
-                  {f.c && <LinearGradient colors={f.c} style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }} />}
+                <View style={{ width: 52, height: 68, borderRadius: 10, overflow: 'hidden', borderWidth: 2, borderColor: i === filter ? RED : 'transparent', backgroundColor: '#444' }}>
+                  {!vid && <Image source={{ uri: asset.uri }} style={{ width: '100%', height: '100%' }} />}
+                  {f.c && <LinearGradient colors={f.c} style={fill} />}
                 </View>
                 <Text style={{ color: i === filter ? '#fff' : '#999', fontSize: 11, marginTop: 4 }}>{f.n}</Text>
               </Pressable>
@@ -151,16 +155,18 @@ export default function StoryEditor({ asset, onCancel, onDone }) {
 
         {/* add / edit text */}
         {edit && (
-          <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,.82)', paddingTop: 50 }}>
+          <View style={{ ...fill, backgroundColor: 'rgba(0,0,0,.82)', paddingTop: 50 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16 }}>
-              {edit.id ? <Pressable onPress={removeText}><Ionicons name="trash-outline" size={24} color="#fff" /></Pressable> : <Pressable onPress={() => setEdit(null)}><Ionicons name="close" size={26} color="#fff" /></Pressable>}
+              {edit.id
+                ? <Pressable onPress={removeText}><Ionicons name="trash-outline" size={24} color="#fff" /></Pressable>
+                : <Pressable onPress={() => setEdit(null)}><Ionicons name="close" size={26} color="#fff" /></Pressable>}
               <Pressable onPress={saveText} style={tool(true)}><Text style={{ fontWeight: '700' }}>Done</Text></Pressable>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 8, marginTop: 14 }}>
-              <Pressable onPress={() => setEdit({ ...edit, bg: !edit.bg })} style={tool(edit.bg)}><Text style={{ color: edit.bg ? '#000' : '#fff', fontWeight: '700' }}>Background</Text></Pressable>
-              <Pressable onPress={() => setEdit({ ...edit, bold: !edit.bold })} style={tool(edit.bold)}><Text style={{ color: edit.bold ? '#000' : '#fff', fontWeight: '800' }}>B</Text></Pressable>
-              <Pressable onPress={() => setEdit({ ...edit, size: Math.max(16, edit.size - 4) })} style={tool(false)}><Text style={{ color: '#fff', fontWeight: '700' }}>A−</Text></Pressable>
-              <Pressable onPress={() => setEdit({ ...edit, size: Math.min(64, edit.size + 4) })} style={tool(false)}><Text style={{ color: '#fff', fontWeight: '700' }}>A+</Text></Pressable>
+              {btn('Background', edit.bg, 'bg', { ...edit, bg: !edit.bg })}
+              {btn('B', edit.bold, 'b', { ...edit, bold: !edit.bold })}
+              {btn('A−', false, 'm', { ...edit, size: Math.max(16, edit.size - 4) })}
+              {btn('A+', false, 'p', { ...edit, size: Math.min(64, edit.size + 4) })}
             </View>
             <View style={{ flexDirection: 'row', justifyContent: 'center', marginTop: 16 }}>
               {COLORS.map((c) => <Pressable key={c} onPress={() => setEdit({ ...edit, color: c })} style={[chip, { backgroundColor: c, borderColor: edit.color === c ? '#fff' : '#ffffff55' }]} />)}
