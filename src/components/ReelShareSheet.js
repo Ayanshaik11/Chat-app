@@ -24,13 +24,7 @@ export default function ReelShareSheet({ visible, onClose, me, friends = [], tex
     if (!me?.id || !friend?.id || busy[friend.id] || sent[friend.id]) return;
     setBusy((b) => ({ ...b, [friend.id]: true }));
     try {
-      await sendMessage(me.id, friend.id, text);
-      sendPushNotification({
-        toUserId: friend.id,
-        title: me.name || 'New message',
-        body: 'Shared a video with you',
-        data: { type: 'message', fromId: me.id, fromName: me.name || '', fromPhoto: me.photoURL || '' },
-      }).catch(() => {});
+      await sendMessage(me.id, friend.id, text, null, { notify: { name: me.name, photo: me.photoURL } });
       setSent((s) => ({ ...s, [friend.id]: true }));
     } catch (e) {
       Alert.alert('Share failed', e?.message || 'Could not send.');
