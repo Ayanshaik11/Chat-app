@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, Text, View } from 'react-native';
+import { AppState, ScrollView, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import * as SplashScreen from 'expo-splash-screen';
@@ -22,6 +22,8 @@ import { navigateToChat } from './src/navigation/navigationRef';
 import { registerForPushNotifications } from './src/services/pushTokens';
 import useUpdateCheck from './src/hooks/useUpdateCheck';
 import UpdateCard from './src/components/UpdateCard';
+import { initCrypto } from './src/services/crypto';
+import { flushOutbox } from './src/services/chat';
 import { ShareIntentProvider } from 'expo-share-intent';
 import ShareIntentHandler from './src/components/ShareIntentHandler';
 
@@ -102,6 +104,29 @@ function Root() {
   const { isDark } = useTheme();
   const { me } = useAuth();
   const updateState = useUpdateCheck();
+
+  /*
+   * End-to-end encryption keys + re-send any messages that were
+   * still waiting when the app was last closed.
+   */
+  useEffect(() => {
+    if (!me?.id) {
+      return undefined;
+    }
+
+    initCrypto(me.id).catch((e) =>
+      console.warn('KING X: crypto init failed', e?.message || e)
+    );
+    flushOutbox(me.id).catch(() => {});
+
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') {
+        flushOutbox(me.id).catch(() => {});
+      }
+    });
+
+    return () => sub.remove();
+  }, [me?.id]);
 
   /*
    * Register this device for push notifications
