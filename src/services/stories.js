@@ -5,6 +5,7 @@ import { chunk, toMillis } from '../utils/helpers';
 
 export const STORY_LIFETIME_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+// asset.edit (videos only) = zoom / effect / text, applied live when the story is played
 export async function createStory(me, asset, onProgress) {
   const id = doc(collection(db, 'stories')).id;
   const mime = mimeOf(asset);
@@ -14,6 +15,7 @@ export async function createStory(me, asset, onProgress) {
     authorId: me.id,
     mediaURL,
     mediaType: isVideo(asset) ? 'video' : 'image',
+    ...(asset.edit ? { edit: asset.edit } : {}),
     storagePath,
     createdAt: serverTimestamp(),
     expiresAt: Timestamp.fromMillis(Date.now() + STORY_LIFETIME_MS),
@@ -27,18 +29,14 @@ export async function fetchStories(authorIds) {
   const parts = await Promise.all(
     chunk(authorIds, 10).map((ids) => getDocs(query(collection(db, 'stories'), where('authorId', 'in', ids))))
   );
-  return parts
-    .flatMap((s) => s.docs.map((d) => ({ id: d.id, ...d.data() })))
-    .filter((s) => toMillis(s.expiresAt) > now);
+  return parts.flatMap((s) => s.docs.map((d) => ({ id: d.id, ...d.data() }))).filter((s) => toMillis(s.expiresAt) > now);
 }
 
 export const markStoryViewed = (storyId, viewerId) =>
   updateDoc(doc(db, 'stories', storyId), { viewedBy: arrayUnion(viewerId) }).catch(() => {});
 
 export const toggleStoryLike = (storyId, meId, alreadyLiked) =>
-  updateDoc(doc(db, 'stories', storyId), {
-    likedBy: alreadyLiked ? arrayRemove(meId) : arrayUnion(meId),
-  }).catch(() => {});
+  updateDoc(doc(db, 'stories', storyId), { likedBy: alreadyLiked ? arrayRemove(meId) : arrayUnion(meId) }).catch(() => {});
 
 export async function deleteStory(story) {
   await deleteDoc(doc(db, 'stories', story.id));
