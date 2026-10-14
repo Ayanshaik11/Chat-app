@@ -13,12 +13,25 @@ import { db } from '../config/firebase';
 /*
  * Notification behaviour when the app is in the foreground.
  */
+let activeChatUser = null;
+
+/** The friend whose chat is open right now (no banner / sound for their messages). */
+export function setActiveChatUser(userId) {
+  activeChatUser = userId || null;
+}
+
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
+  handleNotification: async (notification) => {
+    const data = notification?.request?.content?.data || {};
+    const chatIsOpen =
+      data.type === 'message' && activeChatUser && data.fromId === activeChatUser;
+
+    return {
+      shouldShowAlert: !chatIsOpen,
+      shouldPlaySound: !chatIsOpen,
+      shouldSetBadge: false,
+    };
+  },
 });
 
 /**
