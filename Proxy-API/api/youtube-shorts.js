@@ -25,12 +25,9 @@ const TOPICS = [
   'hindi songs',
   'bollywood comedy',
   'hindi anime edits like goku x vegeta x bulma',
-  'piccolo x gohan',
   'eren x Mikasa love Hindi edits',
   'Naruto and madara and itachi',
-  'sung jinwoo',
   'gojo x sukuna',
-  'toji',
 ];
 
 const POOL_TTL_MS = 6 * 60 * 60 * 1000; // how often topics are searched again (quota: ~1,100 units per refresh)
