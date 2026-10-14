@@ -1,12 +1,11 @@
-import {
-  arrayRemove, arrayUnion, collection, deleteDoc, doc, getDocs, query, serverTimestamp, setDoc, updateDoc, where,
-} from 'firebase/firestore';
+import { arrayRemove, arrayUnion, collection, deleteDoc, doc, getDocs, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { deleteFile, extOf, mimeOf, uploadFile } from './media';
 import { chunk, toMillis } from '../utils/helpers';
 
 const byNewest = (a, b) => toMillis(b.createdAt) - toMillis(a.createdAt);
 
+// asset.edit = zoom / effect / text, applied live when the reel is played
 export async function createReel(me, asset, caption, onProgress) {
   const id = doc(collection(db, 'reels')).id;
   const mime = mimeOf(asset);
@@ -15,6 +14,7 @@ export async function createReel(me, asset, caption, onProgress) {
   await setDoc(doc(db, 'reels', id), {
     authorId: me.id,
     videoURL,
+    ...(asset.edit ? { edit: asset.edit } : {}),
     storagePath,
     caption: (caption || '').trim(),
     likes: [],
