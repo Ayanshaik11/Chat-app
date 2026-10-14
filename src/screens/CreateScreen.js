@@ -1,21 +1,10 @@
 import React, { useState } from 'react';
-import {
-  Alert,
-  Image,
-  KeyboardAvoidingView,
-  Platform,
-  Pressable,
-  ScrollView,
-  TextInput,
-  View,
-  useWindowDimensions,
-} from 'react-native';
+import { Alert, Image, KeyboardAvoidingView, Platform, Pressable, ScrollView, TextInput, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Video, ResizeMode } from 'expo-av';
 
 import { useAuth } from '../context/AuthContext';
 import { useTheme } from '../context/SettingsContext';
-
 import { isVideo, pickMedia } from '../services/media';
 import { createPost } from '../services/posts';
 import { createStory } from '../services/stories';
@@ -23,315 +12,117 @@ import { createReel } from '../services/reels';
 
 import Screen from '../components/Screen';
 import ScreenHeader from '../components/ScreenHeader';
+import StoryEditor from '../components/StoryEditor';
 import Btn from '../components/Btn';
 import T from '../components/T';
 
-// mode = 'post'  -> photos only
-// mode = 'story' -> photo or video
-// mode = 'reel'  -> video only
+// mode = 'post' -> photos only | 'story' -> photo (with editor) or video | 'reel' -> video only
+const TITLES = { post: 'New post', story: 'New story', reel: 'New reel' };
 
 export default function CreateScreen({ route, navigation }) {
   const mode = route.params?.mode || 'post';
-
-  const isStory = mode === 'story';
-  const isReel = mode === 'reel';
-  const isVideoMode = isStory || isReel;
-
+  const isStory = mode === 'story', isReel = mode === 'reel';
   const { me } = useAuth();
   const { colors, fonts } = useTheme();
   const { width, height } = useWindowDimensions();
 
-  const [asset, setAsset] = useState(null);
+  const [asset, setAsset] = useState(null); // what gets uploaded (the edited picture for stories)
+  const [original, setOriginal] = useState(null); // the photo picked for the story editor
+  const [editing, setEditing] = useState(false);
   const [caption, setCaption] = useState('');
   const [progress, setProgress] = useState(null);
-
   const uploading = progress !== null;
+  const canEdit = isStory && original && !uploading;
 
-  const titles = {
-    post: 'New post',
-    story: 'New story',
-    reel: 'New reel',
-  };
-
-  // Opens the media picker DIRECTLY.
-  // No Gallery / Camera popup.
+  // opens the picker directly; story photos go on to the editor
   const pick = async () => {
     try {
-      const a = await pickMedia({
-        source: 'gallery',
-        video: isVideoMode,
-        square: !isVideoMode,
-      });
-
-      if (a) {
-        setAsset(a);
-      }
+      const a = await pickMedia({ source: 'gallery', video: isStory || isReel, square: !isStory && !isReel });
+      if (!a) return;
+      if (isStory && !isVideo(a)) { setOriginal(a); setEditing(true); }
+      else { setOriginal(null); setAsset(a); }
     } catch (e) {
-      Alert.alert(
-        'Could not open',
-        e?.message || 'Unable to open your photos and videos.'
-      );
+      Alert.alert('Could not open', e?.message || 'Unable to open your photos and videos.');
     }
   };
 
   const share = async () => {
     if (!asset || uploading) return;
-
     setProgress(0);
-
     try {
-      if (isStory) {
-        await createStory(me, asset, setProgress);
-      } else if (isReel) {
-        await createReel(me, asset, caption, setProgress);
-      } else {
-        await createPost(me, asset, caption, setProgress);
-      }
-
+      if (isStory) await createStory(me, asset, setProgress);
+      else if (isReel) await createReel(me, asset, caption, setProgress);
+      else await createPost(me, asset, caption, setProgress);
       navigation.goBack();
     } catch (e) {
       setProgress(null);
-
-      Alert.alert(
-        'Upload failed',
-        e?.message || 'Something went wrong while uploading.'
-      );
+      Alert.alert('Upload failed', e?.message || 'Something went wrong while uploading.');
     }
   };
 
-  const boxW = isReel
-    ? width * 0.72
-    : isStory
-      ? width * 0.62
-      : width - 40;
-
-  const boxH = isReel
-    ? Math.min(height * 0.6, boxW * 1.78)
-    : isStory
-      ? boxW * 1.7
-      : boxW;
+  const boxW = isReel ? width * 0.72 : isStory ? width * 0.62 : width - 40;
+  const boxH = isReel ? Math.min(height * 0.6, boxW * 1.78) : isStory ? boxW * 1.7 : boxW;
+  const input = { alignSelf: 'stretch', backgroundColor: colors.inputBg, borderRadius: 14, padding: 14, textAlignVertical: 'top', fontFamily: fonts.regular, fontSize: 15, color: colors.text };
+  const hint = (text) => <T size={12} color="subtext" style={{ textAlign: 'center' }}>{text}</T>;
 
   return (
     <Screen edges={['top', 'bottom']}>
+      <ScreenHeader title={TITLES[mode]} onBack={() => !uploading && navigation.goBack()} />
 
-      <ScreenHeader
-        title={titles[mode]}
-        onBack={() => !uploading && navigation.goBack()}
-      />
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+        <ScrollView contentContainerStyle={{ padding: 20, gap: 16, alignItems: 'center' }} keyboardShouldPersistTaps="handled">
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-
-        <ScrollView
-          contentContainerStyle={{
-            padding: 20,
-            gap: 16,
-            alignItems: 'center',
-          }}
-          keyboardShouldPersistTaps="handled"
-        >
-
-          {/* MEDIA PICKER */}
           <Pressable
             onPress={pick}
             disabled={uploading}
             style={{
-              width: boxW,
-              height: boxH,
-              borderRadius: 20,
-              overflow: 'hidden',
-              backgroundColor: colors.inputBg,
-              alignItems: 'center',
-              justifyContent: 'center',
-              borderWidth: asset ? 0 : 2,
-              borderStyle: 'dashed',
-              borderColor: colors.border,
+              width: boxW, height: boxH, borderRadius: 20, overflow: 'hidden', backgroundColor: colors.inputBg, alignItems: 'center', justifyContent: 'center',
+              borderWidth: asset ? 0 : 2, borderStyle: 'dashed', borderColor: colors.border,
             }}
           >
-
             {asset ? (
-
-              isVideo(asset) ? (
-
-                <Video
-                  source={{ uri: asset.uri }}
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                  }}
-                  resizeMode={ResizeMode.COVER}
-                  shouldPlay
-                  isLooping
-                  isMuted
-                />
-
-              ) : (
-
-                <Image
-                  source={{ uri: asset.uri }}
-                  style={{
-                    width: '100%',
-                    height: '100%',
-                  }}
-                />
-
-              )
-
+              isVideo(asset)
+                ? <Video source={{ uri: asset.uri }} style={{ width: '100%', height: '100%' }} resizeMode={ResizeMode.COVER} shouldPlay isLooping isMuted />
+                : <Image source={{ uri: asset.uri }} style={{ width: '100%', height: '100%' }} />
             ) : (
-
-              <View
-                style={{
-                  alignItems: 'center',
-                  gap: 8,
-                }}
-              >
-
-                <Ionicons
-                  name={
-                    isReel
-                      ? 'videocam-outline'
-                      : 'images-outline'
-                  }
-                  size={40}
-                  color={colors.primary}
-                />
-
-                <T weight="medium">
-                  {isReel
-                    ? 'Choose a video'
-                    : isStory
-                      ? 'Choose a photo or video'
-                      : 'Choose a photo'}
-                </T>
-
+              <View style={{ alignItems: 'center', gap: 8 }}>
+                <Ionicons name={isReel ? 'videocam-outline' : 'images-outline'} size={40} color={colors.primary} />
+                <T weight="medium">{isReel ? 'Choose a video' : isStory ? 'Choose a photo or video' : 'Choose a photo'}</T>
               </View>
-
             )}
-
           </Pressable>
 
-          {/* CHANGE MEDIA */}
           {asset && !uploading ? (
-            <Btn
-              small
-              variant="soft"
-              label="Change"
-              icon="swap-horizontal-outline"
-              onPress={pick}
-            />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              {canEdit && <Btn small variant="soft" label="Edit" icon="color-wand-outline" onPress={() => setEditing(true)} />}
+              <Btn small variant="soft" label="Change" icon="swap-horizontal-outline" onPress={pick} />
+            </View>
           ) : null}
 
-          {/* STORY INFO */}
-          {isStory ? (
+          {isStory ? hint('Stories disappear after 24 hours. Videos can be up to 30 seconds.') : null}
 
-            <T
-              size={12}
-              color="subtext"
-              style={{ textAlign: 'center' }}
-            >
-              Stories disappear after 24 hours.
-              Videos can be up to 30 seconds.
-            </T>
-
-          ) : null}
-
-          {/* REEL CAPTION */}
-          {isReel ? (
-
+          {!isStory ? (
             <TextInput
-              value={caption}
-              onChangeText={setCaption}
-              placeholder="Write a caption…"
-              placeholderTextColor={colors.subtext}
-              multiline
-              maxLength={300}
-              editable={!uploading}
-              style={{
-                alignSelf: 'stretch',
-                minHeight: 60,
-                backgroundColor: colors.inputBg,
-                borderRadius: 14,
-                padding: 14,
-                textAlignVertical: 'top',
-                fontFamily: fonts.regular,
-                fontSize: 15,
-                color: colors.text,
-              }}
+              value={caption} onChangeText={setCaption} placeholder="Write a caption…" placeholderTextColor={colors.subtext}
+              multiline maxLength={300} editable={!uploading} style={[input, { minHeight: isReel ? 60 : 80 }]}
             />
-
           ) : null}
 
-          {/* POST CAPTION */}
-          {!isStory && !isReel ? (
+          {isReel ? hint('Videos can be up to 30 seconds.') : null}
 
-            <TextInput
-              value={caption}
-              onChangeText={setCaption}
-              placeholder="Write a caption…"
-              placeholderTextColor={colors.subtext}
-              multiline
-              maxLength={300}
-              editable={!uploading}
-              style={{
-                alignSelf: 'stretch',
-                minHeight: 80,
-                backgroundColor: colors.inputBg,
-                borderRadius: 14,
-                padding: 14,
-                textAlignVertical: 'top',
-                fontFamily: fonts.regular,
-                fontSize: 15,
-                color: colors.text,
-              }}
-            />
+          <Btn style={{ alignSelf: 'stretch' }} disabled={!asset} loading={uploading} label={isStory ? 'Share to story' : isReel ? 'Share reel' : 'Share post'} onPress={share} />
 
-          ) : null}
-
-          {/* REEL INFO */}
-          {isReel ? (
-
-            <T
-              size={12}
-              color="subtext"
-              style={{ textAlign: 'center' }}
-            >
-              Videos can be up to 30 seconds.
-            </T>
-
-          ) : null}
-
-          {/* SHARE */}
-          <Btn
-            style={{ alignSelf: 'stretch' }}
-            disabled={!asset}
-            loading={uploading}
-            label={
-              isStory
-                ? 'Share to story'
-                : isReel
-                  ? 'Share reel'
-                  : 'Share post'
-            }
-            onPress={share}
-          />
-
-          {/* UPLOAD PROGRESS */}
-          {uploading ? (
-
-            <T
-              size={12}
-              color="subtext"
-            >
-              Uploading… {Math.round(progress * 100)}%
-            </T>
-
-          ) : null}
-
+          {uploading ? <T size={12} color="subtext">Uploading… {Math.round(progress * 100)}%</T> : null}
         </ScrollView>
-
       </KeyboardAvoidingView>
+
+      {editing && original ? (
+        <StoryEditor
+          asset={original}
+          onCancel={() => { setEditing(false); if (!asset) setOriginal(null); }}
+          onDone={(edited) => { setAsset(edited); setEditing(false); }}
+        />
+      ) : null}
     </Screen>
   );
 }
