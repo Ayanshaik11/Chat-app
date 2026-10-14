@@ -11,6 +11,7 @@ import Avatar from'../components/Avatar';
 import EmptyState from'../components/EmptyState';
 import T from'../components/T';
 import{usePeerTyping}from'../utils/typing';
+import{decryptFrom,useE2EReady}from'../services/crypto';
 
 function PreviewText({typingValue,preview,unread,colors}){
   const typing=usePeerTyping(typingValue);
@@ -22,6 +23,7 @@ export default function MessagesScreen({navigation}){
   const{friends,chats}=useAppData();
   const{colors,fonts}=useTheme();
   const[text,setText]=useState('');
+  const e2eReady=useE2EReady();
 
   const myId=me?.id||null;
 
@@ -69,7 +71,11 @@ export default function MessagesScreen({navigation}){
     const{friend,chat}=item;
     const unread=chat?.unread?.[myId]||0;
     const friendId=friend.id||friend.uid;
-    const preview=chat?.lastMessage?`${chat.lastSender===myId?'You: ':''}${chat.lastMessage}`:'Say hi 👋';
+    let lastText=chat?.lastMessage;
+    if(chat?.lastEnc){
+      lastText=e2eReady?(decryptFrom(chat.lastEnc,chat.lastSender)??'🔒 Encrypted message'):'🔒 …';
+    }
+    const preview=lastText?`${chat.lastSender===myId?'You: ':''}${lastText}`:'Say hi 👋';
 
     return <Pressable onPress={()=>openChat(friend)} style={({pressed})=>({flexDirection:'row',alignItems:'center',paddingHorizontal:16,paddingVertical:10,gap:12,backgroundColor:pressed?colors.inputBg:'transparent'})}>
       <Avatar uri={friend.photoURL||friend.photoUrl||friend.profilePic||friend.avatar} name={friend.name||friend.displayName} size={54} online={isOnline(friend)}/>
