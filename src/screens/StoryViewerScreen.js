@@ -9,6 +9,7 @@ import { useAppData } from '../context/AppDataContext';
 import { deleteStory, markStoryViewed, toggleStoryLike } from '../services/stories';
 import { timeAgo } from '../utils/helpers';
 import { markSeen } from '../utils/seen';
+import { useMusic } from '../utils/useMusic';
 import Avatar from '../components/Avatar';
 import EditedVideo from '../components/EditedVideo';
 import T from '../components/T';
@@ -36,6 +37,7 @@ export default function StoryViewerScreen({ route, navigation }) {
 
   const group = groups[gi];
   const story = group?.stories[si];
+  useMusic(story?.music, !paused, false); // the story's song plays while it is on screen
 
   const next = useCallback(() => {
     if (si < group.stories.length - 1) setSi(si + 1);
@@ -111,6 +113,7 @@ export default function StoryViewerScreen({ route, navigation }) {
 
   const playing = {
     shouldPlay: !paused,
+    isMuted: !!story.music, // a chosen song replaces the video's own sound
     onPlaybackStatusUpdate: (s) => {
       if (!s.isLoaded) return;
       if (s.durationMillis) progress.setValue(s.positionMillis / s.durationMillis);
@@ -148,6 +151,7 @@ export default function StoryViewerScreen({ route, navigation }) {
           <View style={{ flex: 1 }}>
             <T weight="semibold" size={14} color="#fff" numberOfLines={1}>{mine ? 'Your story' : group.user.name}</T>
             <T size={11} color="rgba(255,255,255,0.8)">{timeAgo(story.createdAt)}</T>
+            {story.music ? <T size={11} color="#fff" numberOfLines={1}>♪ {story.music.name} · {story.music.artist}</T> : null}
           </View>
           {mine ? <Pressable onPress={onDelete} hitSlop={12} style={{ padding: 6 }}><Ionicons name="trash-outline" size={22} color="#fff" /></Pressable> : null}
           <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={{ padding: 6 }}><Ionicons name="close" size={28} color="#fff" /></Pressable>
