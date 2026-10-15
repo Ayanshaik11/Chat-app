@@ -4,6 +4,7 @@ import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from './Avatar';
 import EditedVideo from './EditedVideo';
+import { useMusic } from '../utils/useMusic';
 
 const DOUBLE_TAP_MS = 280;
 const fill = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 };
@@ -39,6 +40,7 @@ export default function FriendReelItem({ item, width, height, isActive, muted, m
   const heartScale = useRef(new Animated.Value(0)).current;
   const heartOpacity = useRef(new Animated.Value(0)).current;
   const [muteHint, setMuteHint] = useState(false);
+  useMusic(item?.music, isActive, muted); // the reel's song (replaces the video's own sound)
 
   useEffect(() => () => { clearTimeout(tapTimer.current); clearTimeout(muteTimer.current); }, []);
 
@@ -70,7 +72,7 @@ export default function FriendReelItem({ item, width, height, isActive, muted, m
     }, DOUBLE_TAP_MS);
   };
 
-  const playing = { shouldPlay: isActive, isLooping: true, isMuted: muted, useNativeControls: false };
+  const playing = { shouldPlay: isActive, isLooping: true, isMuted: muted || !!item?.music, useNativeControls: false };
   const centered = (size) => ({ position: 'absolute', top: height / 2 - size / 2, left: width / 2 - size / 2, width: size, height: size, alignItems: 'center', justifyContent: 'center' });
 
   return (
@@ -105,6 +107,7 @@ export default function FriendReelItem({ item, width, height, isActive, muted, m
           <Avatar uri={author?.photoURL} name={author?.name} size={36} />
           <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15, marginLeft: 10, ...shadow }} numberOfLines={1}>{author?.name || 'User'}</Text>
         </View>
+        {!!item?.music && <Text style={{ color: '#fff', fontSize: 12, marginTop: 6, ...shadow }} numberOfLines={1}>♪ {item.music.name} · {item.music.artist}</Text>}
         {!!item?.caption && <Text style={{ color: '#fff', fontSize: 14, marginTop: 8, ...shadow }} numberOfLines={3}>{item.caption}</Text>}
       </View>
     </View>
