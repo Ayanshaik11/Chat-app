@@ -6,6 +6,8 @@ import { Ionicons } from '@expo/vector-icons';
 import { captureRef } from 'react-native-view-shot';
 import { isVideo } from '../services/media';
 import { FILTERS, textBox, textStyle } from './EditedVideo';
+import MusicPicker from './MusicPicker';
+import { useMusic } from '../utils/useMusic';
 
 const RED = '#E11D2A';
 const COLORS = ['#ffffff', '#000000', '#E11D2A', '#FFD60A', '#34C759', '#0A84FF', '#BF5AF2', '#FF9F0A'];
@@ -61,7 +63,7 @@ function TextItem({ it, onTap, reg }) {
 
 // Full-screen editor for stories, posts and reels: zoom/move, effects and text.
 // Photos are saved as one edited picture; videos keep the original file plus an `edit` description.
-export default function StoryEditor({ asset, ratio = 9 / 16, onCancel, onDone }) {
+export default function StoryEditor({ asset, ratio = 9 / 16, allowMusic = false, onCancel, onDone }) {
   const { width, height } = useWindowDimensions();
   const vid = isVideo(asset);
   const fh = Math.min(height - 250, (width - 24) / ratio), fw = fh * ratio;
@@ -73,6 +75,9 @@ export default function StoryEditor({ asset, ratio = 9 / 16, onCancel, onDone })
   const [texts, setTexts] = useState([]);
   const [edit, setEdit] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [music, setMusic] = useState(null);
+  const [picking, setPicking] = useState(false);
+  useMusic(music, !picking && !edit, false); // hear the song while editing
 
   useEffect(() => { if (!vid && !size.w) Image.getSize(asset.uri, (w, h) => setSize({ w, h }), () => setSize({ w: 1080, h: 1920 })); }, []);
   // photos fill the frame; a video whose shape is very different from the frame is shown whole (zoom in to fill)
@@ -98,10 +103,10 @@ export default function StoryEditor({ asset, ratio = 9 / 16, onCancel, onDone })
       if (vid) {
         const m = img.get();
         const t = texts.map((it) => { const p = reg[it.id](); return { text: it.text, color: it.color, bg: it.bg, bold: it.bold, sz: it.size / fw, x: p.x / fw, y: p.y / fh, s: p.s, r: p.r }; });
-        onDone({ ...asset, edit: { a: ratio, s: m.s, x: m.x / fw, y: m.y / fh, f: filter, t, ...(size.w ? { bw: (size.w * k) / fw, bh: (size.h * k) / fh } : {}) } });
+        onDone({ ...asset, ...(music ? { music } : {}), edit: { a: ratio, s: m.s, x: m.x / fw, y: m.y / fh, f: filter, t, ...(size.w ? { bw: (size.w * k) / fw, bh: (size.h * k) / fh } : {}) } });
       } else {
         const uri = await captureRef(frame, { format: 'jpg', quality: 0.92, result: 'tmpfile', width: 1080, height: Math.round(1080 / ratio) });
-        onDone({ uri, type: 'image', mimeType: 'image/jpeg', width: 1080, height: Math.round(1080 / ratio) });
+        onDone({ uri, type: 'image', mimeType: 'image/jpeg', width: 1080, height: Math.round(1080 / ratio), ...(music ? { music } : {}) });
       }
     } catch (e) {
       setBusy(false);
@@ -122,8 +127,17 @@ export default function StoryEditor({ asset, ratio = 9 / 16, onCancel, onDone })
 
         <View style={{ height: 56, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 14, marginTop: 10 }}>
           <Pressable onPress={onCancel} hitSlop={12}><Ionicons name="close" size={28} color="#fff" /></Pressable>
-          <Text style={{ color: '#aaa', fontSize: 12 }}>Pinch to zoom · drag to move</Text>
-          <Pressable onPress={newText} hitSlop={10} style={tool(false)}><Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Aa</Text></Pressable>
+          {music ? (
+            <Pressable onPress={() => setMusic(null)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: 10, paddingHorizontal: 10, height: 30, borderRadius: 15, backgroundColor: '#ffffff22' }}>
+              <Ionicons name="musical-notes" size={14} color="#fff" />
+              <Text style={{ flex: 1, color: '#fff', fontSize: 12 }} numberOfLines={1}>{music.name} · {music.artist}</Text>
+              <Ionicons name="close" size={14} color="#fff" />
+            </Pressable>
+          ) : <Text style={{ color: '#aaa', fontSize: 12 }}>Pinch to zoom · drag to move</Text>}
+          <View style={{ flexDirection: 'row', gap: 8 }}>
+            {allowMusic && <Pressable onPress={() => setPicking(true)} hitSlop={10} style={tool(!!music)}><Ionicons name="musical-notes" size={18} color={music ? '#000' : '#fff'} /></Pressable>}
+            <Pressable onPress={newText} hitSlop={10} style={tool(false)}><Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Aa</Text></Pressable>
+          </View>
         </View>
 
         {/* what gets saved */}
@@ -159,6 +173,8 @@ export default function StoryEditor({ asset, ratio = 9 / 16, onCancel, onDone })
             <Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>{busy ? 'Saving…' : 'Done'}</Text>
           </Pressable>
         </View>
+
+        {picking && <MusicPicker initial={music} onClose={() => setPicking(false)} onPick={(m) => { setMusic(m); setPicking(false); }} />}
 
         {/* add / edit text */}
         {edit && (
