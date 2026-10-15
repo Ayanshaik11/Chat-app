@@ -16,6 +16,7 @@ export async function createStory(me, asset, onProgress) {
     mediaURL,
     mediaType: isVideo(asset) ? 'video' : 'image',
     ...(asset.edit ? { edit: asset.edit } : {}),
+    ...(asset.music ? { music: asset.music } : {}),
     storagePath,
     createdAt: serverTimestamp(),
     expiresAt: Timestamp.fromMillis(Date.now() + STORY_LIFETIME_MS),
