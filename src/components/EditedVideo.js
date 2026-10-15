@@ -33,13 +33,16 @@ export default function EditedVideo({ uri, edit = {}, width, height, ...video })
   const ratio = edit.a || 9 / 16;
   const fw = Math.min(width, height * ratio), fh = fw / ratio;
   const f = FILTERS[edit.f || 0];
+  // bw/bh = the video's own shape inside the frame (so wide videos are not cropped)
+  const vw = (edit.bw || 1) * fw, vh = (edit.bh || 1) * fh;
+  const box = { position: 'absolute', left: (fw - vw) / 2, top: (fh - vh) / 2, width: vw, height: vh };
   return (
     <View style={{ width, height, alignItems: 'center', justifyContent: 'center', backgroundColor: '#000' }}>
       <View style={{ width: fw, height: fh, overflow: 'hidden' }}>
         <Video
           source={{ uri }}
-          resizeMode={ResizeMode.COVER}
-          style={{ width: fw, height: fh, transform: [{ translateX: (edit.x || 0) * fw }, { translateY: (edit.y || 0) * fh }, { scale: edit.s || 1 }] }}
+          resizeMode={ResizeMode.CONTAIN}
+          style={[box, { transform: [{ translateX: (edit.x || 0) * fw }, { translateY: (edit.y || 0) * fh }, { scale: edit.s || 1 }] }]}
           {...video}
         />
         {f.c && <LinearGradient colors={f.c} pointerEvents="none" style={fill} />}
