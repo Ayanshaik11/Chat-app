@@ -92,6 +92,8 @@ export default function CreateScreen({ route, navigation }) {
             )}
           </Pressable>
 
+          {asset?.music ? <T size={12} color="subtext">♪ {asset.music.name} · {asset.music.artist}</T> : null}
+
           {asset && !uploading ? (
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <Btn small variant="soft" label="Edit" icon="color-wand-outline" onPress={() => setEditing(true)} />
@@ -120,6 +122,7 @@ export default function CreateScreen({ route, navigation }) {
         <StoryEditor
           asset={original}
           ratio={isStory || isReel ? 9 / 16 : 1}
+          allowMusic={isStory || isReel}
           onCancel={() => setEditing(false)}
           onDone={(edited) => { setAsset(edited); setEditing(false); }}
         />
