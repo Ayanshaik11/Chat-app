@@ -67,7 +67,7 @@ export default function StoryEditor({ asset, ratio = 9 / 16, onCancel, onDone })
   const fh = Math.min(height - 250, (width - 24) / ratio), fw = fh * ratio;
   const frame = useRef(null);
   const reg = useRef({}).current;
-  const img = useTransform();
+  const img = useTransform({ min: 0.3 });
   const [size, setSize] = useState({ w: asset.width || 0, h: asset.height || 0 });
   const [filter, setFilter] = useState(0);
   const [texts, setTexts] = useState([]);
@@ -75,7 +75,14 @@ export default function StoryEditor({ asset, ratio = 9 / 16, onCancel, onDone })
   const [busy, setBusy] = useState(false);
 
   useEffect(() => { if (!vid && !size.w) Image.getSize(asset.uri, (w, h) => setSize({ w, h }), () => setSize({ w: 1080, h: 1920 })); }, []);
-  const k = size.w ? Math.max(fw / size.w, fh / size.h) : 1; // "cover" size inside the frame
+  // photos fill the frame; a video whose shape is very different from the frame is shown whole (zoom in to fill)
+  const wide = vid && size.w && Math.abs(size.w / size.h - ratio) > ratio * 0.2;
+  const k = size.w ? (wide ? Math.min : Math.max)(fw / size.w, fh / size.h) : 1;
+  const readyVideo = ({ naturalSize: n }) => { // real shape of the video (turned the right way)
+    if (!n?.width || !n?.height) return;
+    const turn = !!n.orientation && (n.orientation === 'portrait') !== (n.height > n.width);
+    setSize(turn ? { w: n.height, h: n.width } : { w: n.width, h: n.height });
+  };
 
   const newText = () => setEdit({ id: null, text: '', color: '#ffffff', bg: false, bold: true, size: 30 });
   const saveText = () => {
@@ -91,7 +98,7 @@ export default function StoryEditor({ asset, ratio = 9 / 16, onCancel, onDone })
       if (vid) {
         const m = img.get();
         const t = texts.map((it) => { const p = reg[it.id](); return { text: it.text, color: it.color, bg: it.bg, bold: it.bold, sz: it.size / fw, x: p.x / fw, y: p.y / fh, s: p.s, r: p.r }; });
-        onDone({ ...asset, edit: { a: ratio, s: m.s, x: m.x / fw, y: m.y / fh, f: filter, t } });
+        onDone({ ...asset, edit: { a: ratio, s: m.s, x: m.x / fw, y: m.y / fh, f: filter, t, ...(size.w ? { bw: (size.w * k) / fw, bh: (size.h * k) / fh } : {}) } });
       } else {
         const uri = await captureRef(frame, { format: 'jpg', quality: 0.92, result: 'tmpfile', width: 1080, height: Math.round(1080 / ratio) });
         onDone({ uri, type: 'image', mimeType: 'image/jpeg', width: 1080, height: Math.round(1080 / ratio) });
@@ -123,8 +130,8 @@ export default function StoryEditor({ asset, ratio = 9 / 16, onCancel, onDone })
         <View style={{ alignItems: 'center' }}>
           <View ref={frame} collapsable={false} style={{ width: fw, height: fh, backgroundColor: '#000', overflow: 'hidden', borderRadius: 14 }}>
             {vid ? (
-              <Animated.View style={[{ width: fw, height: fh }, img.style]}>
-                <Video source={{ uri: asset.uri }} style={{ width: fw, height: fh }} resizeMode={ResizeMode.COVER} shouldPlay isLooping isMuted />
+              <Animated.View style={[{ position: 'absolute', left: (fw - (size.w ? size.w * k : fw)) / 2, top: (fh - (size.w ? size.h * k : fh)) / 2, width: size.w ? size.w * k : fw, height: size.w ? size.h * k : fh }, img.style]}>
+                <Video source={{ uri: asset.uri }} style={{ width: '100%', height: '100%' }} resizeMode={ResizeMode.CONTAIN} onReadyForDisplay={readyVideo} shouldPlay isLooping isMuted />
               </Animated.View>
             ) : (
               <Animated.Image source={{ uri: asset.uri }} style={[{ position: 'absolute', left: (fw - size.w * k) / 2, top: (fh - size.h * k) / 2, width: size.w * k, height: size.h * k }, img.style]} />
