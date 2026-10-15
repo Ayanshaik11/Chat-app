@@ -15,6 +15,7 @@ export async function createReel(me, asset, caption, onProgress) {
     authorId: me.id,
     videoURL,
     ...(asset.edit ? { edit: asset.edit } : {}),
+    ...(asset.music ? { music: asset.music } : {}),
     storagePath,
     caption: (caption || '').trim(),
     likes: [],
