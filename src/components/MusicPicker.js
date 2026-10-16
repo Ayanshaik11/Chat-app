@@ -184,15 +184,6 @@ export default function MusicPicker({ initial, onPick, onClose }) {
     await preview(track, 0);
   };
 
-  const move = async (by) => {
-    if (!chosen) return;
-
-    const max = Math.max(0, (chosen.duration || 30) - 15);
-    const next = Math.min(max, Math.max(0, start + by));
-
-    setStart(next);
-    await preview(chosen, next);
-  };
 
   const useSong = async () => {
     if (!chosen) return;
@@ -323,7 +314,7 @@ export default function MusicPicker({ initial, onPick, onClose }) {
           data={items}
           keyExtractor={(track) => String(track.id)}
           keyboardShouldPersistTaps="handled"
-          contentContainerStyle={{ paddingBottom: chosen ? 180 : 35 }}
+          contentContainerStyle={{ paddingBottom: chosen ? 150 : 35 }}
           ListEmptyComponent={
             <Text
               style={{
@@ -476,74 +467,21 @@ export default function MusicPicker({ initial, onPick, onClose }) {
             </Pressable>
           </View>
 
-          <View
+          <Pressable
+            onPress={useSong}
             style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              justifyContent: 'space-between',
               marginTop: 14,
-              gap: 8,
+              height: 42,
+              borderRadius: 21,
+              backgroundColor: RED,
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={{ color: '#AAAAAA', fontSize: 12 }}>Start</Text>
-
-              <Pressable
-                onPress={() => move(-15)}
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 16,
-                  backgroundColor: '#2A2A2A',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Ionicons name="remove" size={19} color="#FFFFFF" />
-              </Pressable>
-
-              <Text
-                style={{
-                  color: '#FFFFFF',
-                  fontWeight: '700',
-                  width: 38,
-                  textAlign: 'center',
-                }}
-              >
-                {mmss(start)}
-              </Text>
-
-              <Pressable
-                onPress={() => move(15)}
-                style={{
-                  width: 32,
-                  height: 32,
-                  borderRadius: 16,
-                  backgroundColor: '#2A2A2A',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                <Ionicons name="add" size={19} color="#FFFFFF" />
-              </Pressable>
-            </View>
-
-            <Pressable
-              onPress={useSong}
-              style={{
-                paddingHorizontal: 20,
-                height: 40,
-                borderRadius: 20,
-                backgroundColor: RED,
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>
-                Use song
-              </Text>
-            </Pressable>
-          </View>
+            <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15 }}>
+              Use song
+            </Text>
+          </Pressable>
         </View>
       )}
     </View>
