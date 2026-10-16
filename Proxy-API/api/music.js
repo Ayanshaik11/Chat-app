@@ -1,58 +1,111 @@
+
 /*
- * KING X — MUSIC PROXY (Jamendo)
+ * KING X — MUSIC API (Bollywood / Hindi)
  *
- * The Jamendo client id lives ONLY in Vercel Environment Variables
- * (JAMENDO_CLIENT_ID), so it is never inside the app.
+ * GET /api/music
+ * GET /api/music?q=Arijit%20Singh
  *
- * /api/music            -> trending tracks
- * /api/music?q=arijit   -> search
+ * Uses @saavn-labs/sdk for song metadata.
+ * Does not extract or decrypt protected audio streams.
  */
 
+const { Song } = require("@saavn-labs/sdk");
+
 module.exports = async (req, res) => {
-  const clientId = process.env.JAMENDO_CLIENT_ID;
+  const q =
+    typeof req.query?.q === "string"
+      ? req.query.q.trim().slice(0, 100)
+      : "";
 
-  if (!clientId) {
-    return res.status(500).json({ error: 'Server is missing JAMENDO_CLIENT_ID. Add it in Vercel → Settings → Environment Variables.' });
-  }
+  const limitValue = Number.parseInt(req.query?.limit, 10);
+  const limit = Number.isFinite(limitValue)
+    ? Math.min(Math.max(limitValue, 1), 30)
+    : 30;
 
-  const q = typeof req.query?.q === 'string' ? req.query.q.trim().slice(0, 60) : '';
-
-  const params = new URLSearchParams({
-    client_id: clientId,
-    format: 'json',
-    limit: '30',
-    audioformat: 'mp32',
-    imagesize: '200',
-  });
-
-  if (q) params.set('search', q);
-  else params.set('order', 'popularity_week');
+  const offsetValue = Number.parseInt(req.query?.offset, 10);
+  const offset = Number.isFinite(offsetValue)
+    ? Math.max(offsetValue, 1)
+    : 1;
 
   try {
-    const response = await fetch(`https://api.jamendo.com/v3.0/tracks/?${params.toString()}`);
-    const data = await response.json();
+    let result;
 
-    if (!response.ok || data?.headers?.status === 'failed') {
-      return res.status(502).json({ error: data?.headers?.error_message || 'Music search failed' });
+    if (q) {
+      result = await Song.search({
+        query: q,
+        limit,
+        offset,
+      });
+    } else {
+      // Use a reliable default Bollywood search for the initial catalogue.
+      result = await Song.search({
+        query: "Bollywood Hindi hits",
+        limit,
+        offset,
+      });
     }
 
-    const items = (data.results || [])
-      .filter((t) => t.audio)
-      .map((t) => ({
-        id: String(t.id),
-        name: t.name || 'Untitled',
-        artist: t.artist_name || 'Unknown artist',
-        image: t.image || t.album_image || '',
-        url: t.audio,
-        duration: t.duration || 0,
-        ccurl: t.license_ccurl || '',
-      }));
+    const items = (result.results || []).map((song) => {
+      const artists = [
+        ...(song.artists?.primary || []),
+        ...(song.artists?.featured || []),
+      ];
 
-    // same search again within 5 minutes = no extra Jamendo request
-    res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=600');
-    return res.status(200).json({ items });
+      const uniqueArtists = [
+        ...new Map(
+          artists
+            .filter((artist) => artist?.name)
+            .map((artist) => [artist.name, artist.name])
+        ).values(),
+      ];
+
+      const artwork =
+        (song.images || []).find(
+          (image) => typeof image?.url === "string" && image.url
+        )?.url || "";
+
+      const duration = Number(song.duration);
+
+      return {
+        id: String(song.id),
+        name: song.title || song.subtitle || "Unknown title",
+        artist: uniqueArtists.join(", ") || "Unknown artist",
+        image: artwork,
+        duration: Number.isFinite(duration) ? duration : 0,
+        language: song.language || "",
+        year: song.year || "",
+        album: song.album?.title || "",
+        url:
+          typeof song.url === "string" &&
+          song.url.startsWith("https://")
+            ? song.url
+            : "",
+        playback: {
+          type: "external",
+          streamUrl: null,
+        },
+      };
+    });
+
+    res.setHeader(
+      "Cache-Control",
+      "s-maxage=300, stale-while-revalidate=600"
+    );
+
+    return res.status(200).json({
+      success: true,
+      provider: "saavn",
+      query: q || "Bollywood Hindi hits",
+      total: result.total ?? items.length,
+      items,
+    });
   } catch (error) {
-    console.error('Music proxy error:', error);
-    return res.status(500).json({ error: error?.message || 'Failed to load music' });
+    console.error("King X music API error:", error?.message || error);
+
+    return res.status(502).json({
+      success: false,
+      error: "Music search failed",
+      items: [],
+    });
   }
 };
