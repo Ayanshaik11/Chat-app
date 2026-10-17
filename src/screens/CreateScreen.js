@@ -122,7 +122,7 @@ export default function CreateScreen({ route, navigation }) {
         <StoryEditor
           asset={original}
           ratio={isStory || isReel ? 9 / 16 : 1}
-          allowMusic={isStory || isReel}
+          allowMusic
           onCancel={() => setEditing(false)}
           onDone={(edited) => { setAsset(edited); setEditing(false); }}
         />
