@@ -14,6 +14,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
 
+    # EXPO_PUBLIC_* vars are embedded into the JS bundle at build time.
+    env:
+      EXPO_PUBLIC_GIPHY_API_KEY: ${{ secrets.GIPHY_API_KEY }}
+
     steps:
 
       # ============================================================
