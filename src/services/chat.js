@@ -208,3 +208,10 @@ export async function unsendMessage(chatId, messageId, userId) {
 export async function deleteMessageForMe(chatId, messageId, userId) {
   if (chatId && messageId && userId) await updateDoc(messageRef(chatId, messageId), { deletedFor: arrayUnion(userId) });
 }
+
+/* ---------- chat theme (saved on the chat, so BOTH people see the same one) ---------- */
+
+export async function setChatTheme(chatId, themeId, userId) {
+  if (!chatId || !themeId) return;
+  await setDoc(doc(db, 'chats', chatId), { theme: themeId, themeBy: userId || null, themeAt: serverTimestamp() }, { merge: true });
+}
