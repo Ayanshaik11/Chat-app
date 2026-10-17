@@ -123,6 +123,8 @@ export default function ProfileView({ userId, navigation }) {
         storagePath: s.storagePath || '',
         viewedBy: s.viewedBy || [],
         likedBy: s.likedBy || [],
+        edit: s.edit || null,
+        music: s.music || null,
       }))
       .sort((a, b) => a.createdAt - b.createdAt);
 
