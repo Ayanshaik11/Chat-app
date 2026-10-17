@@ -16,8 +16,9 @@ import { uploadFile, pickMedia, mimeOf } from '../services/media';
 import { usePeerTyping } from '../utils/typing';
 import {
   chatIdFor, deleteMessageForMe, markChatRead, markMessagesSeen, reactToMessage, removeReaction,
-  sendGifMessage, sendImageMessage, sendMessage, sendVoiceMessage, setTyping, unsendMessage,
+  sendGifMessage, sendImageMessage, sendMessage, sendVoiceMessage, setChatTheme, setTyping, unsendMessage,
 } from '../services/chat';
+import { getTheme } from '../utils/chatThemes';
 
 import VoiceRecorderBar from '../components/VoiceRecorderBar';
 import VoiceMessageBubble from '../components/VoiceMessageBubble';
@@ -28,6 +29,7 @@ import ChatGalleryPicker from '../components/ChatGalleryPicker';
 import ChatImageBubble from '../components/ChatImageBubble';
 import GifBubble from '../components/GifBubble';
 import GifPicker from '../components/GifPicker';
+import ChatMenu from '../components/ChatMenu';
 
 const RED = '#E11D2A', BG = '#080808', CARD = '#171717', BORDER = '#292929', MUTED = '#8F8F8F';
 const MAX_PHOTOS = 10;
@@ -79,8 +81,9 @@ const MenuItem = ({ icon, label, onPress, danger }) => (
    ONE MESSAGE (swipe to reply, long press for the menu)
    ========================================================= */
 
-const MessageRow = React.memo(function MessageRow({ item, seenText, onLongPress, onReply, onReactionPress, inputRef }) {
+const MessageRow = React.memo(function MessageRow({ item, seenText, theme, onLongPress, onReply, onReactionPress, inputRef }) {
   const mine = item.senderId === item._meId;
+  const tc = { color: mine ? theme.youText : theme.text }; // text colour that is readable on this bubble
   const dir = mine ? -1 : 1; // your messages swipe right-to-left, friends' left-to-right
   const x = useRef(new Animated.Value(0)).current;
   const longRef = useRef(false);
@@ -124,12 +127,12 @@ const MessageRow = React.memo(function MessageRow({ item, seenText, onLongPress,
   const replyName = rSender(item.replyTo) === item._meId ? 'You' : rName(item.replyTo) || 'Message';
 
   const body = () => {
-    if (item.unsent) return <Text style={[styles.text, styles.unsentText]}>{item.text}</Text>;
+    if (item.unsent) return <Text style={[styles.text, tc, styles.unsentText]}>{item.text}</Text>;
     if (item.type === 'gif' && item.gifUrl) {
       return (
         <View>
           <GifBubble url={item.gifUrl} w={item.gifW} h={item.gifH} />
-          {!!item.caption && <LinkText style={[styles.text, { marginTop: 6 }]}>{item.caption}</LinkText>}
+          {!!item.caption && <LinkText style={[styles.text, tc, { marginTop: 6 }]}>{item.caption}</LinkText>}
         </View>
       );
     }
@@ -137,13 +140,13 @@ const MessageRow = React.memo(function MessageRow({ item, seenText, onLongPress,
       return (
         <View>
           <ChatImageBubble images={item.images} />
-          {!!item.caption && <LinkText style={[styles.text, { marginTop: 6 }]}>{item.caption}</LinkText>}
+          {!!item.caption && <LinkText style={[styles.text, tc, { marginTop: 6 }]}>{item.caption}</LinkText>}
         </View>
       );
     }
     if (item.type === 'audio' && item.audioUrl) return <VoiceMessageBubble url={item.audioUrl} duration={item.duration || 0} />;
     const link = parseSharedLink(item.text);
-    return link ? <SharedLinkCard link={link} /> : <LinkText style={styles.text}>{String(item.text || '')}</LinkText>;
+    return link ? <SharedLinkCard link={link} /> : <LinkText style={[styles.text, tc]}>{String(item.text || '')}</LinkText>;
   };
 
   return (
@@ -155,7 +158,7 @@ const MessageRow = React.memo(function MessageRow({ item, seenText, onLongPress,
         <Pressable
           onLongPress={longPress}
           delayLongPress={300}
-          style={[styles.bubble, mine ? styles.mine : styles.theirs, item.unsent && styles.unsent, hasReply && { minWidth: 230 }]}
+          style={[styles.bubble, mine ? styles.mine : styles.theirs, mine ? { backgroundColor: theme.you } : { backgroundColor: theme.other, borderColor: theme.line }, item.unsent && styles.unsent, hasReply && { minWidth: 230 }]}
         >
           {hasReply && (
             <View style={styles.quote}>
@@ -219,6 +222,9 @@ export default function ChatScreen({ route, navigation }) {
   const [pending, setPending] = useState([]);
   const [sendingPhotos, setSendingPhotos] = useState(false);
   const [peerTypingValue, setPeerTypingValue] = useState(0);
+  const [themeId, setThemeId] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const theme = getTheme(themeId);
   const [peerRead, setPeerRead] = useState(0); // when the other person last read this chat
   const [tick, setTick] = useState(0); // re-renders the "Seen 2m ago" text
 
@@ -270,6 +276,7 @@ export default function ChatScreen({ route, navigation }) {
       (s) => {
         setPeerTypingValue(s.data()?.typing?.[otherId] || 0);
         setPeerRead(ms(s.data()?.lastRead?.[otherId]));
+        setThemeId(s.data()?.theme || null); // same theme for both people
       },
       () => {}
     );
@@ -542,11 +549,11 @@ export default function ChatScreen({ route, navigation }) {
   /* ---------- screen ---------- */
 
   return (
-    <SafeAreaView style={styles.safe}>
-      <KeyboardAvoidingView style={styles.safe} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
+      <KeyboardAvoidingView style={[styles.safe, { backgroundColor: theme.bg }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
         {/* header */}
-        <View style={styles.header}>
+        <View style={[styles.header, { backgroundColor: theme.header, borderBottomColor: theme.line }]}>
           <TouchableOpacity style={styles.back} onPress={() => navigation?.goBack()}>
             <Text style={styles.backText}>‹</Text>
           </TouchableOpacity>
@@ -557,11 +564,14 @@ export default function ChatScreen({ route, navigation }) {
           >
             <Avatar uri={photoOf(profile)} name={name} />
             <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={styles.headerName}>{name}</Text>
+              <Text style={[styles.headerName, { color: theme.text }]}>{name}</Text>
               <Text style={[styles.headerStatus, otherTyping && { color: '#22C55E' }]}>
                 {otherTyping ? 'typing...' : profile?.online ? 'Online' : 'Messages'}
               </Text>
             </View>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setMenuOpen(true)} hitSlop={10} style={{ width: 40, height: 44, alignItems: 'center', justifyContent: 'center' }}>
+            <FontAwesome name="ellipsis-v" size={21} color={theme.text} />
           </TouchableOpacity>
         </View>
 
@@ -574,7 +584,7 @@ export default function ChatScreen({ route, navigation }) {
             data={messages}
             keyExtractor={(m) => m.id}
             keyboardShouldPersistTaps="handled"
-            extraData={`${tick}-${peerRead}`}
+            extraData={`${tick}-${peerRead}-${themeId}`}
             onEndReached={loadOlder}
             onEndReachedThreshold={0.4}
             initialNumToRender={15}
@@ -586,6 +596,7 @@ export default function ChatScreen({ route, navigation }) {
               <MessageRow
                 item={item}
                 seenText={item.id === latestSeenMsg?.id ? seenText : ''}
+                theme={theme}
                 onLongPress={openMenu}
                 onReply={handleReply}
                 onReactionPress={reactionPress}
@@ -637,8 +648,8 @@ export default function ChatScreen({ route, navigation }) {
               </ScrollView>
             )}
 
-            <View style={styles.composer}>
-              <TouchableOpacity style={styles.round} onPress={() => setPickerOpen(true)}>
+            <View style={[styles.composer, { backgroundColor: theme.header, borderTopColor: theme.line }]}>
+              <TouchableOpacity style={[styles.round, { backgroundColor: theme.panel }]} onPress={() => setPickerOpen(true)}>
                 <FontAwesome name="camera" size={19} color="#fff" />
               </TouchableOpacity>
 
@@ -650,19 +661,19 @@ export default function ChatScreen({ route, navigation }) {
                 placeholderTextColor="#666"
                 multiline
                 maxLength={4000}
-                style={styles.input}
+                style={[styles.input, { backgroundColor: theme.panel, borderColor: theme.line, color: theme.text }]}
               />
 
-              <TouchableOpacity style={styles.round} onPress={() => setGifOpen(true)}>
+              <TouchableOpacity style={[styles.round, { backgroundColor: theme.panel }]} onPress={() => setGifOpen(true)}>
                 <Text style={styles.gifLabel}>GIF</Text>
               </TouchableOpacity>
 
               {canSend ? (
-                <TouchableOpacity style={[styles.round, styles.sendBtn]} disabled={sendingPhotos} onPress={onSendPress}>
-                  {sendingPhotos ? <ActivityIndicator color="#fff" /> : <FontAwesome name="send" size={18} color="#fff" />}
+                <TouchableOpacity style={[styles.round, { backgroundColor: theme.accent }]} disabled={sendingPhotos} onPress={onSendPress}>
+                  {sendingPhotos ? <ActivityIndicator color={theme.accentText} /> : <FontAwesome name="send" size={18} color={theme.accentText} />}
                 </TouchableOpacity>
               ) : (
-                <TouchableOpacity style={styles.round} onPress={() => setRecordingVoice(true)}>
+                <TouchableOpacity style={[styles.round, { backgroundColor: theme.panel }]} onPress={() => setRecordingVoice(true)}>
                   <FontAwesome name="microphone" size={21} color="#fff" />
                 </TouchableOpacity>
               )}
@@ -792,6 +803,15 @@ export default function ChatScreen({ route, navigation }) {
             </View>
           </View>
         </Modal>
+
+        <ChatMenu
+          visible={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          themeId={themeId}
+          theme={theme}
+          name={name.split(' ')[0]}
+          onApplyTheme={async (id) => { setThemeId(id); await setChatTheme(chatId, id, meId); }}
+        />
 
       </KeyboardAvoidingView>
     </SafeAreaView>
