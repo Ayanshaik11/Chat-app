@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StatusBar, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FontAwesome } from '@expo/vector-icons';
-import { THEMES, getTheme, mix } from '../utils/chatThemes';
+import { THEMES, getTheme, mix } from '../utils/chatTheme';
 
 const card = { flex: 1, margin: 6, borderRadius: 16, padding: 12, borderWidth: 1.5 };
 const dot = (c) => ({ width: 16, height: 16, borderRadius: 8, backgroundColor: c, marginRight: 5, borderWidth: 1, borderColor: '#ffffff44' });

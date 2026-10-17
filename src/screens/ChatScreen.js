@@ -18,7 +18,7 @@ import {
   chatIdFor, deleteMessageForMe, markChatRead, markMessagesSeen, reactToMessage, removeReaction,
   sendGifMessage, sendImageMessage, sendMessage, sendVoiceMessage, setChatTheme, setTyping, unsendMessage,
 } from '../services/chat';
-import { getTheme } from '../utils/chatThemes';
+import { getTheme } from '../utils/chatTheme';
 
 import VoiceRecorderBar from '../components/VoiceRecorderBar';
 import VoiceMessageBubble from '../components/VoiceMessageBubble';
