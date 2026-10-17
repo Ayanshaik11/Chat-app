@@ -91,6 +91,7 @@ export default function HomeScreen({ navigation }) {
         id: s.id, authorId: s.authorId, mediaURL: s.mediaURL, mediaType: s.mediaType,
         createdAt: toMillis(s.createdAt), expiresAt: toMillis(s.expiresAt), storagePath: s.storagePath || '',
         viewedBy: s.viewedBy || [], likedBy: s.likedBy || [],
+        edit: s.edit || null, music: s.music || null, // keep the song and the video edits
       });
     });
     const groups = Object.entries(byUser)
