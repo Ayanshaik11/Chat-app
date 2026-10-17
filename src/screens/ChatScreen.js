@@ -16,7 +16,7 @@ import { uploadFile, pickMedia, mimeOf } from '../services/media';
 import { usePeerTyping } from '../utils/typing';
 import {
   chatIdFor, deleteMessageForMe, markChatRead, markMessagesSeen, reactToMessage, removeReaction,
-  sendImageMessage, sendMessage, sendVoiceMessage, setTyping, unsendMessage,
+  sendGifMessage, sendImageMessage, sendMessage, sendVoiceMessage, setTyping, unsendMessage,
 } from '../services/chat';
 
 import VoiceRecorderBar from '../components/VoiceRecorderBar';
@@ -26,6 +26,8 @@ import SharedLinkCard, { parseSharedLink } from '../components/SharedLinkCard';
 import LinkText from '../components/LinkText';
 import ChatGalleryPicker from '../components/ChatGalleryPicker';
 import ChatImageBubble from '../components/ChatImageBubble';
+import GifBubble from '../components/GifBubble';
+import GifPicker from '../components/GifPicker';
 
 const RED = '#E11D2A', BG = '#080808', CARD = '#171717', BORDER = '#292929', MUTED = '#8F8F8F';
 const MAX_PHOTOS = 10;
@@ -123,6 +125,14 @@ const MessageRow = React.memo(function MessageRow({ item, seenText, onLongPress,
 
   const body = () => {
     if (item.unsent) return <Text style={[styles.text, styles.unsentText]}>{item.text}</Text>;
+    if (item.type === 'gif' && item.gifUrl) {
+      return (
+        <View>
+          <GifBubble url={item.gifUrl} w={item.gifW} h={item.gifH} />
+          {!!item.caption && <LinkText style={[styles.text, { marginTop: 6 }]}>{item.caption}</LinkText>}
+        </View>
+      );
+    }
     if (item.type === 'image' && item.images?.length) {
       return (
         <View>
@@ -205,6 +215,7 @@ export default function ChatScreen({ route, navigation }) {
   const [busy, setBusy] = useState(false);
   const [recordingVoice, setRecordingVoice] = useState(false);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [gifOpen, setGifOpen] = useState(false);
   const [pending, setPending] = useState([]);
   const [sendingPhotos, setSendingPhotos] = useState(false);
   const [peerTypingValue, setPeerTypingValue] = useState(0);
@@ -297,7 +308,7 @@ export default function ChatScreen({ route, navigation }) {
           const sig = [
             m.createdAt?.seconds || 0, m.enc?.n || m.text || '', m.unsent ? 1 : 0, pending ? 1 : 0,
             JSON.stringify(m.reactions || {}), Object.keys(m.seenBy || {}).filter((k) => m.seenBy[k]).join(','),
-            m.replyTo?.id || '', m.audioUrl || '', (m.images || []).length,
+            m.replyTo?.id || '', m.audioUrl || '', (m.images || []).length, m.gifUrl || '',
           ].join('|');
 
           const old = prev.get(d.id);
@@ -416,7 +427,8 @@ export default function ChatScreen({ route, navigation }) {
   };
 
   const copy = async () => {
-    try { if (menuMessage?.text) await Clipboard.setStringAsync(menuMessage.text); } catch {}
+    const value = menuMessage?.type === 'gif' && menuMessage.gifUrl ? menuMessage.gifUrl : menuMessage?.text;
+    try { if (value) await Clipboard.setStringAsync(value); } catch {}
     closeMenu();
   };
 
@@ -431,10 +443,17 @@ export default function ChatScreen({ route, navigation }) {
   };
 
   const doForward = async () => {
-    if (!menuMessage?.text) return;
+    if (!menuMessage) return;
     setBusy(true);
     try {
-      for (const id of selected) await sendMessage(meId, id, menuMessage.text, null, { notify: { name: me.name, photo: me.photoURL } });
+      for (const id of selected) {
+        const notify = { name: me.name, photo: me.photoURL };
+        if (menuMessage.type === 'gif' && menuMessage.gifUrl) {
+          await sendGifMessage(meId, id, { url: menuMessage.gifUrl, w: menuMessage.gifW, h: menuMessage.gifH }, null, { notify });
+        } else if (menuMessage.text) {
+          await sendMessage(meId, id, menuMessage.text, null, { notify });
+        }
+      }
       setForward(false); setSelected([]); setMenuMessage(null);
     } catch (e) { fail('Forward failed')(e); }
     setBusy(false);
@@ -485,6 +504,16 @@ export default function ChatScreen({ route, navigation }) {
       await sendVoiceMessage(meId, otherId, url, duration, null, sendOpts());
     } catch (e) { fail('Voice message failed')(e); }
     setRecordingVoice(false);
+  };
+
+  const sendGif = async (gif) => {
+    setGifOpen(false);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
+    const reply = replyData();
+    setReplyingTo(null);
+    try {
+      await sendGifMessage(meId, otherId, gif, reply, sendOpts());
+    } catch (e) { sendFailed('GIF failed')(e); }
   };
 
   const addPhotos = (list) => setPending((p) => [...p, ...list].slice(0, MAX_PHOTOS));
@@ -590,7 +619,7 @@ export default function ChatScreen({ route, navigation }) {
           </View>
         )}
 
-        {/* message box: camera | text | mic | send */}
+        {/* message box: camera | text | GIF | mic/send */}
         {recordingVoice ? (
           <VoiceRecorderBar onCancel={() => setRecordingVoice(false)} onSend={sendVoice} />
         ) : (
@@ -624,13 +653,19 @@ export default function ChatScreen({ route, navigation }) {
                 style={styles.input}
               />
 
-              <TouchableOpacity style={styles.round} onPress={() => setRecordingVoice(true)}>
-                <FontAwesome name="microphone" size={21} color="#fff" />
+              <TouchableOpacity style={styles.round} onPress={() => setGifOpen(true)}>
+                <Text style={styles.gifLabel}>GIF</Text>
               </TouchableOpacity>
 
-              <TouchableOpacity style={[styles.round, styles.sendBtn, !canSend && { opacity: 0.45 }]} disabled={!canSend} onPress={onSendPress}>
-                {sendingPhotos ? <ActivityIndicator color="#fff" /> : <FontAwesome name="send" size={18} color="#fff" />}
-              </TouchableOpacity>
+              {canSend ? (
+                <TouchableOpacity style={[styles.round, styles.sendBtn]} disabled={sendingPhotos} onPress={onSendPress}>
+                  {sendingPhotos ? <ActivityIndicator color="#fff" /> : <FontAwesome name="send" size={18} color="#fff" />}
+                </TouchableOpacity>
+              ) : (
+                <TouchableOpacity style={styles.round} onPress={() => setRecordingVoice(true)}>
+                  <FontAwesome name="microphone" size={21} color="#fff" />
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         )}
@@ -642,6 +677,8 @@ export default function ChatScreen({ route, navigation }) {
           onDone={(list) => { setPickerOpen(false); addPhotos(list); }}
           onOpenCamera={() => setTimeout(takePhoto, 300)}
         />
+
+        <GifPicker visible={gifOpen} onClose={() => setGifOpen(false)} onPick={sendGif} />
 
         {/* long-press menu */}
         <Modal visible={!!menuMessage} transparent animationType="none" onRequestClose={closeMenu}>
@@ -804,6 +841,7 @@ const styles = StyleSheet.create({
   input: { flex: 1, maxHeight: 120, minHeight: 46, backgroundColor: CARD, color: '#fff', borderRadius: 23, paddingHorizontal: 17, paddingTop: 12, paddingBottom: 10, fontSize: 15, borderWidth: 1, borderColor: BORDER },
   round: { width: 46, height: 46, borderRadius: 23, backgroundColor: '#222', marginHorizontal: 4, justifyContent: 'center', alignItems: 'center' },
   sendBtn: { backgroundColor: RED },
+  gifLabel: { color: '#fff', fontSize: 12, fontWeight: '900', letterSpacing: 0.5 },
 
   backdrop: { flex: 1, backgroundColor: 'rgba(0,0,0,.72)', justifyContent: 'flex-end' },
   sheet: { backgroundColor: '#151515', borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 12 },

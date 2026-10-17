@@ -139,6 +139,22 @@ export async function sendVoiceMessage(me, other, audioUrl, duration = 0, replyT
   });
 }
 
+// GIFs are sent as a direct Giphy CDN link (no upload). Only the reply caption, if any, is encrypted.
+export async function sendGifMessage(me, other, gif, replyTo = null, opts = {}) {
+  if (!gif?.url) throw new Error('Missing GIF.');
+  const data = {
+    type: 'gif',
+    text: 'GIF',
+    gifUrl: gif.url,
+    gifW: Math.round(Number(gif.w) || 0),
+    gifH: Math.round(Number(gif.h) || 0),
+  };
+  return push(me, other, data, { lastMessage: 'GIF' }, replyTo, {
+    ...opts,
+    notify: opts.notify && { ...opts.notify, body: 'GIF' },
+  });
+}
+
 // The caption is encrypted; the photos themselves are not (they are stored as normal files).
 export async function sendImageMessage(me, other, images, caption = '', replyTo = null, opts = {}) {
   if (!images?.length) throw new Error('Nothing to send.');
