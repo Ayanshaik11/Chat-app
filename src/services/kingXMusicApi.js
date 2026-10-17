@@ -1,5 +1,6 @@
 
 const MUSIC_API_BASE_URL =
+  process.env.EXPO_PUBLIC_MUSIC_API_BASE_URL ||
   'https://king-x-music-api-backend.vercel.app';
 
 export async function kingXMusicApi(path, fbUser, options = {}) {

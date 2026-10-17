@@ -10,6 +10,7 @@ web-build/
 # secrets / signing
 .env
 .env.*
+!.env.example
 *.keystore
 *.jks
 /google-services.json
