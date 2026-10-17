@@ -4,8 +4,12 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/SettingsContext';
 import { subscribeComments } from '../services/comments';
 import { timeAgo } from '../utils/helpers';
+import { useMusic } from '../utils/useMusic';
 import Avatar from './Avatar';
 import T from './T';
+
+// only one post song plays at a time
+let stopCurrent = null;
 
 export default function PostCard({
   post,
@@ -26,6 +30,18 @@ export default function PostCard({
   const name = author?.name || 'User';
 
   const [commentCount, setCommentCount] = useState(null);
+  const [playing, setPlaying] = useState(false);
+
+  // the song is only loaded while it plays, so a long feed doesn't load a song per post
+  useMusic(playing ? post.music : null, playing);
+  useEffect(() => () => { if (playing && stopCurrent) stopCurrent = null; }, [playing]);
+
+  const toggleSong = () => {
+    if (playing) { setPlaying(false); stopCurrent = null; return; }
+    if (stopCurrent) stopCurrent();
+    stopCurrent = () => setPlaying(false);
+    setPlaying(true);
+  };
 
   // 🔥 LIVE COMMENT COUNT
   useEffect(() => {
@@ -120,6 +136,17 @@ export default function PostCard({
           backgroundColor: colors.inputBg,
         }}
       />
+
+      {/* SONG */}
+      {post.music ? (
+        <Pressable
+          onPress={toggleSong}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 12, marginTop: 10, paddingHorizontal: 12, height: 36, borderRadius: 18, backgroundColor: colors.inputBg, alignSelf: 'flex-start', maxWidth: width - 24 }}
+        >
+          <Ionicons name={playing ? 'pause-circle' : 'play-circle'} size={22} color="#E11D2A" />
+          <T size={12} weight="medium" numberOfLines={1} style={{ flexShrink: 1 }}>{post.music.name} · {post.music.artist}</T>
+        </Pressable>
+      ) : null}
 
       {/* ACTIONS */}
       <View
