@@ -6,6 +6,6 @@
       - Save, then copy the preset name
 ---------------------------------------------------------------- */
 export const CLOUDINARY_CLOUD_NAME =
-  process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME || '';
+  process.env.EXPO_PUBLIC_CLOUDINARY_CLOUD_NAME || 'vmf5svrq';
 export const CLOUDINARY_UPLOAD_PRESET =
-  process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET || '';
+  process.env.EXPO_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'chatapp';
