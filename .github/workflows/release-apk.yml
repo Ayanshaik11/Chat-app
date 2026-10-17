@@ -125,7 +125,7 @@ jobs:
         run: |
           set -e
 
-          npm ci
+          npm ci --prefer-offline --no-audit --no-fund
 
           npx expo install --check
 
@@ -615,6 +615,22 @@ jobs:
 
 
       # ============================================================
+      # CACHE GRADLE
+      # ============================================================
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/gradle-wrapper.properties', 'package-lock.json', 'package.json') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+
+      # ============================================================
       # PREPARE GRADLE
       # ============================================================
 
@@ -663,7 +679,7 @@ jobs:
             --no-daemon \
             --stacktrace \
             --warning-mode all \
-            --max-workers=2 \
+            --max-workers=4 \
             2>&1 | tee ../gradle-release.log
 
 

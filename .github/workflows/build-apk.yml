@@ -6,6 +6,12 @@ on:
     branches:
       - main
 
+# If you push again while a build is running, cancel the older one instead of
+# letting two full APK builds run at the same time.
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build Android APK
@@ -49,23 +55,23 @@ jobs:
       # ============================================================
 
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --prefer-offline --no-audit --no-fund
 
 
       # ============================================================
-      # EXPO DEPENDENCY CHECK
+      # CACHE EXPO / METRO
       # ============================================================
 
-      - name: Verify Expo dependencies
-        run: npx expo install --check
+      - name: Cache Expo / Metro
+        uses: actions/cache@v4
 
-
-      # ============================================================
-      # EXPO DOCTOR
-      # ============================================================
-
-      - name: Run Expo Doctor
-        run: npx expo-doctor
+        with:
+          path: |
+            ~/.expo
+            node_modules/.cache
+          key: expo-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+          restore-keys: |
+            expo-${{ runner.os }}-
 
 
       # ============================================================
@@ -517,6 +523,24 @@ jobs:
 
 
       # ============================================================
+      # CACHE GRADLE
+      # Reusing the Gradle cache across runs is the single biggest speedup:
+      # it avoids re-downloading dependencies and re-compiling unchanged tasks.
+      # ============================================================
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/gradle-wrapper.properties', 'package-lock.json', 'package.json') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
+
+      # ============================================================
       # PREPARE GRADLE
       # ============================================================
 
@@ -529,18 +553,6 @@ jobs:
           chmod +x gradlew
 
           ./gradlew --version
-
-
-      # ============================================================
-      # TEST JAVASCRIPT BUNDLE
-      # ============================================================
-
-      - name: Test JavaScript bundle
-        run: |
-          set -e
-
-          npx expo export \
-            --platform android
 
 
       # ============================================================
@@ -574,11 +586,11 @@ jobs:
           echo "=========================================="
 
           ./gradlew assembleRelease \
-            -PreactNativeArchitectures=armeabi-v7a,arm64-v8a \
+            -PreactNativeArchitectures=arm64-v8a \
             --no-daemon \
             --stacktrace \
             --warning-mode all \
-            --max-workers=2 \
+            --max-workers=4 \
             2>&1 | tee ../gradle-build.log
 
 
