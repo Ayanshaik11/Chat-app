@@ -5,6 +5,7 @@ import {
   FlatList,
   Image,
   Pressable,
+  ScrollView,
   Text,
   TextInput,
   View,
@@ -16,6 +17,14 @@ import { useAuth } from '../context/AuthContext';
 import { searchMusic } from '../services/music';
 
 const RED = '#E11D2A';
+
+const CATEGORIES = [
+  { id: 'latest', label: '🔥 New', query: 'latest songs' },
+  { id: 'trending', label: '⚡ Trending', query: 'trending songs' },
+  { id: 'bollywood', label: '🎬 Bollywood', query: 'bollywood hits' },
+  { id: 'punjabi', label: '💥 Punjabi', query: 'punjabi hits' },
+  { id: 'romantic', label: '❤️ Romantic', query: 'romantic songs' },
+];
 
 const fill = {
   position: 'absolute',
@@ -34,6 +43,8 @@ export default function MusicPicker({ initial, onPick, onClose }) {
   const { fbUser } = useAuth();
 
   const [q, setQ] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('latest');
+  const [reloadKey, setReloadKey] = useState(0);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -132,7 +143,7 @@ export default function MusicPicker({ initial, onPick, onClose }) {
     };
   }, []);
 
-  // Search through the King X backend.
+  // Search or discover songs through the King X backend.
   useEffect(() => {
     const thisRequest = ++requestId.current;
     let cancelled = false;
@@ -140,9 +151,12 @@ export default function MusicPicker({ initial, onPick, onClose }) {
     setLoading(true);
     setError('');
 
+    const activeCat = CATEGORIES.find((c) => c.id === selectedCategory);
+    const queryToSearch = q.trim() || activeCat?.query || 'latest songs';
+
     const timer = setTimeout(async () => {
       try {
-        const results = await searchMusic(q, fbUser);
+        const results = await searchMusic(queryToSearch, fbUser);
 
         if (cancelled || thisRequest !== requestId.current) return;
 
@@ -163,7 +177,7 @@ export default function MusicPicker({ initial, onPick, onClose }) {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [q, fbUser]);
+  }, [q, selectedCategory, reloadKey, fbUser]);
 
   const choose = async (track) => {
     setChosen(track);
@@ -264,6 +278,47 @@ export default function MusicPicker({ initial, onPick, onClose }) {
         </View>
       </View>
 
+      {/* Category filter pills */}
+      <View style={{ marginTop: 12 }}>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
+          keyboardShouldPersistTaps="handled"
+        >
+          {CATEGORIES.map((cat) => {
+            const active = !q.trim() && selectedCategory === cat.id;
+            return (
+              <Pressable
+                key={cat.id}
+                onPress={() => {
+                  setQ('');
+                  setSelectedCategory(cat.id);
+                }}
+                style={{
+                  paddingHorizontal: 14,
+                  paddingVertical: 7,
+                  borderRadius: 18,
+                  backgroundColor: active ? RED : '#1D1D1D',
+                  borderWidth: 1,
+                  borderColor: active ? RED : '#2E2E2E',
+                }}
+              >
+                <Text
+                  style={{
+                    color: active ? '#FFFFFF' : '#CCCCCC',
+                    fontSize: 13,
+                    fontWeight: active ? '700' : '500',
+                  }}
+                >
+                  {cat.label}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+      </View>
+
       <Text
         style={{
           color: '#888888',
@@ -273,7 +328,9 @@ export default function MusicPicker({ initial, onPick, onClose }) {
           marginHorizontal: 16,
         }}
       >
-        {q.trim() ? 'Search results' : 'Discover music'}
+        {q.trim()
+          ? 'Search results'
+          : `${CATEGORIES.find((c) => c.id === selectedCategory)?.label || 'New'} songs`}
       </Text>
 
       {/* Search status */}
@@ -295,7 +352,7 @@ export default function MusicPicker({ initial, onPick, onClose }) {
           </Text>
 
           <Pressable
-            onPress={() => setQ((value) => value + ' ')}
+            onPress={() => setReloadKey((k) => k + 1)}
             style={{
               marginTop: 16,
               paddingHorizontal: 20,
@@ -305,7 +362,7 @@ export default function MusicPicker({ initial, onPick, onClose }) {
             }}
           >
             <Text style={{ color: '#FFFFFF', fontWeight: '700' }}>
-              Retry search
+              Retry
             </Text>
           </Pressable>
         </View>

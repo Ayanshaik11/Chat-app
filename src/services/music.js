@@ -1,16 +1,27 @@
 
 import { kingXMusicApi } from './kingXMusicApi';
 
+function decodeHtml(str) {
+  if (!str || typeof str !== 'string') return '';
+  return str
+    .replace(/&quot;/g, '"')
+    .replace(/&#039;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(dec));
+}
+
 export async function searchMusic(q = '', fbUser) {
   const query = String(q || '').trim();
-
-  if (!query) {
-    return [];
-  }
+  // If search query is empty, default to fetching latest new songs
+  const effectiveQuery = query || 'latest songs';
 
   const params = new URLSearchParams({
-    q: query,
-    limit: '25',
+    q: effectiveQuery,
+    limit: '30',
   });
 
   const data = await kingXMusicApi(
@@ -18,26 +29,45 @@ export async function searchMusic(q = '', fbUser) {
     fbUser
   );
 
-  return (data.items || []).map((song) => ({
-    id: String(song.providerTrackId || song.id || ''),
-    name: song.title || 'Unknown title',
+  const seenIds = new Set();
+  const items = [];
 
-    artist: Array.isArray(song.artists)
-      ? song.artists.join(', ')
-      : song.artist || 'Unknown artist',
+  for (const song of data.items || []) {
+    const previewUrl = song.previewUrl || song.playback?.previewUrl || '';
+    // Only return songs with a playable audio preview
+    if (!previewUrl) continue;
 
-    image: song.artwork || song.image || '',
+    const id = String(song.providerTrackId || song.id || '');
+    if (!id || seenIds.has(id)) continue;
+    seenIds.add(id);
 
-    duration: Math.floor(
-      Number(song.durationMs || 0) / 1000
-    ),
+    items.push({
+      id,
+      name: decodeHtml(song.title || 'Unknown title'),
+      artist: decodeHtml(
+        Array.isArray(song.artists)
+          ? song.artists.join(', ')
+          : song.artist || 'Unknown artist'
+      ),
+      image: song.artwork || song.image || '',
+      duration: Math.floor(Number(song.durationMs || 0) / 1000),
+      url: previewUrl,
+      providerUrl: song.playback?.url || '',
+      ccurl: '',
+    });
+  }
 
-    // Direct audio preview, if the API provides one.
-    url: song.previewUrl || song.playback?.previewUrl || '',
-
-    // Song webpage, not a direct audio stream.
-    providerUrl: song.playback?.url || '',
-
-    ccurl: '',
-  }));
+  return items;
 }
+
+export async function getDiscoverMusic(category = 'latest', fbUser) {
+  const tagMap = {
+    latest: 'latest songs',
+    trending: 'trending songs',
+    bollywood: 'bollywood hits',
+    punjabi: 'punjabi hits',
+    romantic: 'romantic songs',
+  };
+  return searchMusic(tagMap[category] || category || 'latest songs', fbUser);
+}
+
