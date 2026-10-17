@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, FlatList, Modal, Pressable, ScrollView, StatusBar, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Image, Modal, Pressable, ScrollView, StatusBar, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FontAwesome } from '@expo/vector-icons';
 import { THEMES, getTheme, mix } from '../utils/chatTheme';
@@ -15,8 +15,9 @@ function Preview({ t, name }) {
     </View>
   );
   return (
-    <View style={{ borderRadius: 26, borderWidth: 2, borderColor: t.accent, overflow: 'hidden', height: 430 }}>
-      <LinearGradient colors={[t.bg, mix(t.bg, t.accent, 0.2)]} style={{ flex: 1 }}>
+    <View style={{ borderRadius: 26, borderWidth: 2, borderColor: t.accent, overflow: 'hidden', height: 430, backgroundColor: t.bg }}>
+      {!!t.image && <Image source={{ uri: t.image }} style={StyleSheet.absoluteFill} resizeMode="cover" pointerEvents="none" />}
+      <LinearGradient colors={t.image ? ['rgba(0,0,0,0.15)', 'rgba(0,0,0,0.35)'] : [t.bg, mix(t.bg, t.accent, 0.2)]} style={{ flex: 1 }}>
         <View style={{ height: 52, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 14, backgroundColor: t.header, borderBottomWidth: 1, borderBottomColor: t.line }}>
           <FontAwesome name="angle-left" size={26} color={t.text} />
           <FontAwesome name="user-circle" size={30} color={t.accent} style={{ marginLeft: 12 }} />

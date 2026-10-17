@@ -552,6 +552,11 @@ export default function ChatScreen({ route, navigation }) {
     <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
       <KeyboardAvoidingView style={[styles.safe, { backgroundColor: theme.bg }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
+        {/* wallpaper (theme background image), behind header, messages and composer */}
+        {!!theme.image && (
+          <Image source={{ uri: theme.image }} style={StyleSheet.absoluteFill} resizeMode="cover" pointerEvents="none" />
+        )}
+
         {/* header */}
         <View style={[styles.header, { backgroundColor: theme.header, borderBottomColor: theme.line }]}>
           <TouchableOpacity style={styles.back} onPress={() => navigation?.goBack()}>

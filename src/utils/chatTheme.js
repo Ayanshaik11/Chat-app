@@ -21,7 +21,8 @@ export const THEMES = [
   { id: 'cyberice', name: 'Cyber Ice', tag: 'Clean · Modern · Futuristic', bg: '#0A2A3A', you: '#00E5FF', other: '#1A3B4D', accent: '#00BCD4', text: '#E6F7FF' },
   { id: 'inferno', name: 'Inferno X', tag: 'Bold · Intense · Powerful', bg: '#0B0B0B', you: '#FF3B30', other: '#2A1A1A', accent: '#FF8A00', text: '#FFFFFF' },
   { id: 'neon', name: 'Neon Purple', tag: 'Modern · Stylish · AI Vibe', bg: '#0A0515', you: '#A855F7', other: '#2B1B43', accent: '#FF00E5', text: '#F5E6FF' },
-  { id: 'shenron', name: 'Shenron', tag: 'Mystic · Calm · Legendary', bg: '#051F16', you: '#00C853', other: '#0B3D2E', accent: '#FFD700', text: '#E8FFE9' },
+  // id kept as 'shenron' so saved preferences keep working after the rename to Shinron
+  { id: 'shenron', name: 'Shinron', tag: 'Mystic · Calm · Legendary', bg: '#051F16', you: '#00C853', other: '#0B3D2E', accent: '#FFD700', text: '#E8FFE9', image: 'https://uefhqvdtfhnzzrmhjzov.supabase.co/storage/v1/object/public/chat-wallpapers/shinron.webp' },
   { id: 'cyberpunk', name: 'Cyberpunk', tag: 'Hacker · Neon · Futuristic', bg: '#0B0B18', you: '#00E5FF', other: '#1A1A2E', accent: '#FF00D4', text: '#E6F0FF' },
   { id: 'obsidian', name: 'Obsidian', tag: 'Minimal · Classy · Premium', bg: '#0A0A0F', you: '#2E3A47', other: '#1A1A1F', accent: '#9CA3AF', text: '#E5E7EB' },
   { id: 'diamond', name: 'Diamond X', tag: 'Clean · Fresh · Professional', bg: '#071A2F', you: '#00B4FF', other: '#133D5C', accent: '#38BDF8', text: '#EAF6FF' },
