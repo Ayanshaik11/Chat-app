@@ -17,6 +17,7 @@ export async function createPost(me, asset, caption, onProgress) {
     imageURL,
     storagePath,
     caption: (caption || '').trim(),
+    ...(asset.music ? { music: asset.music } : {}),
     likes: [],
     createdAt: serverTimestamp(),
   });
