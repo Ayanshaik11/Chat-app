@@ -29,12 +29,12 @@
         "backgroundColor": "#0D0D0D"
       },
       "permissions": [
-        "VIBRATE",
-        "CAMERA",
-        "REQUEST_INSTALL_PACKAGES",
-        "POST_NOTIFICATIONS",
-        "RECORD_AUDIO",
-        "MODIFY_AUDIO_SETTINGS"
+        "android.permission.VIBRATE",
+        "android.permission.CAMERA",
+        "android.permission.REQUEST_INSTALL_PACKAGES",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "googleServicesFile": "./google-services.json",
       "versionCode": 10000
@@ -80,7 +80,9 @@
       [
         "expo-share-intent",
         {
-          "androidIntentFilters": ["text/*"]
+          "androidIntentFilters": [
+            "text/*"
+          ]
         }
       ],
       [
@@ -89,6 +91,11 @@
           "microphonePermission": "Chat App needs the microphone so you can send voice messages."
         }
       ]
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "2140fc90-48e5-4ef3-bc8a-1bb0bf088526"
+      }
+    }
   }
 }

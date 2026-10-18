@@ -130,42 +130,50 @@ function Root() {
   }, [me?.id]);
 
   /*
-   * Register this device for push notifications
-   * whenever a user is logged in.
+   * Register this device for push notifications on login
+   * and refresh registration when the app returns to foreground.
    */
   useEffect(() => {
-    if (!me?.id) {
-      return;
-    }
+    if (!me?.id) return undefined;
 
-    console.log(
-      'KING X: Registering push notifications for user:',
-      me.id
-    );
+    let active = true;
+    let registering = false;
 
-    registerForPushNotifications(me.id)
-      .then((token) => {
-        if (token) {
+    const register = async () => {
+      if (!active || registering) return;
+      registering = true;
+
+      try {
+        const token = await registerForPushNotifications(me.id);
+        if (active) {
           console.log(
-            'KING X: Push registration successful.'
-          );
-
-          console.log(
-            'KING X: FCM token:',
             token
-          );
-        } else {
-          console.log(
-            'KING X: Push registration returned no token.'
+              ? 'KING X: Push registration successful.'
+              : 'KING X: Push registration returned no token.'
           );
         }
-      })
-      .catch((error) => {
-        console.error(
-          'KING X: Push registration error:',
-          error
-        );
-      });
+      } catch (error) {
+        if (active) {
+          console.error(
+            'KING X: Push registration error:',
+            error?.message || error
+          );
+        }
+      } finally {
+        registering = false;
+      }
+    };
+
+    register();
+
+    const sub = AppState.addEventListener('change', (state) => {
+      if (state === 'active') register();
+    });
+
+    return () => {
+      active = false;
+      sub.remove();
+    };
   }, [me?.id]);
 
   /*

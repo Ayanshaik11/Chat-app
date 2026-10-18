@@ -5,7 +5,7 @@ import * as Notifications from 'expo-notifications';
 import {
   doc,
   serverTimestamp,
-  updateDoc,
+  setDoc,
 } from 'firebase/firestore';
 
 import { db } from '../config/firebase';
@@ -135,13 +135,14 @@ export async function registerForPushNotifications(meId) {
      * Save the token to the user's Firestore document.
      */
     if (meId) {
-      await updateDoc(
+      await setDoc(
         doc(db, 'users', meId),
         {
           pushToken: token,
           pushPlatform: Platform.OS,
           pushTokenUpdatedAt: serverTimestamp(),
-        }
+        },
+        { merge: true }
       );
 
       console.log(
