@@ -4,6 +4,15 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to publish (e.g. v1.1.9). Leave blank to use the selected ref/branch."
+        required: false
+        default: ""
+      notes:
+        description: "Release notes shown in the in-app update prompt."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -59,7 +68,14 @@ jobs:
         run: |
           set -e
 
-          TAG="${GITHUB_REF_NAME}"
+          # Manual runs can pass an explicit tag; otherwise use the ref.
+          INPUT_TAG="${{ github.event.inputs.tag }}"
+
+          if [ -n "$INPUT_TAG" ]; then
+            TAG="$INPUT_TAG"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
 
           if [ -z "$TAG" ] || [ "$TAG" = "main" ]; then
             TAG="v1.0.0"
@@ -67,6 +83,7 @@ jobs:
 
           VERSION="${TAG#v}"
 
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
 
           echo ""
@@ -884,7 +901,7 @@ jobs:
         uses: softprops/action-gh-release@v2
 
         with:
-          tag_name: ${{ github.ref_name }}
+          tag_name: ${{ steps.ver.outputs.tag }}
           files: chat-app-${{ steps.ver.outputs.version }}.apk
 
 
@@ -893,16 +910,18 @@ jobs:
       # ============================================================
 
       - name: Notify everyone in the app
-        if: github.event_name == 'release'
+        if: >-
+          github.event_name == 'release' ||
+          (github.event_name == 'workflow_dispatch' && steps.ver.outputs.tag != 'v1.0.0')
 
         env:
           FIREBASE_SERVICE_ACCOUNT_JSON: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
 
           RELEASE_VERSION: ${{ steps.ver.outputs.version }}
 
-          RELEASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/chat-app-${{ steps.ver.outputs.version }}.apk
+          RELEASE_URL: https://github.com/${{ github.repository }}/releases/download/${{ steps.ver.outputs.tag }}/chat-app-${{ steps.ver.outputs.version }}.apk
 
-          RELEASE_NOTES: ${{ github.event.release.body }}
+          RELEASE_NOTES: ${{ github.event.inputs.notes || github.event.release.body }}
 
         run: |
           set -e
