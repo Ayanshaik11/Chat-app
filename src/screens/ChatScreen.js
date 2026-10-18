@@ -18,7 +18,9 @@ import {
   chatIdFor, deleteMessageForMe, markChatRead, markMessagesSeen, reactToMessage, removeReaction,
   sendGifMessage, sendImageMessage, sendMessage, sendVoiceMessage, setChatTheme, setTyping, unsendMessage,
 } from '../services/chat';
-import { getTheme } from '../utils/chatTheme';
+import { DEFAULT_THEME_ID, getTheme } from '../utils/chatTheme';
+import { useChatTheme } from '../context/ChatThemeContext';
+import useReducedMotion from '../hooks/useReducedMotion';
 
 import VoiceRecorderBar from '../components/VoiceRecorderBar';
 import VoiceMessageBubble from '../components/VoiceMessageBubble';
@@ -30,6 +32,7 @@ import ChatImageBubble from '../components/ChatImageBubble';
 import GifBubble from '../components/GifBubble';
 import GifPicker from '../components/GifPicker';
 import ChatMenu from '../components/ChatMenu';
+import ChatWallpaper from '../components/ChatWallpaper';
 
 const RED = '#E11D2A', BG = '#080808', CARD = '#171717', BORDER = '#292929', MUTED = '#8F8F8F';
 const MAX_PHOTOS = 10;
@@ -68,12 +71,12 @@ const Avatar = ({ uri, name, size = 40 }) => (
   </View>
 );
 
-const MenuItem = ({ icon, label, onPress, danger }) => (
+const MenuItem = ({ icon, label, onPress, danger, theme }) => (
   <TouchableOpacity style={styles.menuItem} onPress={onPress}>
-    <View style={[styles.menuIcon, danger && { backgroundColor: 'rgba(225,29,42,.16)' }]}>
-      <FontAwesome name={icon} size={16} color={danger ? RED : '#fff'} />
+    <View style={[styles.menuIcon, { backgroundColor: theme?.inputBackgroundColor || '#252525' }, danger && { backgroundColor: 'rgba(225,29,42,.16)' }]}>
+      <FontAwesome name={icon} size={16} color={danger ? '#FF6B75' : (theme?.iconColor || '#fff')} />
     </View>
-    <Text style={[styles.menuLabel, danger && { color: RED }]}>{label}</Text>
+    <Text style={[styles.menuLabel, { color: theme?.incomingTextColor || '#fff' }, danger && { color: '#FF6B75' }]}>{label}</Text>
   </TouchableOpacity>
 );
 
@@ -81,9 +84,11 @@ const MenuItem = ({ icon, label, onPress, danger }) => (
    ONE MESSAGE (swipe to reply, long press for the menu)
    ========================================================= */
 
-const MessageRow = React.memo(function MessageRow({ item, seenText, theme, onLongPress, onReply, onReactionPress, inputRef }) {
+const MessageRow = React.memo(function MessageRow({ item, seenText, dateLabel, theme, onLongPress, onReply, onReactionPress, inputRef }) {
   const mine = item.senderId === item._meId;
-  const tc = { color: mine ? theme.youText : theme.text }; // text colour that is readable on this bubble
+  const bubbleText = mine ? theme.outgoingTextColor : theme.incomingTextColor;
+  const tc = { color: bubbleText }; // text colour that is readable on this bubble
+  const linkColor = mine ? theme.outgoingTextColor : theme.linkColor;
   const dir = mine ? -1 : 1; // your messages swipe right-to-left, friends' left-to-right
   const x = useRef(new Animated.Value(0)).current;
   const longRef = useRef(false);
@@ -131,26 +136,34 @@ const MessageRow = React.memo(function MessageRow({ item, seenText, theme, onLon
     if (item.type === 'gif' && item.gifUrl) {
       return (
         <View>
-          <GifBubble url={item.gifUrl} w={item.gifW} h={item.gifH} />
-          {!!item.caption && <LinkText style={[styles.text, tc, { marginTop: 6 }]}>{item.caption}</LinkText>}
+          <GifBubble url={item.gifUrl} w={item.gifW} h={item.gifH} theme={theme} />
+          {!!item.caption && <LinkText linkStyle={{ color: linkColor }} style={[styles.text, tc, { marginTop: 6 }]}>{item.caption}</LinkText>}
         </View>
       );
     }
     if (item.type === 'image' && item.images?.length) {
       return (
         <View>
-          <ChatImageBubble images={item.images} />
-          {!!item.caption && <LinkText style={[styles.text, tc, { marginTop: 6 }]}>{item.caption}</LinkText>}
+          <ChatImageBubble images={item.images} theme={theme} />
+          {!!item.caption && <LinkText linkStyle={{ color: linkColor }} style={[styles.text, tc, { marginTop: 6 }]}>{item.caption}</LinkText>}
         </View>
       );
     }
-    if (item.type === 'audio' && item.audioUrl) return <VoiceMessageBubble url={item.audioUrl} duration={item.duration || 0} />;
+    if (item.type === 'audio' && item.audioUrl) return <VoiceMessageBubble url={item.audioUrl} duration={item.duration || 0} theme={theme} mine={mine} />;
     const link = parseSharedLink(item.text);
-    return link ? <SharedLinkCard link={link} /> : <LinkText style={[styles.text, tc]}>{String(item.text || '')}</LinkText>;
+    return link ? <SharedLinkCard link={link} textColor={bubbleText} /> : <LinkText linkStyle={{ color: linkColor }} style={[styles.text, tc]}>{String(item.text || '')}</LinkText>;
   };
 
   return (
     <View style={[styles.row, { alignItems: mine ? 'flex-end' : 'flex-start' }]}>
+      {!!dateLabel && (
+        <View style={styles.dateRow}>
+          <View style={[styles.dateChip, { backgroundColor: theme.elevated, borderColor: theme.borderColor }]}>
+            <Text style={[styles.dateText, { color: theme.timestampColor }]}>{dateLabel}</Text>
+          </View>
+        </View>
+      )}
+
       <Animated.View
         {...swipe.panHandlers}
         style={{ maxWidth: '78%', flexShrink: 1, minWidth: 0, alignSelf: mine ? 'flex-end' : 'flex-start', transform: [{ translateX: x }] }}
@@ -158,35 +171,46 @@ const MessageRow = React.memo(function MessageRow({ item, seenText, theme, onLon
         <Pressable
           onLongPress={longPress}
           delayLongPress={300}
-          style={[styles.bubble, mine ? styles.mine : styles.theirs, mine ? { backgroundColor: theme.you } : { backgroundColor: theme.other, borderColor: theme.line }, item.unsent && styles.unsent, hasReply && { minWidth: 230 }]}
+          style={[
+            styles.bubble,
+            mine
+              ? { backgroundColor: theme.outgoingBubbleColor }
+              : { backgroundColor: theme.incomingBubbleColor, borderWidth: 1, borderColor: theme.borderColor },
+            item.unsent && styles.unsent,
+            hasReply && { minWidth: 230 },
+          ]}
         >
           {hasReply && (
-            <View style={styles.quote}>
-              <View style={styles.quoteBar} />
+            <View style={[styles.quote, { backgroundColor: theme.replyPreviewColor, borderColor: theme.borderColor }]}>
+              <View style={[styles.quoteBar, { backgroundColor: theme.accentColor }]} />
               <View style={styles.quoteBody}>
-                <Text style={styles.quoteName} numberOfLines={1}>{replyName}</Text>
-                <Text style={styles.quoteText} numberOfLines={2}>{rText(item.replyTo) || 'Message'}</Text>
+                <Text style={[styles.quoteName, { color: theme.accentColor }]} numberOfLines={1}>{replyName}</Text>
+                <Text style={[styles.quoteText, { color: theme.replyText }]} numberOfLines={2}>{rText(item.replyTo) || 'Message'}</Text>
               </View>
             </View>
           )}
           {body()}
-          {item.unsent && <Text style={styles.unsentLabel}>Unsent message</Text>}
+          {item.unsent && <Text style={[styles.unsentLabel, { color: theme.timestampColor }]}>Unsent message</Text>}
         </Pressable>
 
         {Object.keys(counts).length > 0 && (
           <View style={[styles.reactions, { justifyContent: mine ? 'flex-end' : 'flex-start' }]}>
             {Object.entries(counts).map(([e, c]) => (
-              <TouchableOpacity key={e} style={styles.chip} onPress={() => onReactionPress(item, e)}>
+              <TouchableOpacity
+                key={e}
+                style={[styles.chip, { backgroundColor: theme.inputBackgroundColor, borderColor: theme.borderColor }]}
+                onPress={() => onReactionPress(item, e)}
+              >
                 <Text style={{ fontSize: 15 }}>{e}</Text>
-                {c > 1 && <Text style={styles.chipCount}>{c}</Text>}
+                {c > 1 && <Text style={[styles.chipCount, { color: theme.incomingTextColor }]}>{c}</Text>}
               </TouchableOpacity>
             ))}
           </View>
         )}
       </Animated.View>
 
-      {item._pending && mine && !item.unsent && <Text style={styles.seen}>Sending…</Text>}
-      {!!seenText && !item._pending && <Text style={styles.seen}>{seenText}</Text>}
+      {item._pending && mine && !item.unsent && <Text style={[styles.seen, { color: theme.timestampColor }]}>Sending…</Text>}
+      {!!seenText && !item._pending && <Text style={[styles.seen, { color: theme.timestampColor }]}>{seenText}</Text>}
     </View>
   );
 });
@@ -222,11 +246,60 @@ export default function ChatScreen({ route, navigation }) {
   const [pending, setPending] = useState([]);
   const [sendingPhotos, setSendingPhotos] = useState(false);
   const [peerTypingValue, setPeerTypingValue] = useState(0);
-  const [themeId, setThemeId] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
-  const theme = getTheme(themeId);
   const [peerRead, setPeerRead] = useState(0); // when the other person last read this chat
   const [tick, setTick] = useState(0); // re-renders the "Seen 2m ago" text
+
+  /*
+   * Wallpaper / theme.
+   * `activeThemeId` is the shared theme from the chat document (or the value the
+   * user just applied, set optimistically), and falls back to the per-chat local
+   * cache while Firestore loads. Held in a context so it survives navigation.
+   */
+  const { themeIdFor, applyTheme } = useChatTheme();
+  const reducedMotion = useReducedMotion();
+  const [activeThemeId, setActiveThemeId] = useState(null);
+  const localThemeId = themeIdFor(chatId);
+  const themeId = activeThemeId ?? localThemeId;
+  const theme = useMemo(() => getTheme(themeId), [themeId]);
+
+  useEffect(() => {
+    setActiveThemeId(null);
+  }, [chatId]);
+
+  const onApplyTheme = useCallback(
+    async (id) => {
+      if (!id) return;
+      setActiveThemeId(id);
+      await applyTheme(chatId, id);
+      await setChatTheme(chatId, id, meId).catch(() => {});
+    },
+    [chatId, meId, applyTheme]
+  );
+
+  const onResetTheme = useCallback(async () => {
+    setActiveThemeId(DEFAULT_THEME_ID);
+    await applyTheme(chatId, DEFAULT_THEME_ID);
+    await setChatTheme(chatId, DEFAULT_THEME_ID, meId).catch(() => {});
+  }, [chatId, meId, applyTheme]);
+
+  /* subtle, optional send-button glow (static unless a theme asks to pulse) */
+  const glowEnabled = !!theme.glowColor && !!theme.specialEffect;
+  const glow = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    if (!glowEnabled || reducedMotion || theme.specialEffect !== 'pulse') {
+      glow.setValue(glowEnabled ? 0.22 : 0);
+      return undefined;
+    }
+    const loop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(glow, { toValue: 0.45, duration: 1400, useNativeDriver: true }),
+        Animated.timing(glow, { toValue: 0.14, duration: 1400, useNativeDriver: true }),
+      ])
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [glowEnabled, theme.specialEffect, reducedMotion, glow]);
 
   const inputRef = useRef(null);
   const menuAnim = useRef(new Animated.Value(0)).current;
@@ -276,7 +349,8 @@ export default function ChatScreen({ route, navigation }) {
       (s) => {
         setPeerTypingValue(s.data()?.typing?.[otherId] || 0);
         setPeerRead(ms(s.data()?.lastRead?.[otherId]));
-        setThemeId(s.data()?.theme || null); // same theme for both people
+        const remoteTheme = s.data()?.theme || null;
+        setActiveThemeId((current) => (current && !remoteTheme ? current : remoteTheme)); // shared theme for both people
       },
       () => {}
     );
@@ -367,6 +441,43 @@ export default function ChatScreen({ route, navigation }) {
       return out;
     });
   }, [rawMessages, e2eReady]);
+
+  /*
+   * Date separators. The list is inverted (newest first), so a day chip belongs
+   * above the oldest message of that day — i.e. when the next (older) message is
+   * from a different day, or there is no older message.
+   */
+  const dateLabels = useMemo(() => {
+    const map = new Map();
+    const dayKey = (v) => {
+      const m = ms(v);
+      if (!m) return '';
+      const d = new Date(m);
+      return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    };
+    const sameDay = (a, b) =>
+      a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    const labelFor = (v) => {
+      const m = ms(v);
+      if (!m) return '';
+      const d = new Date(m);
+      const today = new Date();
+      const yesterday = new Date();
+      yesterday.setDate(today.getDate() - 1);
+      if (sameDay(d, today)) return 'Today';
+      if (sameDay(d, yesterday)) return 'Yesterday';
+      return d.toLocaleDateString(undefined, d.getFullYear() === today.getFullYear()
+        ? { month: 'short', day: 'numeric' }
+        : { month: 'short', day: 'numeric', year: 'numeric' });
+    };
+    for (let i = 0; i < messages.length; i += 1) {
+      const older = messages[i + 1];
+      if (!older || dayKey(messages[i].createdAt) !== dayKey(older.createdAt)) {
+        map.set(messages[i].id, labelFor(messages[i].createdAt));
+      }
+    }
+    return map;
+  }, [messages]);
 
   // keep the friend's public key fresh (used when sending)
   useEffect(() => {
@@ -549,18 +660,16 @@ export default function ChatScreen({ route, navigation }) {
   /* ---------- screen ---------- */
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: theme.bg }]}>
-      <KeyboardAvoidingView style={[styles.safe, { backgroundColor: theme.bg }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <SafeAreaView style={[styles.safe, { backgroundColor: theme.backgroundColor }]}>
+      <KeyboardAvoidingView style={[styles.safe, { backgroundColor: theme.backgroundColor }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
-        {/* wallpaper (theme background image), behind header, messages and composer */}
-        {!!theme.image && (
-          <Image source={{ uri: theme.image }} style={StyleSheet.absoluteFill} resizeMode="cover" pointerEvents="none" />
-        )}
+        {/* wallpaper layer, behind header, messages and composer (never blocks touches) */}
+        <ChatWallpaper theme={theme} />
 
         {/* header */}
-        <View style={[styles.header, { backgroundColor: theme.header, borderBottomColor: theme.line }]}>
+        <View style={[styles.header, { backgroundColor: theme.header, borderBottomColor: theme.borderColor }]}>
           <TouchableOpacity style={styles.back} onPress={() => navigation?.goBack()}>
-            <Text style={styles.backText}>‹</Text>
+            <Text style={[styles.backText, { color: theme.headerTextColor }]}>‹</Text>
           </TouchableOpacity>
           <TouchableOpacity
             activeOpacity={0.7}
@@ -569,20 +678,20 @@ export default function ChatScreen({ route, navigation }) {
           >
             <Avatar uri={photoOf(profile)} name={name} />
             <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={[styles.headerName, { color: theme.text }]}>{name}</Text>
-              <Text style={[styles.headerStatus, otherTyping && { color: '#22C55E' }]}>
+              <Text style={[styles.headerName, { color: theme.headerTextColor }]}>{name}</Text>
+              <Text style={[styles.headerStatus, { color: theme.timestampColor }, otherTyping && { color: theme.statusColor }]}>
                 {otherTyping ? 'typing...' : profile?.online ? 'Online' : 'Messages'}
               </Text>
             </View>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setMenuOpen(true)} hitSlop={10} style={{ width: 40, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-            <FontAwesome name="ellipsis-v" size={21} color={theme.text} />
+            <FontAwesome name="ellipsis-v" size={21} color={theme.iconColor || theme.headerTextColor} />
           </TouchableOpacity>
         </View>
 
         {/* messages */}
         {loading ? (
-          <View style={styles.center}><ActivityIndicator size="large" color={RED} /></View>
+          <View style={styles.center}><ActivityIndicator size="large" color={theme.accentColor} /></View>
         ) : (
           <FlatList
             inverted
@@ -601,6 +710,7 @@ export default function ChatScreen({ route, navigation }) {
               <MessageRow
                 item={item}
                 seenText={item.id === latestSeenMsg?.id ? seenText : ''}
+                dateLabel={dateLabels.get(item.id)}
                 theme={theme}
                 onLongPress={openMenu}
                 onReply={handleReply}
@@ -610,52 +720,52 @@ export default function ChatScreen({ route, navigation }) {
             )}
             ListEmptyComponent={
               <View style={{ alignItems: 'center', paddingTop: 250 }}>
-                <Text style={{ color: '#fff', fontSize: 18, fontWeight: '700' }}>No messages yet</Text>
-                <Text style={{ color: '#777', marginTop: 5 }}>Start the conversation 👋</Text>
+                <Text style={{ color: theme.incomingTextColor, fontSize: 18, fontWeight: '700' }}>No messages yet</Text>
+                <Text style={{ color: theme.timestampColor, marginTop: 5 }}>Start the conversation 👋</Text>
               </View>
             }
           />
         )}
 
-        {otherTyping && !recordingVoice && <TypingDots name={name.split(' ')[0]} />}
+        {otherTyping && !recordingVoice && <TypingDots name={name.split(' ')[0]} theme={theme} />}
 
         {/* reply banner */}
         {replyingTo && (
-          <View style={styles.replyBar}>
-            <View style={{ width: 4, height: 44, backgroundColor: RED }} />
+          <View style={[styles.replyBar, { backgroundColor: theme.header, borderTopColor: theme.borderColor }]}>
+            <View style={{ width: 4, height: 44, backgroundColor: theme.accentColor }} />
             <View style={{ flex: 1, minWidth: 0, padding: 8 }}>
-              <Text style={{ color: RED, fontWeight: '800', fontSize: 12 }}>
+              <Text style={{ color: theme.accentColor, fontWeight: '800', fontSize: 12 }}>
                 Replying to {replyingTo.senderId === meId ? 'yourself' : replyingTo.senderName || name}
               </Text>
-              <Text style={{ color: '#AAA', fontSize: 12 }} numberOfLines={2}>{rText(replyingTo) || 'Message'}</Text>
+              <Text style={{ color: theme.timestampColor, fontSize: 12 }} numberOfLines={2}>{rText(replyingTo) || 'Message'}</Text>
             </View>
             <TouchableOpacity onPress={() => setReplyingTo(null)} style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}>
-              <FontAwesome name="times" size={20} color="#999" />
+              <FontAwesome name="times" size={20} color={theme.timestampColor} />
             </TouchableOpacity>
           </View>
         )}
 
         {/* message box: camera | text | GIF | mic/send */}
         {recordingVoice ? (
-          <VoiceRecorderBar onCancel={() => setRecordingVoice(false)} onSend={sendVoice} />
+          <VoiceRecorderBar theme={theme} onCancel={() => setRecordingVoice(false)} onSend={sendVoice} />
         ) : (
           <View>
             {pending.length > 0 && (
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.strip} contentContainerStyle={{ padding: 8 }}>
+              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={[styles.strip, { backgroundColor: theme.header, borderTopColor: theme.borderColor }]} contentContainerStyle={{ padding: 8 }}>
                 {pending.map((p, i) => (
                   <View key={p.uri + i} style={{ marginRight: 8 }}>
                     <Image source={{ uri: p.uri }} style={{ width: 64, height: 64, borderRadius: 10 }} />
-                    <TouchableOpacity style={styles.stripX} onPress={() => setPending((x) => x.filter((_, j) => j !== i))}>
-                      <Text style={{ color: '#fff', fontSize: 15, lineHeight: 17, fontWeight: '800' }}>×</Text>
+                    <TouchableOpacity style={[styles.stripX, { backgroundColor: theme.accentColor }]} onPress={() => setPending((x) => x.filter((_, j) => j !== i))}>
+                      <Text style={{ color: theme.accentText, fontSize: 15, lineHeight: 17, fontWeight: '800' }}>×</Text>
                     </TouchableOpacity>
                   </View>
                 ))}
               </ScrollView>
             )}
 
-            <View style={[styles.composer, { backgroundColor: theme.header, borderTopColor: theme.line }]}>
-              <TouchableOpacity style={[styles.round, { backgroundColor: theme.panel }]} onPress={() => setPickerOpen(true)}>
-                <FontAwesome name="camera" size={19} color="#fff" />
+            <View style={[styles.composer, { backgroundColor: theme.header, borderTopColor: theme.borderColor }]}>
+              <TouchableOpacity style={[styles.round, { backgroundColor: theme.inputBackgroundColor }]} onPress={() => setPickerOpen(true)}>
+                <FontAwesome name="camera" size={19} color={theme.iconColor} />
               </TouchableOpacity>
 
               <TextInput
@@ -663,23 +773,44 @@ export default function ChatScreen({ route, navigation }) {
                 value={text}
                 onChangeText={onChangeText}
                 placeholder={pending.length ? 'Add a caption...' : 'Message...'}
-                placeholderTextColor="#666"
+                placeholderTextColor={theme.placeholderColor}
                 multiline
                 maxLength={4000}
-                style={[styles.input, { backgroundColor: theme.panel, borderColor: theme.line, color: theme.text }]}
+                style={[styles.input, { backgroundColor: theme.inputBackgroundColor, borderColor: theme.borderColor, color: theme.inputTextColor }]}
               />
 
-              <TouchableOpacity style={[styles.round, { backgroundColor: theme.panel }]} onPress={() => setGifOpen(true)}>
-                <Text style={styles.gifLabel}>GIF</Text>
+              <TouchableOpacity style={[styles.round, { backgroundColor: theme.inputBackgroundColor }]} onPress={() => setGifOpen(true)}>
+                <Text style={[styles.gifLabel, { color: theme.iconColor }]}>GIF</Text>
               </TouchableOpacity>
 
               {canSend ? (
-                <TouchableOpacity style={[styles.round, { backgroundColor: theme.accent }]} disabled={sendingPhotos} onPress={onSendPress}>
-                  {sendingPhotos ? <ActivityIndicator color={theme.accentText} /> : <FontAwesome name="send" size={18} color={theme.accentText} />}
-                </TouchableOpacity>
+                <View>
+                  {glowEnabled && (
+                    <Animated.View
+                      pointerEvents="none"
+                      style={{
+                        position: 'absolute',
+                        top: -5,
+                        left: -5,
+                        right: -5,
+                        bottom: -5,
+                        borderRadius: 28,
+                        backgroundColor: theme.glowColor,
+                        opacity: glow,
+                      }}
+                    />
+                  )}
+                  <TouchableOpacity
+                    style={[styles.round, { backgroundColor: theme.sendButtonColor }]}
+                    disabled={sendingPhotos}
+                    onPress={onSendPress}
+                  >
+                    {sendingPhotos ? <ActivityIndicator color={theme.sendText} /> : <FontAwesome name="send" size={18} color={theme.sendText} />}
+                  </TouchableOpacity>
+                </View>
               ) : (
-                <TouchableOpacity style={[styles.round, { backgroundColor: theme.panel }]} onPress={() => setRecordingVoice(true)}>
-                  <FontAwesome name="microphone" size={21} color="#fff" />
+                <TouchableOpacity style={[styles.round, { backgroundColor: theme.inputBackgroundColor }]} onPress={() => setRecordingVoice(true)}>
+                  <FontAwesome name="microphone" size={21} color={theme.iconColor} />
                 </TouchableOpacity>
               )}
             </View>
@@ -702,27 +833,28 @@ export default function ChatScreen({ route, navigation }) {
             <Pressable style={StyleSheet.absoluteFill} onPress={closeMenu} />
             <Animated.View
               style={[styles.sheet, {
+                backgroundColor: theme.elevated,
                 opacity: menuAnim,
                 transform: [{ translateY: menuAnim.interpolate({ inputRange: [0, 1], outputRange: [12, 0] }) }],
               }]}
             >
               <View style={{ flexDirection: 'row', justifyContent: 'center', paddingVertical: 5 }}>
                 {QUICK.map((e) => (
-                  <TouchableOpacity key={e} style={styles.quick} onPress={() => react(e)}>
+                  <TouchableOpacity key={e} style={[styles.quick, { backgroundColor: theme.inputBackgroundColor, borderColor: theme.borderColor }]} onPress={() => react(e)}>
                     <Text style={{ fontSize: 25 }}>{e}</Text>
                   </TouchableOpacity>
                 ))}
-                <TouchableOpacity style={[styles.quick, { backgroundColor: RED, borderColor: RED }]} onPress={() => setExtra(true)}>
-                  <FontAwesome name="plus" size={20} color="#fff" />
+                <TouchableOpacity style={[styles.quick, { backgroundColor: theme.accentColor, borderColor: theme.accentColor }]} onPress={() => setExtra(true)}>
+                  <FontAwesome name="plus" size={20} color={theme.accentText} />
                 </TouchableOpacity>
               </View>
-              <View style={{ height: 1, backgroundColor: BORDER, marginVertical: 8 }} />
-              <MenuItem icon="reply" label="Reply" onPress={() => handleReply(menuMessage)} />
-              <MenuItem icon="share" label="Forward" onPress={openForward} />
-              <MenuItem icon="copy" label="Copy" onPress={copy} />
-              {menuMessage?.senderId === meId && !menuMessage?.unsent && <MenuItem icon="undo" label="Unsend" danger onPress={unsend} />}
-              <MenuItem icon="trash" label="Delete for you" danger onPress={deleteForMe} />
-              <MenuItem icon="times" label="Cancel" onPress={closeMenu} />
+              <View style={{ height: 1, backgroundColor: theme.borderColor, marginVertical: 8 }} />
+              <MenuItem theme={theme} icon="reply" label="Reply" onPress={() => handleReply(menuMessage)} />
+              <MenuItem theme={theme} icon="share" label="Forward" onPress={openForward} />
+              <MenuItem theme={theme} icon="copy" label="Copy" onPress={copy} />
+              {menuMessage?.senderId === meId && !menuMessage?.unsent && <MenuItem theme={theme} icon="undo" label="Unsend" danger onPress={unsend} />}
+              <MenuItem theme={theme} icon="trash" label="Delete for you" danger onPress={deleteForMe} />
+              <MenuItem theme={theme} icon="times" label="Cancel" onPress={closeMenu} />
             </Animated.View>
           </View>
         </Modal>
@@ -731,12 +863,12 @@ export default function ChatScreen({ route, navigation }) {
         <Modal visible={extra} transparent animationType="slide" onRequestClose={() => setExtra(false)}>
           <View style={styles.backdrop}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setExtra(false)} />
-            <View style={[styles.sheet, { maxHeight: '70%', padding: 15 }]}>
-              <View style={styles.handle} />
-              <Text style={styles.sheetTitle}>Choose reaction</Text>
+            <View style={[styles.sheet, { maxHeight: '70%', padding: 15, backgroundColor: theme.elevated }]}>
+              <View style={[styles.handle, { backgroundColor: theme.borderColor }]} />
+              <Text style={[styles.sheetTitle, { color: theme.incomingTextColor }]}>Choose reaction</Text>
               <ScrollView contentContainerStyle={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' }}>
                 {EXTRA.map((e) => (
-                  <TouchableOpacity key={e} style={styles.emoji} onPress={() => react(e)}>
+                  <TouchableOpacity key={e} style={[styles.emoji, { backgroundColor: theme.inputBackgroundColor }]} onPress={() => react(e)}>
                     <Text style={{ fontSize: 28 }}>{e}</Text>
                   </TouchableOpacity>
                 ))}
@@ -749,14 +881,14 @@ export default function ChatScreen({ route, navigation }) {
         <Modal visible={!!reactionMessage} transparent animationType="fade" onRequestClose={() => setReactionMessage(null)}>
           <View style={[styles.backdrop, { justifyContent: 'center' }]}>
             <Pressable style={StyleSheet.absoluteFill} onPress={() => setReactionMessage(null)} />
-            <View style={styles.popup}>
+            <View style={[styles.popup, { backgroundColor: theme.elevated, borderColor: theme.borderColor }]}>
               <Text style={{ fontSize: 40 }}>{reactionMessage?.reactions?.[meId]}</Text>
-              <Text style={{ color: '#fff', fontSize: 16, fontWeight: '700', marginVertical: 18 }}>Remove your reaction?</Text>
-              <TouchableOpacity style={styles.bigBtn} onPress={removeReact}>
-                <Text style={{ color: '#fff', fontWeight: '800' }}>Remove</Text>
+              <Text style={{ color: theme.incomingTextColor, fontSize: 16, fontWeight: '700', marginVertical: 18 }}>Remove your reaction?</Text>
+              <TouchableOpacity style={[styles.bigBtn, { backgroundColor: theme.accentColor }]} onPress={removeReact}>
+                <Text style={{ color: theme.accentText, fontWeight: '800' }}>Remove</Text>
               </TouchableOpacity>
               <TouchableOpacity style={{ height: 48, justifyContent: 'center' }} onPress={() => setReactionMessage(null)}>
-                <Text style={{ color: '#999' }}>Cancel</Text>
+                <Text style={{ color: theme.timestampColor }}>Cancel</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -765,15 +897,15 @@ export default function ChatScreen({ route, navigation }) {
         {/* forward */}
         <Modal visible={forward} transparent animationType="slide" onRequestClose={() => setForward(false)}>
           <View style={styles.backdrop}>
-            <View style={[styles.sheet, { maxHeight: '82%', padding: 15 }]}>
-              <View style={styles.handle} />
+            <View style={[styles.sheet, { maxHeight: '82%', padding: 15, backgroundColor: theme.elevated }]}>
+              <View style={[styles.handle, { backgroundColor: theme.borderColor }]} />
               <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                <Text style={styles.sheetTitle}>Forward to</Text>
-                <TouchableOpacity onPress={() => setForward(false)}><FontAwesome name="times" size={22} color="#999" /></TouchableOpacity>
+                <Text style={[styles.sheetTitle, { color: theme.incomingTextColor }]}>Forward to</Text>
+                <TouchableOpacity onPress={() => setForward(false)}><FontAwesome name="times" size={22} color={theme.timestampColor} /></TouchableOpacity>
               </View>
 
               {!friends.length ? (
-                <Text style={{ color: '#fff', fontWeight: '700', textAlign: 'center', paddingVertical: 50 }}>No friends available</Text>
+                <Text style={{ color: theme.incomingTextColor, fontWeight: '700', textAlign: 'center', paddingVertical: 50 }}>No friends available</Text>
               ) : (
                 <ScrollView style={{ maxHeight: 440 }}>
                   {friends.map((f) => {
@@ -781,16 +913,16 @@ export default function ChatScreen({ route, navigation }) {
                     return (
                       <TouchableOpacity
                         key={f.id}
-                        style={styles.friendRow}
+                        style={[styles.friendRow, { borderBottomColor: theme.borderColor }]}
                         onPress={() => setSelected((s) => (on ? s.filter((v) => v !== f.id) : [...s, f.id]))}
                       >
                         <Avatar uri={photoOf(f)} name={nameOf(f)} size={44} />
                         <View style={{ flex: 1, marginLeft: 11, minWidth: 0 }}>
-                          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '700' }}>{nameOf(f)}</Text>
-                          <Text style={{ color: '#777', fontSize: 12 }}>{f.username ? `@${f.username}` : 'Friend'}</Text>
+                          <Text style={{ color: theme.incomingTextColor, fontSize: 15, fontWeight: '700' }}>{nameOf(f)}</Text>
+                          <Text style={{ color: theme.timestampColor, fontSize: 12 }}>{f.username ? `@${f.username}` : 'Friend'}</Text>
                         </View>
-                        <View style={[styles.check, on && { backgroundColor: RED, borderColor: RED }]}>
-                          {on && <FontAwesome name="check" size={12} color="#fff" />}
+                        <View style={[styles.check, { borderColor: theme.borderColor }, on && { backgroundColor: theme.accentColor, borderColor: theme.accentColor }]}>
+                          {on && <FontAwesome name="check" size={12} color={theme.accentText} />}
                         </View>
                       </TouchableOpacity>
                     );
@@ -799,11 +931,11 @@ export default function ChatScreen({ route, navigation }) {
               )}
 
               <TouchableOpacity
-                style={[styles.bigBtn, { height: 50, marginTop: 12 }, (!selected.length || busy) && { opacity: 0.45 }]}
+                style={[styles.bigBtn, { height: 50, marginTop: 12, backgroundColor: theme.accentColor }, (!selected.length || busy) && { opacity: 0.45 }]}
                 disabled={!selected.length || busy}
                 onPress={doForward}
               >
-                {busy ? <ActivityIndicator color="#fff" /> : <Text style={{ color: '#fff', fontWeight: '800' }}>Forward{selected.length ? ` (${selected.length})` : ''}</Text>}
+                {busy ? <ActivityIndicator color={theme.accentText} /> : <Text style={{ color: theme.accentText, fontWeight: '800' }}>Forward{selected.length ? ` (${selected.length})` : ''}</Text>}
               </TouchableOpacity>
             </View>
           </View>
@@ -815,7 +947,8 @@ export default function ChatScreen({ route, navigation }) {
           themeId={themeId}
           theme={theme}
           name={name.split(' ')[0]}
-          onApplyTheme={async (id) => { setThemeId(id); await setChatTheme(chatId, id, meId); }}
+          onApplyTheme={onApplyTheme}
+          onResetTheme={onResetTheme}
         />
 
       </KeyboardAvoidingView>
@@ -838,6 +971,9 @@ const styles = StyleSheet.create({
   headerStatus: { color: MUTED, fontSize: 12, marginTop: 2 },
 
   row: { width: '100%', marginVertical: 4 },
+  dateRow: { width: '100%', alignItems: 'center', marginTop: 8, marginBottom: 6 },
+  dateChip: { paddingHorizontal: 10, paddingVertical: 3, borderRadius: 11, borderWidth: 1 },
+  dateText: { fontSize: 10.5, fontWeight: '700', letterSpacing: 0.2 },
   bubble: { maxWidth: '100%', minWidth: 50, borderRadius: 18, paddingHorizontal: 13, paddingVertical: 9, alignSelf: 'stretch' },
   mine: { backgroundColor: RED, borderBottomRightRadius: 5 },
   theirs: { backgroundColor: CARD, borderBottomLeftRadius: 5, borderWidth: 1, borderColor: BORDER },

@@ -14,18 +14,20 @@ const fit = (w, h) => {
 };
 
 // A GIF sent inside a chat bubble. Tap = full screen (animated).
-export default function GifBubble({ url, w, h }) {
+export default function GifBubble({ url, w, h, theme }) {
   const { width: sw, height: sh } = useWindowDimensions();
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
   const size = fit(w, h);
+  const placeholder = theme?.inputBackgroundColor || '#222';
+  const spinner = theme?.accentColor || '#E11D2A';
 
   return (
     <View>
-      <Pressable onPress={() => setOpen(true)} style={[size, styles.thumb]}>
+      <Pressable onPress={() => setOpen(true)} style={[size, styles.thumb, { backgroundColor: placeholder }]}>
         {!ready && (
           <View style={styles.spinner}>
-            <ActivityIndicator color="#E11D2A" />
+            <ActivityIndicator color={spinner} />
           </View>
         )}
         <Image source={{ uri: url }} onLoad={() => setReady(true)} style={styles.fill} />

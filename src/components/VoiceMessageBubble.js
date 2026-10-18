@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { Audio } from 'expo-av';
 import { FontAwesome, Ionicons } from '@expo/vector-icons';
+import { alpha, onColor } from '../utils/chatTheme';
 
 const BAR_WIDTH = 130;
 
@@ -13,7 +14,7 @@ const fmt = (sec) => {
 // only one voice message plays at a time
 let currentlyPlaying = null;
 
-export default function VoiceMessageBubble({ url, duration = 0 }) {
+export default function VoiceMessageBubble({ url, duration = 0, theme, mine = false }) {
   const soundRef = useRef(null);
   const [playing, setPlaying] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -102,6 +103,11 @@ export default function VoiceMessageBubble({ url, duration = 0 }) {
 
   const progress = total > 0 ? Math.min(1, position / total) : 0;
 
+  const accent = theme?.accentColor || '#FFFFFF';
+  const text = (mine ? theme?.youText : theme?.text) || '#FFFFFF';
+  const onAccent = onColor(accent);
+  const track = alpha(theme?.accentColor || '#FFFFFF', 0.28);
+
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', minWidth: 190 }}>
       <Pressable
@@ -111,15 +117,16 @@ export default function VoiceMessageBubble({ url, duration = 0 }) {
           width: 38,
           height: 38,
           borderRadius: 19,
-          backgroundColor: 'rgba(255,255,255,0.22)',
+          backgroundColor: accent,
+          opacity: 0.92,
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
         {loading ? (
-          <ActivityIndicator color="#fff" size="small" />
+          <ActivityIndicator color={onAccent} size="small" />
         ) : (
-          <Ionicons name={playing ? 'pause' : 'play'} size={20} color="#fff" style={{ marginLeft: playing ? 0 : 2 }} />
+          <Ionicons name={playing ? 'pause' : 'play'} size={20} color={onAccent} style={{ marginLeft: playing ? 0 : 2 }} />
         )}
       </Pressable>
 
@@ -129,18 +136,18 @@ export default function VoiceMessageBubble({ url, duration = 0 }) {
             width: BAR_WIDTH,
             height: 4,
             borderRadius: 2,
-            backgroundColor: 'rgba(255,255,255,0.3)',
+            backgroundColor: track,
             overflow: 'hidden',
           }}
         >
-          <View style={{ width: BAR_WIDTH * progress, height: 4, backgroundColor: '#fff' }} />
+          <View style={{ width: BAR_WIDTH * progress, height: 4, backgroundColor: accent }} />
         </View>
-        <Text style={{ color: '#fff', fontSize: 11, marginTop: 5, opacity: 0.85 }}>
+        <Text style={{ color: text, fontSize: 11, marginTop: 5, opacity: 0.85 }}>
           {playing || position > 0 ? fmt(position) : fmt(total)}
         </Text>
       </View>
 
-      <FontAwesome name="microphone" size={16} color="rgba(255,255,255,0.7)" style={{ marginLeft: 10 }} />
+      <FontAwesome name="microphone" size={16} color={text} style={{ marginLeft: 10, opacity: 0.7 }} />
     </View>
   );
 }

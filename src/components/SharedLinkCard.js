@@ -55,7 +55,7 @@ const CARD_W = 232;
  * WhatsApp-style link preview inside a chat bubble:
  * thumbnail + play button + caption. Tap to play right inside the app.
  */
-export default function SharedLinkCard({ link }) {
+export default function SharedLinkCard({ link, textColor = '#fff' }) {
   const [open, setOpen] = useState(false);
   const { width, height } = useWindowDimensions();
 
@@ -135,7 +135,7 @@ export default function SharedLinkCard({ link }) {
       </Pressable>
 
       {!!link.caption && (
-        <Text style={{ color: '#fff', fontSize: 14, marginTop: 8 }} numberOfLines={3}>
+        <Text style={{ color: textColor, fontSize: 14, marginTop: 8 }} numberOfLines={3}>
           {link.caption}
         </Text>
       )}

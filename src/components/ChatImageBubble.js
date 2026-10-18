@@ -5,10 +5,11 @@ import { Ionicons } from '@expo/vector-icons';
 const W = 220;
 
 // Photos inside a chat bubble (1 big, 2+ in a grid). Tap = full screen, swipe between photos.
-export default function ChatImageBubble({ images = [] }) {
+export default function ChatImageBubble({ images = [], theme }) {
   const { width, height } = useWindowDimensions();
   const [open, setOpen] = useState(-1);
   const shown = images.slice(0, 4);
+  const placeholder = theme?.inputBackgroundColor || '#222';
   const size = images.length === 1 ? { width: W, height: 260 } : { width: (W - 4) / 2, height: (W - 4) / 2 };
 
   return (
@@ -16,7 +17,7 @@ export default function ChatImageBubble({ images = [] }) {
       <View style={{ width: W, flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
         {shown.map((uri, i) => (
           <Pressable key={uri + i} onPress={() => setOpen(i)}>
-            <Image source={{ uri }} style={{ ...size, borderRadius: 10, backgroundColor: '#222' }} />
+            <Image source={{ uri }} style={{ ...size, borderRadius: 10, backgroundColor: placeholder }} />
             {i === 3 && images.length > 4 && (
               <View style={{ ...size, position: 'absolute', borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' }}>
                 <Text style={{ color: '#fff', fontSize: 22, fontWeight: '700' }}>+{images.length - 4}</Text>

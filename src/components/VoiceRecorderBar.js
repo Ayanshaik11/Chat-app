@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, Text, View } from 'react-native';
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
+import { onColor } from '../utils/chatTheme';
 
 const MAX_SECONDS = 180;
 
@@ -14,7 +15,7 @@ const fmt = (sec) => {
  * Replaces the chat composer while a voice message is being recorded.
  * Starts recording immediately. Trash = cancel, send button = finish & send.
  */
-export default function VoiceRecorderBar({ onCancel, onSend }) {
+export default function VoiceRecorderBar({ onCancel, onSend, theme }) {
   const recordingRef = useRef(null);
   const finishedRef = useRef(false);
   const [seconds, setSeconds] = useState(0);
@@ -112,7 +113,7 @@ export default function VoiceRecorderBar({ onCancel, onSend }) {
         alignItems: 'center',
         paddingHorizontal: 10,
         paddingVertical: 8,
-        backgroundColor: '#0D0D0D',
+        backgroundColor: theme?.header || '#0D0D0D',
       }}
     >
       <Pressable
@@ -121,7 +122,7 @@ export default function VoiceRecorderBar({ onCancel, onSend }) {
         hitSlop={8}
         style={{ width: 42, height: 42, alignItems: 'center', justifyContent: 'center' }}
       >
-        <Ionicons name="trash-outline" size={24} color="#E11D2A" />
+        <Ionicons name="trash-outline" size={24} color={theme?.secondaryAccentColor || theme?.accentColor || '#E11D2A'} />
       </Pressable>
 
       <View
@@ -131,7 +132,7 @@ export default function VoiceRecorderBar({ onCancel, onSend }) {
           alignItems: 'center',
           height: 44,
           borderRadius: 22,
-          backgroundColor: '#1A1A1A',
+          backgroundColor: theme?.inputBackgroundColor || '#1A1A1A',
           paddingHorizontal: 16,
           marginHorizontal: 6,
         }}
@@ -141,14 +142,14 @@ export default function VoiceRecorderBar({ onCancel, onSend }) {
             width: 10,
             height: 10,
             borderRadius: 5,
-            backgroundColor: '#E11D2A',
+            backgroundColor: theme?.accentColor || '#E11D2A',
             opacity: Math.floor(seconds * 2) % 2 === 0 ? 1 : 0.25,
           }}
         />
-        <Text style={{ color: '#fff', fontSize: 16, fontWeight: '600', marginLeft: 10 }}>
+        <Text style={{ color: theme?.inputTextColor || '#fff', fontSize: 16, fontWeight: '600', marginLeft: 10 }}>
           {fmt(seconds)}
         </Text>
-        <Text style={{ color: '#8F8F8F', fontSize: 13, marginLeft: 10 }}>
+        <Text style={{ color: theme?.placeholderColor || '#8F8F8F', fontSize: 13, marginLeft: 10 }}>
           {started ? 'Recording…' : 'Starting…'}
         </Text>
       </View>
@@ -160,12 +161,16 @@ export default function VoiceRecorderBar({ onCancel, onSend }) {
           width: 44,
           height: 44,
           borderRadius: 22,
-          backgroundColor: started ? '#E11D2A' : '#333',
+          backgroundColor: started ? (theme?.sendButtonColor || '#E11D2A') : (theme?.inputBackgroundColor || '#333'),
           alignItems: 'center',
           justifyContent: 'center',
         }}
       >
-        {busy ? <ActivityIndicator color="#fff" /> : <Ionicons name="send" size={19} color="#fff" />}
+        {busy ? (
+          <ActivityIndicator color={onColor(theme?.sendButtonColor || '#E11D2A')} />
+        ) : (
+          <Ionicons name="send" size={19} color={onColor(theme?.sendButtonColor || '#E11D2A')} />
+        )}
       </Pressable>
     </View>
   );

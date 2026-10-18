@@ -2,8 +2,13 @@ import React, { useEffect, useRef } from 'react';
 import { Animated, Easing, Text, View } from 'react-native';
 
 /** Three bouncing dots in a small bubble: "<name> is typing". */
-export default function TypingDots({ name }) {
+export default function TypingDots({ name, theme }) {
   const dots = useRef([0, 1, 2].map(() => new Animated.Value(0))).current;
+
+  const bubbleBg = theme?.incomingBubbleColor || '#1A1A1A';
+  const bubbleBorder = theme?.borderColor || '#292929';
+  const dotColor = theme?.accentColor || '#B5B5B5';
+  const label = theme?.timestampColor || '#8F8F8F';
 
   useEffect(() => {
     const loops = dots.map((value, index) =>
@@ -45,9 +50,9 @@ export default function TypingDots({ name }) {
         style={{
           flexDirection: 'row',
           alignItems: 'center',
-          backgroundColor: '#1A1A1A',
+          backgroundColor: bubbleBg,
           borderWidth: 1,
-          borderColor: '#292929',
+          borderColor: bubbleBorder,
           borderRadius: 16,
           paddingHorizontal: 12,
           paddingVertical: 10,
@@ -60,7 +65,7 @@ export default function TypingDots({ name }) {
               width: 7,
               height: 7,
               borderRadius: 3.5,
-              backgroundColor: '#B5B5B5',
+              backgroundColor: dotColor,
               marginHorizontal: 2.5,
               opacity: value.interpolate({ inputRange: [0, 1], outputRange: [0.4, 1] }),
               transform: [
@@ -72,7 +77,7 @@ export default function TypingDots({ name }) {
       </View>
 
       {!!name && (
-        <Text style={{ color: '#8F8F8F', fontSize: 12, marginLeft: 8 }} numberOfLines={1}>
+        <Text style={{ color: label, fontSize: 12, marginLeft: 8 }} numberOfLines={1}>
           {name} is typing
         </Text>
       )}

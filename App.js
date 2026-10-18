@@ -17,6 +17,7 @@ import * as Notifications from 'expo-notifications';
 import { SettingsProvider, useTheme } from './src/context/SettingsContext';
 import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { AppDataProvider } from './src/context/AppDataContext';
+import { ChatThemeProvider } from './src/context/ChatThemeContext';
 import RootNavigator from './src/navigation/RootNavigator';
 import { navigateToChat } from './src/navigation/navigationRef';
 import { registerForPushNotifications } from './src/services/pushTokens';
@@ -314,7 +315,9 @@ export default function App() {
         <SettingsProvider>
           <AuthProvider>
             <AppDataProvider>
-              <Root />
+              <ChatThemeProvider>
+                <Root />
+              </ChatThemeProvider>
             </AppDataProvider>
           </AuthProvider>
         </SettingsProvider>
