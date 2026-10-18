@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { Image, StyleSheet, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { DEFAULT_THEME_ID } from '../utils/chatTheme';
+import { useWallpaperUrl } from '../hooks/useWallpaperUrls';
 
 /**
  * The chat wallpaper layer.
@@ -14,7 +16,12 @@ import { LinearGradient } from 'expo-linear-gradient';
  */
 export default function ChatWallpaper({ theme }) {
   const [failed, setFailed] = useState(false);
-  const uri = theme?.wallpaperUrl;
+  // Only the authenticated API's signed URL is used for wallpaper images.
+  const signedUrl = useWallpaperUrl(theme?.id);
+  const uri = signedUrl || null;
+  // Themes other than the default are expected to have a wallpaper, so they keep
+  // the gradient while the signed URL is loading (or if it fails).
+  const wantsWallpaper = !!theme?.id && theme.id !== DEFAULT_THEME_ID;
 
   useEffect(() => {
     setFailed(false);
@@ -35,7 +42,7 @@ export default function ChatWallpaper({ theme }) {
           fadeDuration={0}
           onError={() => setFailed(true)}
         />
-      ) : uri ? (
+      ) : wantsWallpaper ? (
         <LinearGradient
           colors={[theme.backgroundColor, theme.incomingBubbleColor || theme.backgroundColor]}
           style={StyleSheet.absoluteFill}

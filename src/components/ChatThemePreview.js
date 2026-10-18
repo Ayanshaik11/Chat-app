@@ -2,14 +2,18 @@ import React from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FontAwesome } from '@expo/vector-icons';
-import { onColor, themeThumbUrl } from '../utils/chatTheme';
+import { onColor } from '../utils/chatTheme';
+import { useWallpaperUrl } from '../hooks/useWallpaperUrls';
 
 /**
  * A small, self-contained mock of the chat rendered entirely with a theme's own
  * colours. Used by the picker so a user can preview a look before applying it.
  */
 export default function ChatThemePreview({ theme, name = 'Your friend', height = 430 }) {
+  const signedUrl = useWallpaperUrl(theme?.id);
   if (!theme) return null;
+
+  const wallpaperUrl = signedUrl || null;
 
   const bubble = (mine, text, extra) => (
     <View
@@ -43,14 +47,14 @@ export default function ChatThemePreview({ theme, name = 'Your friend', height =
         backgroundColor: theme.backgroundColor,
       }}
     >
-      {!!theme.wallpaperUrl && (
+      {!!wallpaperUrl && (
         <Image
-          source={{ uri: themeThumbUrl(theme.wallpaperUrl) || theme.wallpaperUrl }}
+          source={{ uri: wallpaperUrl }}
           style={StyleSheet.absoluteFill}
           resizeMode="cover"
         />
       )}
-      {!theme.wallpaperUrl && (
+      {!wallpaperUrl && (
         <LinearGradient
           colors={[theme.backgroundColor, theme.incomingBubbleColor]}
           style={StyleSheet.absoluteFill}

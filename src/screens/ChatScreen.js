@@ -20,6 +20,8 @@ import {
 } from '../services/chat';
 import { DEFAULT_THEME_ID, getTheme } from '../utils/chatTheme';
 import { useChatTheme } from '../context/ChatThemeContext';
+import { useAuth } from '../context/AuthContext';
+import { ensureWallpaperUrls } from '../services/wallpaperUrlStore';
 import useReducedMotion from '../hooks/useReducedMotion';
 
 import VoiceRecorderBar from '../components/VoiceRecorderBar';
@@ -257,6 +259,7 @@ export default function ChatScreen({ route, navigation }) {
    * cache while Firestore loads. Held in a context so it survives navigation.
    */
   const { themeIdFor, applyTheme } = useChatTheme();
+  const { fbUser } = useAuth();
   const reducedMotion = useReducedMotion();
   const [activeThemeId, setActiveThemeId] = useState(null);
   const localThemeId = themeIdFor(chatId);
@@ -266,6 +269,20 @@ export default function ChatScreen({ route, navigation }) {
   useEffect(() => {
     setActiveThemeId(null);
   }, [chatId]);
+
+  /*
+   * Signed wallpaper URLs are shared app-wide and cached in memory. Fetch them
+   * once per session (and re-check when returning to the foreground); the store
+   * de-duplicates requests and refreshes again before the URLs expire.
+   */
+  useEffect(() => {
+    if (!fbUser) return undefined;
+    ensureWallpaperUrls(fbUser);
+    const sub = AppState.addEventListener('change', (s) => {
+      if (s === 'active') ensureWallpaperUrls(fbUser);
+    });
+    return () => sub.remove();
+  }, [fbUser]);
 
   const onApplyTheme = useCallback(
     async (id) => {

@@ -4,7 +4,8 @@ import {
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { FontAwesome } from '@expo/vector-icons';
-import { THEMES, THEME_CATEGORIES, DEFAULT_THEME_ID, getTheme, themeThumbUrl } from '../utils/chatTheme';
+import { THEMES, THEME_CATEGORIES, DEFAULT_THEME_ID, getTheme } from '../utils/chatTheme';
+import { useWallpaperUrl } from '../hooks/useWallpaperUrls';
 import ChatThemePreview from './ChatThemePreview';
 
 const BG = '#0B0B0B';
@@ -14,22 +15,23 @@ const TEXT = '#FFFFFF';
 const MUTED = '#9A9A9A';
 const RED = '#E11D2A';
 
-/* Thumbnail with a two-step fallback: transformed render URL -> original URL -> gradient. */
+/* Thumbnail from the shared signed URL, with a spinner and a gradient fallback. */
 function ThemeThumb({ theme }) {
-  const [stage, setStage] = useState(0); // 0 = thumb, 1 = original, 2 = gradient
+  const [failed, setFailed] = useState(false);
   const [loading, setLoading] = useState(true);
+  const signedUrl = useWallpaperUrl(theme.id);
+  const uri = signedUrl || null;
 
+  // Re-arm the image whenever the source changes, e.g. when a refreshed signed
+  // URL arrives or the id changes.
   useEffect(() => {
-    setStage(0);
+    setFailed(false);
     setLoading(true);
-  }, [theme.id]);
+  }, [uri]);
 
-  if (!theme.wallpaperUrl || stage >= 2) {
+  if (!uri || failed) {
     return <LinearGradient colors={[theme.backgroundColor, theme.incomingBubbleColor]} style={styles.thumb} />;
   }
-
-  const thumb = themeThumbUrl(theme.wallpaperUrl);
-  const src = stage === 0 ? thumb : theme.wallpaperUrl;
 
   return (
     <View style={styles.thumb}>
@@ -39,14 +41,11 @@ function ThemeThumb({ theme }) {
         </View>
       )}
       <Image
-        source={{ uri: src }}
+        source={{ uri }}
         style={StyleSheet.absoluteFill}
         resizeMode="cover"
         onLoad={() => setLoading(false)}
-        onError={() => {
-          if (stage === 0 && thumb !== theme.wallpaperUrl) setStage(1);
-          else setStage(2);
-        }}
+        onError={() => setFailed(true)}
       />
       <View style={[StyleSheet.absoluteFill, { backgroundColor: 'rgba(0,0,0,0.20)' }]} />
     </View>

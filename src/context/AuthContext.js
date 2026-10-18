@@ -7,6 +7,7 @@ import {
 import { doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db, GOOGLE_WEB_CLIENT_ID } from '../config/firebase';
 import { addNotification } from '../services/notifications';
+import { setAuthorizedUser } from '../services/wallpaperUrlStore';
 import { useSettings } from './SettingsContext';
 
 GoogleSignin.configure({ webClientId: GOOGLE_WEB_CLIENT_ID, offlineAccess: false });
@@ -30,6 +31,10 @@ export function AuthProvider({ children }) {
   useEffect(
     () =>
       onAuthStateChanged(auth, (u) => {
+        // Tell the wallpaper store who is authorized *before* children render,
+        // so the cache/callback can't be reactivated by a stale user and the
+        // first fetch can't race auth restoration.
+        setAuthorizedUser(u);
         setFbUser(u);
         if (!u) setProfile(null);
         setInitializing(false);
@@ -132,6 +137,8 @@ export function AuthProvider({ children }) {
   }, []);
 
   const logout = useCallback(async () => {
+    // The wallpaper cache is cleared by setAuthorizedUser(null) when
+    // onAuthStateChanged reports the sign-out below.
     try {
       if (googleId) {
         await addNotification(googleId, { type: 'logout', text: 'You logged out of your account' });
