@@ -142,6 +142,7 @@ export function normalizeTrack(raw) {
     disabledText: asText(raw.disabledText ?? raw.disabled_text),
     isDrm: raw.isDrm === true || Number(raw.isDrm ?? raw.is_drm) === 1,
     rightsReason: asText(raw.rightsReason ?? raw.rights?.reason),
+    source: asText(raw.source ?? raw.provider ?? (String(id).startsWith('itunes_') ? 'itunes' : 'jiosaavn')).toLowerCase(),
     ccurl: '',
   };
 }

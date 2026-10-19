@@ -551,6 +551,17 @@ export default function MusicPicker({ initial, onPick, onClose }) {
                     {item.artist}
                     {hasPreview ? ` · ${mmss(item.duration)}` : ' · Preview unavailable'}
                   </Text>
+
+                  <Text
+                    numberOfLines={1}
+                    style={{
+                      color: item.source === 'itunes' ? '#8AB4F8' : '#8BD5A7',
+                      fontSize: 10,
+                      marginTop: 3,
+                    }}
+                  >
+                    {item.source === 'itunes' ? 'Apple Music · Preview clip' : 'JioSaavn'}
+                  </Text>
                 </View>
 
                 <Pressable
