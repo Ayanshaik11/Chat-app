@@ -236,8 +236,8 @@ const WALLPAPERS = [
 
   /* ---------- Solo Leveling (4) ---------- */
   { id: 'beru-sl', name: 'Beru', category: 'Solo Leveling', file: 'beru-sl.webp', palette: paletteFrom('#071C19', '#103D32', '#31D6A1', '#A1F8D6', '#F0FFF8') },
-  { id: 'cha-hae-in-sl', name: 'Cha Hae-In', category: 'Solo Leveling', file: 'cha-hae-in-sl.webp', palette: paletteFrom('#1B1026', '#392044', '#E4A1D9', '#F5D3A5', '#FFF5FF') },
-  { id: 'igris-jjk', name: 'Igris', category: 'Solo Leveling', file: 'igris-jjk.webp', palette: paletteFrom('#101923', '#202F40', '#537DA8', '#A8C7E8', '#F4F8FF') },
+  { id: 'cha-hae-in-sl', name: 'Cha Hae-In', category: 'Solo Leveling', file: 'cha-hae-in-sl.webp', palette: paletteFrom('#1A1210', '#2E211A', '#9B2335', '#E3B04B', '#FFF4E2') },
+  { id: 'igris-jjk', name: 'Igris', category: 'Solo Leveling', file: 'igris-jjk.webp', palette: paletteFrom('#0D0A0F', '#211A1E', '#7A1F2B', '#D62839', '#FFE8E8') },
   { id: 'jinha-sl', name: 'Jin-Ha', category: 'Solo Leveling', file: 'jinha-sl.webp', palette: paletteFrom('#111C29', '#24394E', '#5DA7CE', '#A7DDF0', '#F3FBFF') },
   { id: 'jinwoo-sl', name: 'Sung Jinwoo', category: 'Solo Leveling', file: 'jinwoo-sl.webp', palette: paletteFrom('#090D1A', '#191F38', '#6259FF', '#A89CFF', '#F6F5FF') },
 
