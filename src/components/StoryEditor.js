@@ -129,8 +129,12 @@ export default function StoryEditor({ asset, ratio = 9 / 16, allowMusic = false,
           <Pressable onPress={onCancel} hitSlop={12}><Ionicons name="close" size={28} color="#fff" /></Pressable>
           {music ? (
             <Pressable onPress={() => setMusic(null)} style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6, marginHorizontal: 10, paddingHorizontal: 10, height: 30, borderRadius: 15, backgroundColor: '#ffffff22' }}>
-              <Ionicons name="musical-notes" size={14} color="#fff" />
-              <Text style={{ flex: 1, color: '#fff', fontSize: 12 }} numberOfLines={1}>{music.name} · {music.artist}</Text>
+              {music.image || music.artwork ? (
+                <Image source={{ uri: music.image || music.artwork }} style={{ width: 20, height: 20, borderRadius: 10 }} />
+              ) : (
+                <Ionicons name="musical-notes" size={14} color="#fff" />
+              )}
+              <Text style={{ flex: 1, color: '#fff', fontSize: 12 }} numberOfLines={1}>{music.name || music.title} · {music.artist}</Text>
               <Ionicons name="close" size={14} color="#fff" />
             </Pressable>
           ) : <Text style={{ color: '#aaa', fontSize: 12 }}>Pinch to zoom · drag to move</Text>}

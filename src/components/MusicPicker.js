@@ -13,8 +13,13 @@ import {
 import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 
-import { useAuth } from '../context/AuthContext';
-import { searchMusic } from '../services/music';
+import {
+  getTrackPreview,
+  isAbortError,
+  searchMusic,
+  toErrorMessage,
+  toSelectedMusic,
+} from '../services/music';
 
 const RED = '#E11D2A';
 
@@ -40,21 +45,29 @@ const mmss = (seconds) => {
 };
 
 export default function MusicPicker({ initial, onPick, onClose }) {
-  const { fbUser } = useAuth();
-
   const [q, setQ] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('latest');
   const [reloadKey, setReloadKey] = useState(0);
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [chosen, setChosen] = useState(initial || null);
+  const [chosen, setChosen] = useState(
+    initial
+      ? {
+          ...initial,
+          name: initial.name || initial.title,
+          image: initial.image || initial.artwork,
+          url: initial.url || initial.previewUrl,
+        }
+      : null
+  );
   const [start, setStart] = useState(initial?.start || 0);
   const [playingId, setPlayingId] = useState(null);
 
   const sound = useRef(null);
   const requestId = useRef(0);
   const mounted = useRef(true);
+  const lastQuery = useRef('latest songs');
 
   const stop = async () => {
     const current = sound.current;
@@ -71,8 +84,48 @@ export default function MusicPicker({ initial, onPick, onClose }) {
     if (mounted.current) setPlayingId(null);
   };
 
-  const preview = async (track, from = 0) => {
+  // Preview URLs can expire. Before giving up, ask the backend for a fresh one.
+  const refreshPreview = async (track) => {
+    if (!track?.id) return track;
+
+    const query =
+      track.searchQuery ||
+      lastQuery.current ||
+      [track.name || track.title, track.artist].filter(Boolean).join(' ');
+
+    try {
+      const fresh = await getTrackPreview(track.id, query, {
+        timeoutMs: 8000,
+      });
+      const freshValues = Object.fromEntries(
+        Object.entries(fresh).filter(([, value]) => value !== '' && value != null)
+      );
+      const updated = { ...track, ...freshValues };
+
+      if (mounted.current) {
+        setItems((list) =>
+          list.map((item) =>
+            item.id === track.id ? { ...item, ...freshValues } : item
+          )
+        );
+        setChosen((current) =>
+          current?.id === track.id ? { ...current, ...freshValues } : current
+        );
+      }
+
+      return updated;
+    } catch {
+      // Keep the URL we already have; the caller decides whether it is usable.
+      return track;
+    }
+  };
+
+  const preview = async (track, from = 0, retry = true) => {
     await stop();
+
+    if (!track?.url && retry) {
+      track = await refreshPreview(track);
+    }
 
     if (!track?.url) {
       if (mounted.current) {
@@ -120,9 +173,24 @@ export default function MusicPicker({ initial, onPick, onClose }) {
         }
       });
     } catch (e) {
+      if (retry) {
+        const fresh = await refreshPreview(track);
+
+        if (fresh?.url && fresh.url !== track.url) {
+          if (mounted.current) setError('');
+          await preview(fresh, from, false);
+          return;
+        }
+      }
+
       if (mounted.current) {
         setPlayingId(null);
-        setError(e?.message || 'Could not play this song preview.');
+        setError(
+          toErrorMessage(
+            e,
+            'Could not play this song preview. The preview may have expired.'
+          )
+        );
       }
     }
   };
@@ -146,6 +214,8 @@ export default function MusicPicker({ initial, onPick, onClose }) {
   // Search or discover songs through the King X backend.
   useEffect(() => {
     const thisRequest = ++requestId.current;
+    const controller =
+      typeof AbortController === 'function' ? new AbortController() : null;
     let cancelled = false;
 
     setLoading(true);
@@ -156,16 +226,25 @@ export default function MusicPicker({ initial, onPick, onClose }) {
 
     const timer = setTimeout(async () => {
       try {
-        const results = await searchMusic(queryToSearch, fbUser);
+        const results = await searchMusic(queryToSearch, {
+          ...(controller ? { signal: controller.signal } : {}),
+        });
 
         if (cancelled || thisRequest !== requestId.current) return;
 
+        lastQuery.current = queryToSearch;
         setItems(results);
       } catch (e) {
-        if (cancelled || thisRequest !== requestId.current) return;
+        if (
+          cancelled ||
+          thisRequest !== requestId.current ||
+          isAbortError(e)
+        ) {
+          return;
+        }
 
         setItems([]);
-        setError(e?.message || 'Could not load music.');
+        setError(toErrorMessage(e, 'Could not load music.'));
       } finally {
         if (!cancelled && thisRequest === requestId.current) {
           setLoading(false);
@@ -176,8 +255,9 @@ export default function MusicPicker({ initial, onPick, onClose }) {
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      controller?.abort();
     };
-  }, [q, selectedCategory, reloadKey, fbUser]);
+  }, [q, selectedCategory, reloadKey]);
 
   const choose = async (track) => {
     setChosen(track);
@@ -202,24 +282,20 @@ export default function MusicPicker({ initial, onPick, onClose }) {
   const useSong = async () => {
     if (!chosen) return;
 
-    if (!chosen.url) {
+    const track = chosen.url ? chosen : await refreshPreview(chosen);
+
+    if (!track?.url) {
       setError('This song does not have a playable preview.');
       return;
     }
 
     await stop();
 
-    onPick({
-      id: chosen.id,
-      name: chosen.name,
-      artist: chosen.artist,
-      url: chosen.url,
-      providerUrl: chosen.providerUrl || '',
-      ccurl: chosen.ccurl || '',
-      duration: chosen.duration || 0,
-      image: chosen.image || '',
-      start,
-    });
+    try {
+      onPick(toSelectedMusic(track, start));
+    } catch (e) {
+      setError(toErrorMessage(e, 'Could not use this song.'));
+    }
   };
 
   const close = async () => {
@@ -382,13 +458,14 @@ export default function MusicPicker({ initial, onPick, onClose }) {
               }}
             >
               {q.trim()
-                ? 'No playable previews found. Try another song or artist.'
-                : 'No playable previews are available right now.'}
+                ? 'No songs found. Try another song or artist.'
+                : 'No songs are available right now.'}
             </Text>
           }
           renderItem={({ item }) => {
             const selected = chosen?.id === item.id;
             const isPlaying = playingId === item.id;
+            const hasPreview = !!item.url;
 
             return (
               <Pressable
@@ -451,7 +528,8 @@ export default function MusicPicker({ initial, onPick, onClose }) {
                       marginTop: 4,
                     }}
                   >
-                    {item.artist} · {mmss(item.duration)}
+                    {item.artist}
+                    {hasPreview ? ` · ${mmss(item.duration)}` : ' · Preview unavailable'}
                   </Text>
                 </View>
 
@@ -460,13 +538,14 @@ export default function MusicPicker({ initial, onPick, onClose }) {
                     event?.stopPropagation?.();
                     togglePreview(item);
                   }}
+                  disabled={!hasPreview}
                   hitSlop={8}
                   style={{ padding: 4 }}
                 >
                   <Ionicons
                     name={isPlaying ? 'pause-circle' : 'play-circle-outline'}
                     size={29}
-                    color={isPlaying ? RED : '#CCCCCC'}
+                    color={isPlaying ? RED : hasPreview ? '#CCCCCC' : '#555555'}
                   />
                 </Pressable>
               </Pressable>
@@ -492,9 +571,9 @@ export default function MusicPicker({ initial, onPick, onClose }) {
           }}
         >
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-            {chosen.image ? (
+            {chosen.image || chosen.artwork ? (
               <Image
-                source={{ uri: chosen.image }}
+                source={{ uri: chosen.image || chosen.artwork }}
                 style={{ width: 42, height: 42, borderRadius: 7 }}
               />
             ) : null}
@@ -504,7 +583,7 @@ export default function MusicPicker({ initial, onPick, onClose }) {
                 numberOfLines={1}
                 style={{ color: '#FFFFFF', fontWeight: '700' }}
               >
-                {chosen.name}
+                {chosen.name || chosen.title}
               </Text>
 
               <Text

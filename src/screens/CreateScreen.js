@@ -93,7 +93,7 @@ export default function CreateScreen({ route, navigation }) {
   const input = { alignSelf: 'stretch', backgroundColor: colors.inputBg, borderRadius: 14, padding: 14, textAlignVertical: 'top', fontFamily: fonts.regular, fontSize: 15, color: colors.text };
   const hint = (text) => <T size={12} color="subtext" style={{ textAlign: 'center' }}>{text}</T>;
   const full = { width: '100%', height: '100%' };
-  const songText = (m) => `♪ ${m.name} · ${m.artist}`;
+  const songText = (m) => `♪ ${m.name || m.title} · ${m.artist}`;
 
   return (
     <Screen edges={['top', 'bottom']}>
@@ -164,6 +164,9 @@ export default function CreateScreen({ route, navigation }) {
 
           {isPost && song ? (
             <Pressable onPress={() => setSong(null)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              {song.image || song.artwork ? (
+                <Image source={{ uri: song.image || song.artwork }} style={{ width: 22, height: 22, borderRadius: 6, backgroundColor: colors.inputBg }} />
+              ) : null}
               <T size={12} color="subtext">{songText(song)}</T>
               <Ionicons name="close-circle" size={16} color={colors.subtext} />
             </Pressable>

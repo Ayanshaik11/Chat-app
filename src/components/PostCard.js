@@ -39,6 +39,8 @@ export default function PostCard({
 
   const [commentCount, setCommentCount] = useState(null);
   const images = post.images?.length ? post.images : [post.imageURL];
+  const songArtwork = post.music?.image || post.music?.artwork;
+  const songName = post.music?.name || post.music?.title;
   const [page, setPage] = useState(0);
   const muted = useMuted();
   const [paused, setPaused] = useState(false); // you tapped the song to pause it
@@ -52,7 +54,7 @@ export default function PostCard({
   // It is only loaded for that one post, so a long feed never loads a song per post.
   useMusic(on ? post.music : null, on, muted, () => setSongError(true));
   useEffect(() => { if (!active) setPaused(false); }, [active]);
-  useEffect(() => { setSongError(false); }, [post.music?.url]);
+  useEffect(() => { setSongError(false); }, [post.music?.url, post.music?.previewUrl]);
 
   const toggleSong = () => (auto ? setPaused((p) => !p) : setManual((m) => !m));
 
@@ -183,10 +185,19 @@ export default function PostCard({
       {post.music ? (
         <Pressable
           onPress={toggleSong}
-          style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 12, marginTop: 10, paddingHorizontal: 12, height: 36, borderRadius: 18, backgroundColor: colors.inputBg, alignSelf: 'flex-start', maxWidth: width - 24 }}
+          style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 12, marginTop: 10, paddingLeft: songArtwork ? 5 : 12, paddingRight: 12, height: 36, borderRadius: 18, backgroundColor: colors.inputBg, alignSelf: 'flex-start', maxWidth: width - 24 }}
         >
-          <Ionicons name={songError ? 'alert-circle' : heard ? 'pause-circle' : 'play-circle'} size={22} color="#E11D2A" />
-          <T size={12} weight="medium" numberOfLines={1} style={{ flexShrink: 1 }}>{songError ? 'Song unavailable' : `${post.music.name} · ${post.music.artist}`}</T>
+          {songArtwork ? (
+            <View style={{ width: 26, height: 26 }}>
+              <Image source={{ uri: songArtwork }} style={{ width: 26, height: 26, borderRadius: 13, backgroundColor: colors.border }} />
+              <View style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, borderRadius: 13, backgroundColor: 'rgba(0,0,0,0.35)', alignItems: 'center', justifyContent: 'center' }}>
+                <Ionicons name={songError ? 'alert-circle' : heard ? 'pause' : 'play'} size={13} color="#fff" />
+              </View>
+            </View>
+          ) : (
+            <Ionicons name={songError ? 'alert-circle' : heard ? 'pause-circle' : 'play-circle'} size={22} color="#E11D2A" />
+          )}
+          <T size={12} weight="medium" numberOfLines={1} style={{ flexShrink: 1 }}>{songError ? 'Song unavailable' : `${songName} · ${post.music.artist}`}</T>
         </Pressable>
       ) : null}
 

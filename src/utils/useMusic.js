@@ -6,7 +6,7 @@ export function useMusic(music, play, muted = false, onError) {
   const fail = useRef(onError); fail.current = onError;
   const sound = useRef(null);
   const [ready, setReady] = useState(false);
-  const url = music?.url;
+  const url = music?.url || music?.previewUrl;
   const start = (music?.start || 0) * 1000;
 
   useEffect(() => {

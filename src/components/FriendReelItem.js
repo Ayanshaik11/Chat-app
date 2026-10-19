@@ -40,8 +40,10 @@ export default function FriendReelItem({ item, width, height, isActive, muted, m
   const heartScale = useRef(new Animated.Value(0)).current;
   const heartOpacity = useRef(new Animated.Value(0)).current;
   const [muteHint, setMuteHint] = useState(false);
-  useMusic(item?.music, isActive, muted); // the reel's song (replaces the video's own sound)
+  const [musicError, setMusicError] = useState(false);
+  useMusic(item?.music, isActive, muted, () => setMusicError(true)); // the reel's song (replaces the video's own sound)
 
+  useEffect(() => { setMusicError(false); }, [item?.id, item?.music?.url, item?.music?.previewUrl]);
   useEffect(() => () => { clearTimeout(tapTimer.current); clearTimeout(muteTimer.current); }, []);
 
   const burstHeart = () => {
@@ -107,7 +109,7 @@ export default function FriendReelItem({ item, width, height, isActive, muted, m
           <Avatar uri={author?.photoURL} name={author?.name} size={36} />
           <Text style={{ color: '#fff', fontWeight: '700', fontSize: 15, marginLeft: 10, ...shadow }} numberOfLines={1}>{author?.name || 'User'}</Text>
         </View>
-        {!!item?.music && <Text style={{ color: '#fff', fontSize: 12, marginTop: 6, ...shadow }} numberOfLines={1}>♪ {item.music.name} · {item.music.artist}</Text>}
+        {!!item?.music && <Text style={{ color: '#fff', fontSize: 12, marginTop: 6, ...shadow }} numberOfLines={1}>♪ {musicError ? 'Song unavailable' : `${item.music.name || item.music.title} · ${item.music.artist}`}</Text>}
         {!!item?.caption && <Text style={{ color: '#fff', fontSize: 14, marginTop: 8, ...shadow }} numberOfLines={3}>{item.caption}</Text>}
       </View>
     </View>

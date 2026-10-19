@@ -29,6 +29,7 @@ export default function StoryViewerScreen({ route, navigation }) {
   const [gi, setGi] = useState(Math.max(0, groupIndex));
   const [si, setSi] = useState(0);
   const [paused, setPaused] = useState(false);
+  const [musicError, setMusicError] = useState(false);
   const [likedByMe, setLikedByMe] = useState({}); // { [storyId]: true } optimistic local overrides
   const progress = useRef(new Animated.Value(0)).current;
   const valueRef = useRef(0);
@@ -37,7 +38,11 @@ export default function StoryViewerScreen({ route, navigation }) {
 
   const group = groups[gi];
   const story = group?.stories[si];
-  useMusic(story?.music, !paused, false); // the story's song plays while it is on screen
+  useMusic(story?.music, !paused, false, () => setMusicError(true)); // the story's song plays while it is on screen
+
+  useEffect(() => {
+    setMusicError(false);
+  }, [story?.id, story?.music?.url, story?.music?.previewUrl]);
 
   const next = useCallback(() => {
     if (si < group.stories.length - 1) setSi(si + 1);
@@ -151,7 +156,7 @@ export default function StoryViewerScreen({ route, navigation }) {
           <View style={{ flex: 1 }}>
             <T weight="semibold" size={14} color="#fff" numberOfLines={1}>{mine ? 'Your story' : group.user.name}</T>
             <T size={11} color="rgba(255,255,255,0.8)">{timeAgo(story.createdAt)}</T>
-            {story.music ? <T size={11} color="#fff" numberOfLines={1}>♪ {story.music.name} · {story.music.artist}</T> : null}
+            {story.music ? <T size={11} color="#fff" numberOfLines={1}>♪ {musicError ? 'Song unavailable' : `${story.music.name || story.music.title} · ${story.music.artist}`}</T> : null}
           </View>
           {mine ? <Pressable onPress={onDelete} hitSlop={12} style={{ padding: 6 }}><Ionicons name="trash-outline" size={22} color="#fff" /></Pressable> : null}
           <Pressable onPress={() => navigation.goBack()} hitSlop={12} style={{ padding: 6 }}><Ionicons name="close" size={28} color="#fff" /></Pressable>
