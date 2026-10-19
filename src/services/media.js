@@ -113,6 +113,31 @@ export async function pickMedia({
 
 
 // ======================================================
+// PICK SEVERAL PHOTOS (for a post that swipes sideways)
+// ======================================================
+
+export async function pickMany({ max = 10 } = {}) {
+  const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+
+  if (!permission.granted) {
+    Alert.alert('Photos Permission Needed', 'Please allow access to your photos and videos.');
+    return [];
+  }
+
+  const result = await ImagePicker.launchImageLibraryAsync({
+    mediaTypes: ImagePicker.MediaTypeOptions.Images,
+    allowsMultipleSelection: true,
+    selectionLimit: max,
+    orderedSelection: true,
+    quality: 0.8,
+  });
+
+  return result.canceled || !result.assets ? [] : result.assets.slice(0, max);
+}
+
+
+
+// ======================================================
 // CHECK VIDEO
 // ======================================================
 

@@ -211,7 +211,19 @@ export async function deleteMessageForMe(chatId, messageId, userId) {
 
 /* ---------- chat theme (saved on the chat, so BOTH people see the same one) ---------- */
 
-export async function setChatTheme(chatId, themeId, userId) {
-  if (!chatId || !themeId) return;
-  await setDoc(doc(db, 'chats', chatId), { theme: themeId, themeBy: userId || null, themeAt: serverTimestamp() }, { merge: true });
+// Saves the theme on the chat (both people get it) and adds a small "X changed the theme" notice.
+// The notice is not an unread message and does not change the chat's last-message preview.
+export async function setChatTheme(chatId, themeId, userId, themeName = '') {
+  if (!chatId || !themeId || !userId) return;
+  const batch = writeBatch(db);
+  batch.set(
+    doc(db, 'chats', chatId),
+    { members: chatId.split('_'), theme: themeId, themeBy: userId, themeAt: serverTimestamp() },
+    { merge: true }
+  );
+  batch.set(doc(collection(db, 'chats', chatId, 'messages')), {
+    senderId: userId, type: 'system', event: 'theme', themeId, text: themeName || themeId,
+    createdAt: serverTimestamp(), seenBy: {}, reactions: {}, unsent: false,
+  });
+  await batch.commit();
 }

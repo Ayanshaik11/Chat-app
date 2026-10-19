@@ -7,17 +7,24 @@ import { chunk, toMillis } from '../utils/helpers';
 
 const byNewest = (a, b) => toMillis(b.createdAt) - toMillis(a.createdAt);
 
-export async function createPost(me, asset, caption, onProgress) {
+// assets = one photo or a list of photos (a swipeable post). The first photo stays in imageURL,
+// so profile grids and older app versions keep working.
+export async function createPost(me, assets, caption, onProgress, music) {
+  const list = Array.isArray(assets) ? assets : [assets];
   const id = doc(collection(db, 'posts')).id;
-  const mime = mimeOf(asset);
-  const storagePath = `posts/${me.id}/${id}.${extOf(mime)}`;
-  const imageURL = await uploadFile(asset.uri, storagePath, mime, onProgress);
+  const paths = list.map((a, i) => `posts/${me.id}/${id}${i ? `_${i}` : ''}.${extOf(mimeOf(a))}`);
+  const urls = [];
+  for (let i = 0; i < list.length; i += 1) {
+    urls.push(await uploadFile(list[i].uri, paths[i], mimeOf(list[i]), (p) => onProgress && onProgress((i + p) / list.length)));
+  }
+  const song = music || list[0]?.music;
   await setDoc(doc(db, 'posts', id), {
     authorId: me.id,
-    imageURL,
-    storagePath,
+    imageURL: urls[0],
+    ...(urls.length > 1 ? { images: urls, storagePaths: paths } : {}),
+    storagePath: paths[0],
     caption: (caption || '').trim(),
-    ...(asset.music ? { music: asset.music } : {}),
+    ...(song ? { music: song } : {}),
     likes: [],
     createdAt: serverTimestamp(),
   });
@@ -29,7 +36,7 @@ export const toggleLike = (postId, meId, alreadyLiked) =>
 
 export async function deletePost(post) {
   await deleteDoc(doc(db, 'posts', post.id));
-  await deleteFile(post.storagePath);
+  await Promise.all([post.storagePath, ...(post.storagePaths || [])].filter(Boolean).map((p) => deleteFile(p)));
 }
 
 export async function getPost(id) {

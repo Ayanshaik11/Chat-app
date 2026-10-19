@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { Audio } from 'expo-av';
 
 // Plays a story/reel song while `play` is true. Loops from the chosen start time.
-export function useMusic(music, play, muted = false) {
+export function useMusic(music, play, muted = false, onError) {
+  const fail = useRef(onError); fail.current = onError;
   const sound = useRef(null);
   const [ready, setReady] = useState(false);
   const url = music?.url;
@@ -20,7 +21,7 @@ export function useMusic(music, play, muted = false) {
       loaded = s;
       sound.current = s;
       setReady(true);
-    })().catch(() => {});
+    })().catch((e) => { if (alive) fail.current?.(e); });
     return () => { alive = false; sound.current = null; setReady(false); loaded?.unloadAsync().catch(() => {}); };
   }, [url, start]);
 
@@ -28,6 +29,6 @@ export function useMusic(music, play, muted = false) {
     const s = sound.current;
     if (!s) return;
     s.setIsMutedAsync(!!muted).catch(() => {});
-    (play && !muted ? s.playAsync() : s.pauseAsync()).catch(() => {});
+    (play && !muted ? s.playAsync() : s.pauseAsync()).catch((e) => fail.current?.(e));
   }, [ready, play, muted]);
 }

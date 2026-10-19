@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Image, Pressable, View, useWindowDimensions } from 'react-native';
+import { Animated, FlatList, Image, Pressable, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/SettingsContext';
 import { subscribeComments } from '../services/comments';
@@ -8,8 +8,15 @@ import { useMusic } from '../utils/useMusic';
 import Avatar from './Avatar';
 import T from './T';
 
-// only one post song plays at a time
-let stopCurrent = null;
+// one mute switch for every post song in the app
+let songMuted = false;
+const muteListeners = new Set();
+const toggleMuted = () => { songMuted = !songMuted; muteListeners.forEach((f) => f(songMuted)); };
+const useMuted = () => {
+  const [m, setM] = useState(songMuted);
+  useEffect(() => { muteListeners.add(setM); return () => muteListeners.delete(setM); }, []);
+  return m;
+};
 
 export default function PostCard({
   post,
@@ -19,6 +26,7 @@ export default function PostCard({
   onDelete,
   onOpenAuthor,
   onComment,
+  active, // true = this post is on screen. undefined = the screen doesn't say, so tap the song to play
 }) {
   const { colors } = useTheme();
   const { width } = useWindowDimensions();
@@ -30,18 +38,23 @@ export default function PostCard({
   const name = author?.name || 'User';
 
   const [commentCount, setCommentCount] = useState(null);
-  const [playing, setPlaying] = useState(false);
+  const images = post.images?.length ? post.images : [post.imageURL];
+  const [page, setPage] = useState(0);
+  const muted = useMuted();
+  const [paused, setPaused] = useState(false); // you tapped the song to pause it
+  const [manual, setManual] = useState(false); // used where the screen can't tell which post is on screen
+  const [songError, setSongError] = useState(false);
+  const auto = active !== undefined;
+  const on = !!post.music && (auto ? !!active && !paused : manual);
+  const heard = on && !muted && !songError;
 
-  // the song is only loaded while it plays, so a long feed doesn't load a song per post
-  useMusic(playing ? post.music : null, playing);
-  useEffect(() => () => { if (playing && stopCurrent) stopCurrent = null; }, [playing]);
+  // The song plays while this post is on screen and stops when you scroll away.
+  // It is only loaded for that one post, so a long feed never loads a song per post.
+  useMusic(on ? post.music : null, on, muted, () => setSongError(true));
+  useEffect(() => { if (!active) setPaused(false); }, [active]);
+  useEffect(() => { setSongError(false); }, [post.music?.url]);
 
-  const toggleSong = () => {
-    if (playing) { setPlaying(false); stopCurrent = null; return; }
-    if (stopCurrent) stopCurrent();
-    stopCurrent = () => setPlaying(false);
-    setPlaying(true);
-  };
+  const toggleSong = () => (auto ? setPaused((p) => !p) : setManual((m) => !m));
 
   // 🔥 LIVE COMMENT COUNT
   useEffect(() => {
@@ -127,15 +140,44 @@ export default function PostCard({
         ) : null}
       </View>
 
-      {/* IMAGE */}
-      <Image
-        source={{ uri: post.imageURL }}
-        style={{
-          width,
-          height: width,
-          backgroundColor: colors.inputBg,
-        }}
-      />
+      {/* IMAGES: one photo, or a row you swipe sideways */}
+      <View>
+        {images.length > 1 ? (
+          <FlatList
+            data={images}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            keyExtractor={(u, i) => `${i}-${u}`}
+            getItemLayout={(_, i) => ({ length: width, offset: width * i, index: i })}
+            onMomentumScrollEnd={(e) => setPage(Math.round(e.nativeEvent.contentOffset.x / width))}
+            renderItem={({ item }) => <Image source={{ uri: item }} style={{ width, height: width, backgroundColor: colors.inputBg }} />}
+          />
+        ) : (
+          <Image source={{ uri: images[0] }} style={{ width, height: width, backgroundColor: colors.inputBg }} />
+        )}
+
+        {images.length > 1 ? (
+          <View style={{ position: 'absolute', top: 10, right: 10, paddingHorizontal: 9, height: 24, borderRadius: 12, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center' }}>
+            <T size={11} weight="semibold" color="#fff">{page + 1}/{images.length}</T>
+          </View>
+        ) : null}
+
+        {post.music ? (
+          <Pressable onPress={toggleMuted} hitSlop={8} style={{ position: 'absolute', right: 10, bottom: 10, width: 30, height: 30, borderRadius: 15, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' }}>
+            <Ionicons name={muted ? 'volume-mute' : 'volume-high'} size={16} color="#fff" />
+          </Pressable>
+        ) : null}
+      </View>
+
+      {/* DOTS: which photo you are on */}
+      {images.length > 1 ? (
+        <View style={{ flexDirection: 'row', justifyContent: 'center', gap: 5, paddingTop: 9 }}>
+          {images.map((_, i) => (
+            <View key={i} style={{ width: i === page ? 7 : 6, height: i === page ? 7 : 6, borderRadius: 4, backgroundColor: i === page ? '#E11D2A' : colors.subtext, opacity: i === page ? 1 : 0.45 }} />
+          ))}
+        </View>
+      ) : null}
 
       {/* SONG */}
       {post.music ? (
@@ -143,8 +185,8 @@ export default function PostCard({
           onPress={toggleSong}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginHorizontal: 12, marginTop: 10, paddingHorizontal: 12, height: 36, borderRadius: 18, backgroundColor: colors.inputBg, alignSelf: 'flex-start', maxWidth: width - 24 }}
         >
-          <Ionicons name={playing ? 'pause-circle' : 'play-circle'} size={22} color="#E11D2A" />
-          <T size={12} weight="medium" numberOfLines={1} style={{ flexShrink: 1 }}>{post.music.name} · {post.music.artist}</T>
+          <Ionicons name={songError ? 'alert-circle' : heard ? 'pause-circle' : 'play-circle'} size={22} color="#E11D2A" />
+          <T size={12} weight="medium" numberOfLines={1} style={{ flexShrink: 1 }}>{songError ? 'Song unavailable' : `${post.music.name} · ${post.music.artist}`}</T>
         </Pressable>
       ) : null}
 

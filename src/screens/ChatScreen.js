@@ -18,7 +18,7 @@ import {
   chatIdFor, deleteMessageForMe, markChatRead, markMessagesSeen, reactToMessage, removeReaction,
   sendGifMessage, sendImageMessage, sendMessage, sendVoiceMessage, setChatTheme, setTyping, unsendMessage,
 } from '../services/chat';
-import { DEFAULT_THEME_ID, getTheme, resolveThemeId } from '../utils/chatTheme';
+import { DEFAULT_THEME_ID, getTheme } from '../utils/chatTheme';
 import { useChatTheme } from '../context/ChatThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { ensureWallpaperUrls } from '../services/wallpaperUrlStore';
@@ -85,6 +85,19 @@ const MenuItem = ({ icon, label, onPress, danger, theme }) => (
 /* =========================================================
    ONE MESSAGE (swipe to reply, long press for the menu)
    ========================================================= */
+
+// small centred line in the chat, e.g. "Ayan changed the theme to Saiyan Blue"
+function SystemNotice({ item, name, theme, dateLabel }) {
+  const who = item.senderId === item._meId ? 'You' : String(name || 'Your friend').split(' ')[0];
+  return (
+    <View style={{ alignItems: 'center', marginVertical: 10, paddingHorizontal: 20 }}>
+      {dateLabel ? <Text style={{ color: theme.timestampColor, fontSize: 11, marginBottom: 8 }}>{dateLabel}</Text> : null}
+      <Text style={{ color: theme.timestampColor, fontSize: 12, textAlign: 'center' }}>
+        {who} changed the theme to <Text style={{ color: theme.accentColor, fontWeight: '700' }}>{item.text}</Text>
+      </Text>
+    </View>
+  );
+}
 
 const MessageRow = React.memo(function MessageRow({ item, seenText, dateLabel, theme, onLongPress, onReply, onReactionPress, inputRef }) {
   const mine = item.senderId === item._meId;
@@ -286,18 +299,18 @@ export default function ChatScreen({ route, navigation }) {
 
   const onApplyTheme = useCallback(
     async (id) => {
-      if (!id) return;
+      if (!id || id === themeId) return; // same theme again: no new notice
       setActiveThemeId(id);
       await applyTheme(chatId, id);
-      await setChatTheme(chatId, id, meId).catch(() => {});
+      await setChatTheme(chatId, id, meId, getTheme(id).name).catch(() => {});
     },
-    [chatId, meId, applyTheme]
+    [chatId, meId, applyTheme, themeId]
   );
 
   const onResetTheme = useCallback(async () => {
     setActiveThemeId(DEFAULT_THEME_ID);
     await applyTheme(chatId, DEFAULT_THEME_ID);
-    await setChatTheme(chatId, DEFAULT_THEME_ID, meId).catch(() => {});
+    await setChatTheme(chatId, DEFAULT_THEME_ID, meId, getTheme(DEFAULT_THEME_ID).name).catch(() => {});
   }, [chatId, meId, applyTheme]);
 
   /* subtle, optional send-button glow (static unless a theme asks to pulse) */
@@ -366,7 +379,7 @@ export default function ChatScreen({ route, navigation }) {
       (s) => {
         setPeerTypingValue(s.data()?.typing?.[otherId] || 0);
         setPeerRead(ms(s.data()?.lastRead?.[otherId]));
-        const remoteTheme = s.data()?.theme ? resolveThemeId(s.data().theme) : null;
+        const remoteTheme = s.data()?.theme || null;
         setActiveThemeId((current) => (current && !remoteTheme ? current : remoteTheme)); // shared theme for both people
       },
       () => {}
@@ -510,7 +523,7 @@ export default function ChatScreen({ route, navigation }) {
     return () => setActiveChatUser(null);
   }, [otherId]);
 
-  const isSeen = (m) => m.senderId === meId && (!!m.seenBy?.[otherId] || (peerRead > 0 && ms(m.createdAt) > 0 && ms(m.createdAt) <= peerRead));
+  const isSeen = (m) => m.senderId === meId && m.type !== 'system' && (!!m.seenBy?.[otherId] || (peerRead > 0 && ms(m.createdAt) > 0 && ms(m.createdAt) <= peerRead));
   const latestSeenMsg = useMemo(() => messages.find(isSeen) || null, [messages, peerRead, meId, otherId]);
   const seenText = latestSeenMsg ? seenTime(peerRead || latestSeenMsg.seenBy?.[otherId]) : '';
 
@@ -723,7 +736,7 @@ export default function ChatScreen({ route, navigation }) {
             windowSize={9}
             removeClippedSubviews={false}
             contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 14 }}
-            renderItem={({ item }) => (
+            renderItem={({ item }) => (item.type === 'system' ? <SystemNotice item={item} name={name} theme={theme} dateLabel={dateLabels.get(item.id)} /> : (
               <MessageRow
                 item={item}
                 seenText={item.id === latestSeenMsg?.id ? seenText : ''}
@@ -734,7 +747,7 @@ export default function ChatScreen({ route, navigation }) {
                 onReactionPress={reactionPress}
                 inputRef={inputRef}
               />
-            )}
+            ))}
             ListEmptyComponent={
               <View style={{ alignItems: 'center', paddingTop: 250 }}>
                 <Text style={{ color: theme.incomingTextColor, fontSize: 18, fontWeight: '700' }}>No messages yet</Text>

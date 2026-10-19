@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Platform, Pressable, TextInput, View } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import { doc, getDoc } from 'firebase/firestore';
 import { Ionicons } from '@expo/vector-icons';
 import { db } from '../config/firebase';
@@ -41,6 +42,7 @@ function CommentRow({ comment, canDelete, onDelete, onOpenAuthor }) {
 export default function PostDetailScreen({ route, navigation }) {
   const { postId, focusComment } = route.params;
   const { me } = useAuth();
+  const focused = useIsFocused();
   const { friendProfiles } = useAppData();
   const { vibrate } = useSettings();
   const { colors, fonts } = useTheme();
@@ -138,7 +140,7 @@ export default function PostDetailScreen({ route, navigation }) {
             keyboardShouldPersistTaps="handled"
             ListHeaderComponent={
               <PostCard
-                post={post} author={author} meId={me.id} onLike={onLike} onDelete={onDelete}
+                post={post} author={author} meId={me.id} onLike={onLike} onDelete={onDelete} active={focused}
                 onOpenAuthor={openAuthor}
               />
             }

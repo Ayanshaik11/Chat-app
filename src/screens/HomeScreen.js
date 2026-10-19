@@ -2,7 +2,7 @@ import React, { useCallback, useMemo, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, ScrollView, Text, View } from 'react-native';
 import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useIsFocused } from '@react-navigation/native';
 import { useAuth } from '../context/AuthContext';
 import { useAppData } from '../context/AppDataContext';
 import { useSettings, useTheme } from '../context/SettingsContext';
@@ -53,6 +53,15 @@ export default function HomeScreen({ navigation }) {
   const [seen, setSeen] = useState({});
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+
+  // which post (with a song) is on screen: its song plays, and stops when you scroll about 40% away
+  const focused = useIsFocused();
+  const [activeId, setActiveId] = useState(null);
+  const viewConfig = useRef({ itemVisiblePercentThreshold: 60 }).current;
+  const onViewable = useRef(({ viewableItems }) => {
+    const v = viewableItems.find((x) => x.isViewable && x.item?.music);
+    setActiveId(v ? v.item.id : null);
+  }).current;
   const cleaned = useRef(false);
 
   const audienceKey = [me.id, ...friendIds].sort().join(',');
@@ -191,11 +200,14 @@ export default function HomeScreen({ navigation }) {
       <FlatList
         data={posts}
         keyExtractor={(p) => p.id}
+        viewabilityConfig={viewConfig}
+        onViewableItemsChanged={onViewable}
+        extraData={`${activeId}-${focused}`}
         ListHeaderComponent={header}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => { setRefreshing(true); load(); }} tintColor={colors.primary} />}
         renderItem={({ item }) => (
           <PostCard
-            post={item} author={people[item.authorId]} meId={me.id}
+            post={item} author={people[item.authorId]} meId={me.id} active={focused && activeId === item.id}
             onLike={onLike} onDelete={onDelete}
             onComment={(post) => navigation.navigate('PostDetail', { postId: post.id, focusComment: true })}
             onOpenAuthor={(uid) => (uid === me.id ? navigation.navigate('Profile') : navigation.navigate('UserProfile', { userId: uid }))}
