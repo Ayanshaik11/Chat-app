@@ -46,10 +46,40 @@ const WALLPAPERS = [
   { id: 'vegeta-db', file: 'vegeta-db.webp' },
   { id: 'vegeta-ulta-2-db', file: 'vegeta-ulta-2-db.webp' },
   { id: 'shinron', file: 'shinron.webp' },
+  /* anime expansion — mirrors src/utils/chatTheme.js (sukuna-jjk above).
+   * Filenames are the exact private Storage object names, including the
+   * original spellings and spaces. Do not "correct" them. */
+  { id: 'gotenks-db', file: 'gotenks-db.webp' },
+  { id: 'goku-ssj-god-db', file: 'goku-ssj-god-db.webp' },
+  { id: 'goku-black-ssj-rose-db', file: 'goku-black-ssj-rose-db.webp' },
+  { id: 'gogeta-ssj-blue-db', file: 'gogeta-ssj-blue-db.webp' },
+  { id: 'evil-trunks-db', file: 'trunks-evil-db.webp' },
+  { id: 'gojo-jjk', file: 'gojo-jjk.webp' },
+  { id: 'goku-ssj4-db', file: 'goku-ssj-4-db.webp' },
+  { id: 'frieza-power-db', file: 'friezza-power-db.webp' },
+  { id: 'obito-n', file: 'obito-n.webp' },
+  { id: 'sasuke-n', file: 'sasuke-n.webp' },
+  { id: 'all-titans-x-eren-aot', file: 'all-titans x eren - aot.webp' },
+  { id: 'armin-aot', file: 'armin-aot.webp' },
+  { id: 'levi-ackerman-aot', file: 'levi-ackerman-aot.webp' },
+  { id: 'mikasa-ackerman-aot', file: 'mikasa-ackerman-aot.webp' },
+  { id: 'eren-long-hair-titan-aot', file: 'eren-long-hair-titans-aot.webp' },
+  { id: 'goku-mui-x-jiren-db', file: 'goku-mui-jiren-db.webp' },
+  { id: 'gojo-x-sukuna-jjk', file: 'gojo x sukuna-jjk.webp' },
+  { id: 'inumaki-jjk', file: 'inumaki-jjk.webp' },
+  { id: 'panda-jjk', file: 'panda-jjk.webp' },
+  { id: 'megumi-fushiguro-jjk', file: 'megumi-fushigoro-jjk.webp' },
+  { id: 'kento-nanami-jjk', file: 'kento-nanami-jjk.webp' },
+  { id: 'maki-zenin-jjk', file: 'maki-zenin-jjk.webp' },
+  { id: 'nobara-kugisaki-jjk', file: 'nobara-kugisaki-jjk.webp' },
+  { id: 'geto-jjk', file: 'geto-jjk.webp' },
+  { id: 'gojo-red-blue-jjk', file: 'gojo-red-blue-jjk.webp' },
+  { id: 'gojo-hollow-purple-jjk', file: 'gojo-hollow-purple-jjk.webp' },
 ];
 
-/* Maximum ids accepted in one request, to keep the response and the signing
- * call bounded. The full registry is only 31 entries, so this is generous. */
+/* Maximum ids accepted in one explicit request, to keep the response and the
+ * signing call bounded. The full registry is 57 entries; a whole-registry fetch
+ * (no `ids`) is served directly and does not pass through this cap. */
 const MAX_REQUEST_IDS = 50;
 
 const BY_ID = new Map(WALLPAPERS.map((w) => [w.id, w.file]));

@@ -3,18 +3,15 @@
  *
  * This is the single source of truth for every chat wallpaper and its palette.
  * Nothing here makes a network request: the whole registry is bundled with the
- * app. Wallpaper bitmaps are the only remote assets (Supabase public storage).
+ * app. Wallpaper bitmaps are the only remote assets, and they are served from
+ * the private Supabase bucket through short-lived signed URLs minted by the
+ * authenticated `/api/wallpapers` endpoint (keyed by theme `id`).
  *
  * Adding a wallpaper later:
  *   1. add its palette constant below (or reuse one), and
  *   2. add one entry to WALLPAPERS with a unique `id`, `file` and `palette`.
  * `getTheme()` picks it up automatically and the picker shows it.
  */
-
-export const WALLPAPER_BUCKET =
-  'https://uefhqvdtfhnzzrmhjzov.supabase.co/storage/v1/object/public/chat-wallpapers/';
-
-const wp = (file) => `${WALLPAPER_BUCKET}${file}`;
 
 /* ---------- tiny colour helpers (no dependencies) ---------- */
 
@@ -692,6 +689,584 @@ const SHINRON = palette({
   specialEffect: 'glow',
 });
 
+/* ---------- anime expansion — 29 new wallpapers ----------
+ * Each palette is tuned to its artwork's dominant colours. Overlays stay
+ * translucent so the image shows through, while bubbles, inputs and icons keep
+ * readable text contrast in the chat UI.
+ */
+
+/* AC — Gotenks */
+const GOTENKS = palette({
+  backgroundColor: '#251344',
+  backgroundOverlayColor: 'rgba(37,19,68,0.42)',
+  outgoingBubbleColor: '#7C4DFF',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#2C1A52',
+  incomingTextColor: '#F3ECFF',
+  accentColor: '#B78AFF',
+  secondaryAccentColor: '#FFD166',
+  timestampColor: '#B4A6D6',
+  linkColor: '#D9B8FF',
+  inputBackgroundColor: '#1B0F35',
+  inputTextColor: '#F3ECFF',
+  placeholderColor: '#A794CE',
+  sendButtonColor: '#8B5CF6',
+  iconColor: '#D9B8FF',
+  replyPreviewColor: '#34205E',
+  borderColor: '#5A3AA0',
+  glowColor: '#B78AFF',
+});
+
+/* AD — Goku SSJ God */
+const GOKU_SSJ_GOD = palette({
+  backgroundColor: '#3B1117',
+  backgroundOverlayColor: 'rgba(59,17,23,0.40)',
+  outgoingBubbleColor: '#E23B2E',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#4A1B20',
+  incomingTextColor: '#FFECE8',
+  accentColor: '#FF5548',
+  secondaryAccentColor: '#FFB020',
+  timestampColor: '#D3A29C',
+  linkColor: '#FFA89C',
+  inputBackgroundColor: '#2A0E13',
+  inputTextColor: '#FFECE8',
+  placeholderColor: '#C69A95',
+  sendButtonColor: '#EF4136',
+  iconColor: '#FFA89C',
+  replyPreviewColor: '#58181F',
+  borderColor: '#8C2A30',
+  glowColor: '#FF3B2E',
+});
+
+/* AF — Goku Black SSJ Rose */
+const GOKU_BLACK = palette({
+  backgroundColor: '#260D26',
+  backgroundOverlayColor: 'rgba(38,13,38,0.40)',
+  outgoingBubbleColor: '#D63D9E',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#35132F',
+  incomingTextColor: '#FFE9F5',
+  accentColor: '#FF64B5',
+  secondaryAccentColor: '#7A2B6B',
+  timestampColor: '#C89AB8',
+  linkColor: '#FF9ED1',
+  inputBackgroundColor: '#1B081B',
+  inputTextColor: '#FFE9F5',
+  placeholderColor: '#BB90AC',
+  sendButtonColor: '#E24AA8',
+  iconColor: '#FF9ED1',
+  replyPreviewColor: '#47163F',
+  borderColor: '#7E2A63',
+  glowColor: '#FF3D9E',
+});
+
+/* AG — Gogeta SSJ Blue */
+const GOGETA_BLUE = palette({
+  backgroundColor: '#081F40',
+  backgroundOverlayColor: 'rgba(8,31,64,0.40)',
+  outgoingBubbleColor: '#1E6FE0',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#10294F',
+  incomingTextColor: '#EAF3FF',
+  accentColor: '#35A7FF',
+  secondaryAccentColor: '#FFC94D',
+  timestampColor: '#9FB8D6',
+  linkColor: '#8CCBFF',
+  inputBackgroundColor: '#0A1A33',
+  inputTextColor: '#EAF3FF',
+  placeholderColor: '#8AA6C6',
+  sendButtonColor: '#2E86F0',
+  iconColor: '#8CCBFF',
+  replyPreviewColor: '#123260',
+  borderColor: '#1F4C8C',
+  glowColor: '#35A7FF',
+});
+
+/* AI — Evil Trunks */
+const EVIL_TRUNKS = palette({
+  backgroundColor: '#25152D',
+  backgroundOverlayColor: 'rgba(37,21,45,0.42)',
+  outgoingBubbleColor: '#9333EA',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#2E1A38',
+  incomingTextColor: '#F6ECFF',
+  accentColor: '#D75BFF',
+  secondaryAccentColor: '#6D28D9',
+  timestampColor: '#BFA3CE',
+  linkColor: '#E9A8FF',
+  inputBackgroundColor: '#1B0F22',
+  inputTextColor: '#F6ECFF',
+  placeholderColor: '#AE93BC',
+  sendButtonColor: '#A33BEA',
+  iconColor: '#E9A8FF',
+  replyPreviewColor: '#3A2149',
+  borderColor: '#663A85',
+  glowColor: '#D75BFF',
+});
+
+/* AJ — Gojo */
+const GOJO = palette({
+  backgroundColor: '#0C1B38',
+  backgroundOverlayColor: 'rgba(12,27,56,0.40)',
+  outgoingBubbleColor: '#2B6FD6',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#132647',
+  incomingTextColor: '#EAF4FF',
+  accentColor: '#82D8FF',
+  secondaryAccentColor: '#1E40AF',
+  timestampColor: '#9DB3D0',
+  linkColor: '#A5E3FF',
+  inputBackgroundColor: '#0A1730',
+  inputTextColor: '#EAF4FF',
+  placeholderColor: '#8AA2C4',
+  sendButtonColor: '#2E7FE0',
+  iconColor: '#A5E3FF',
+  replyPreviewColor: '#16305A',
+  borderColor: '#264A85',
+  glowColor: '#82D8FF',
+});
+
+/* AK — Goku SSJ4 */
+const GOKU_SSJ4 = palette({
+  backgroundColor: '#35120D',
+  backgroundOverlayColor: 'rgba(53,18,13,0.40)',
+  outgoingBubbleColor: '#E05A20',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#441C13',
+  incomingTextColor: '#FFEEE6',
+  accentColor: '#FF7542',
+  secondaryAccentColor: '#FFC64D',
+  timestampColor: '#D2A490',
+  linkColor: '#FFB189',
+  inputBackgroundColor: '#240C08',
+  inputTextColor: '#FFEEE6',
+  placeholderColor: '#C39A87',
+  sendButtonColor: '#E85E22',
+  iconColor: '#FFB189',
+  replyPreviewColor: '#52200F',
+  borderColor: '#8A3418',
+  glowColor: '#FF5A1E',
+});
+
+/* AM — Frieza Power */
+const FRIEZA = palette({
+  backgroundColor: '#26113F',
+  backgroundOverlayColor: 'rgba(38,17,63,0.42)',
+  outgoingBubbleColor: '#9A4DE0',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#311A4E',
+  incomingTextColor: '#F4ECFF',
+  accentColor: '#C28CFF',
+  secondaryAccentColor: '#FF7BD5',
+  timestampColor: '#B79FD0',
+  linkColor: '#DDBBFF',
+  inputBackgroundColor: '#1B0C2E',
+  inputTextColor: '#F4ECFF',
+  placeholderColor: '#A88FC2',
+  sendButtonColor: '#A85AE8',
+  iconColor: '#DDBBFF',
+  replyPreviewColor: '#3D2160',
+  borderColor: '#6A3AA0',
+  glowColor: '#C28CFF',
+});
+
+/* AN — Obito */
+const OBITO = palette({
+  backgroundColor: '#20111A',
+  backgroundOverlayColor: 'rgba(32,17,26,0.42)',
+  outgoingBubbleColor: '#B03344',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#2C1A22',
+  incomingTextColor: '#FBEDEF',
+  accentColor: '#D94357',
+  secondaryAccentColor: '#6D2A3A',
+  timestampColor: '#C3A0A8',
+  linkColor: '#F08A98',
+  inputBackgroundColor: '#170B11',
+  inputTextColor: '#FBEDEF',
+  placeholderColor: '#B4919A',
+  sendButtonColor: '#C13A4C',
+  iconColor: '#F08A98',
+  replyPreviewColor: '#3C1E29',
+  borderColor: '#6E2A36',
+  glowColor: '#D94357',
+});
+
+/* AO — Sasuke */
+const SASUKE = palette({
+  backgroundColor: '#111A35',
+  backgroundOverlayColor: 'rgba(17,26,53,0.40)',
+  outgoingBubbleColor: '#3A4FC0',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#182347',
+  incomingTextColor: '#EDF1FF',
+  accentColor: '#698BFF',
+  secondaryAccentColor: '#A78BFA',
+  timestampColor: '#A0ADCC',
+  linkColor: '#A9C0FF',
+  inputBackgroundColor: '#0C1430',
+  inputTextColor: '#EDF1FF',
+  placeholderColor: '#8C9AC0',
+  sendButtonColor: '#4A5FE0',
+  iconColor: '#A9C0FF',
+  replyPreviewColor: '#1C2A57',
+  borderColor: '#2C3F80',
+  glowColor: '#698BFF',
+});
+
+/* AP — All Titans x Eren */
+const ALL_TITANS = palette({
+  backgroundColor: '#321A12',
+  backgroundOverlayColor: 'rgba(50,26,18,0.40)',
+  outgoingBubbleColor: '#C95A28',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#40231A',
+  incomingTextColor: '#FBEDE7',
+  accentColor: '#FF7545',
+  secondaryAccentColor: '#E0A16A',
+  timestampColor: '#CBA39A',
+  linkColor: '#FFB189',
+  inputBackgroundColor: '#23110C',
+  inputTextColor: '#FBEDE7',
+  placeholderColor: '#BE9A8F',
+  sendButtonColor: '#D4602C',
+  iconColor: '#FFB189',
+  replyPreviewColor: '#4E2918',
+  borderColor: '#85401F',
+  glowColor: '#FF6A38',
+});
+
+/* AQ — Armin */
+const ARMIN = palette({
+  backgroundColor: '#1A2B2B',
+  backgroundOverlayColor: 'rgba(26,43,43,0.42)',
+  outgoingBubbleColor: '#2E8C7E',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#21393A',
+  incomingTextColor: '#EAF9F5',
+  accentColor: '#79D6C4',
+  secondaryAccentColor: '#A8C6B4',
+  timestampColor: '#A3C4BD',
+  linkColor: '#9BECD9',
+  inputBackgroundColor: '#132020',
+  inputTextColor: '#EAF9F5',
+  placeholderColor: '#8FB3AC',
+  sendButtonColor: '#35A08F',
+  iconColor: '#9BECD9',
+  replyPreviewColor: '#294544',
+  borderColor: '#356B62',
+  glowColor: '#79D6C4',
+});
+
+/* AR — Levi Ackerman */
+const LEVI = palette({
+  backgroundColor: '#17211E',
+  backgroundOverlayColor: 'rgba(23,33,30,0.42)',
+  outgoingBubbleColor: '#3E5E4E',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#202D29',
+  incomingTextColor: '#EEF4F0',
+  accentColor: '#A8C6B4',
+  secondaryAccentColor: '#7C9C87',
+  timestampColor: '#A9B8AF',
+  linkColor: '#C3DFCE',
+  inputBackgroundColor: '#111A17',
+  inputTextColor: '#EEF4F0',
+  placeholderColor: '#93A69B',
+  sendButtonColor: '#4A6E5C',
+  iconColor: '#C3DFCE',
+  replyPreviewColor: '#29382F',
+  borderColor: '#466053',
+  glowColor: '#8FBCA5',
+});
+
+/* AS — Mikasa Ackerman */
+const MIKASA = palette({
+  backgroundColor: '#30191D',
+  backgroundOverlayColor: 'rgba(48,25,29,0.40)',
+  outgoingBubbleColor: '#B53A45',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#3C2025',
+  incomingTextColor: '#FBECEE',
+  accentColor: '#D94B56',
+  secondaryAccentColor: '#9A7A80',
+  timestampColor: '#C79FA4',
+  linkColor: '#F0939B',
+  inputBackgroundColor: '#200F12',
+  inputTextColor: '#FBECEE',
+  placeholderColor: '#B99499',
+  sendButtonColor: '#C6424E',
+  iconColor: '#F0939B',
+  replyPreviewColor: '#4A2429',
+  borderColor: '#7E343C',
+  glowColor: '#D94B56',
+});
+
+/* AT — Eren Long Hair Titan */
+const EREN_LONG_HAIR = palette({
+  backgroundColor: '#25140F',
+  backgroundOverlayColor: 'rgba(37,20,15,0.40)',
+  outgoingBubbleColor: '#C8622F',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#332019',
+  incomingTextColor: '#FBEDE6',
+  accentColor: '#E97543',
+  secondaryAccentColor: '#8C5A3C',
+  timestampColor: '#C9A091',
+  linkColor: '#FFA176',
+  inputBackgroundColor: '#1A0D09',
+  inputTextColor: '#FBEDE6',
+  placeholderColor: '#BB9182',
+  sendButtonColor: '#D16A34',
+  iconColor: '#FFA176',
+  replyPreviewColor: '#40251A',
+  borderColor: '#7A4023',
+  glowColor: '#E97543',
+});
+
+/* AU — Goku MUI x Jiren */
+const GOKU_MUI_JIREN = palette({
+  backgroundColor: '#101D35',
+  backgroundOverlayColor: 'rgba(16,29,53,0.40)',
+  outgoingBubbleColor: '#4A6FE0',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#182647',
+  incomingTextColor: '#EEF4FF',
+  accentColor: '#B7D8FF',
+  secondaryAccentColor: '#C9A227',
+  timestampColor: '#A6B7D1',
+  linkColor: '#CDE5FF',
+  inputBackgroundColor: '#0B1730',
+  inputTextColor: '#EEF4FF',
+  placeholderColor: '#93A7C4',
+  sendButtonColor: '#567BE8',
+  iconColor: '#CDE5FF',
+  replyPreviewColor: '#1B2B55',
+  borderColor: '#2C4A85',
+  glowColor: '#B7D8FF',
+});
+
+/* AV — Gojo x Sukuna */
+const GOJO_X_SUKUNA = palette({
+  backgroundColor: '#21102F',
+  backgroundOverlayColor: 'rgba(33,16,47,0.42)',
+  outgoingBubbleColor: '#7C3AED',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#2B1533',
+  incomingTextColor: '#F6EFFF',
+  accentColor: '#A678FF',
+  secondaryAccentColor: '#FF5267',
+  timestampColor: '#BFA0CF',
+  linkColor: '#C9A5FF',
+  inputBackgroundColor: '#170A22',
+  inputTextColor: '#F6EFFF',
+  placeholderColor: '#A98CBC',
+  sendButtonColor: '#8B4DF0',
+  iconColor: '#C9A5FF',
+  replyPreviewColor: '#3A1C47',
+  borderColor: '#6A3A8C',
+  glowColor: '#A678FF',
+});
+
+/* AW — Inumaki */
+const INUMAKI = palette({
+  backgroundColor: '#172335',
+  backgroundOverlayColor: 'rgba(23,35,53,0.42)',
+  outgoingBubbleColor: '#4A6E9E',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#1F2E42',
+  incomingTextColor: '#F0F6FF',
+  accentColor: '#B5D9F5',
+  secondaryAccentColor: '#8AA6C9',
+  timestampColor: '#A6B6CC',
+  linkColor: '#CDE8FF',
+  inputBackgroundColor: '#111A28',
+  inputTextColor: '#F0F6FF',
+  placeholderColor: '#93A6BD',
+  sendButtonColor: '#587FB0',
+  iconColor: '#CDE8FF',
+  replyPreviewColor: '#25374F',
+  borderColor: '#37506F',
+  glowColor: '#B5D9F5',
+});
+
+/* AX — Panda */
+const PANDA = palette({
+  backgroundColor: '#202020',
+  backgroundOverlayColor: 'rgba(32,32,32,0.40)',
+  outgoingBubbleColor: '#6E6E6E',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#2B2B2B',
+  incomingTextColor: '#F5F5F5',
+  accentColor: '#D8D8D8',
+  secondaryAccentColor: '#A0A0A0',
+  timestampColor: '#B0B0B0',
+  linkColor: '#E6E6E6',
+  inputBackgroundColor: '#171717',
+  inputTextColor: '#F5F5F5',
+  placeholderColor: '#9A9A9A',
+  sendButtonColor: '#7A7A7A',
+  iconColor: '#E6E6E6',
+  replyPreviewColor: '#333333',
+  borderColor: '#4D4D4D',
+  glowColor: '#C0C0C0',
+});
+
+/* AY — Megumi Fushiguro */
+const MEGUMI = palette({
+  backgroundColor: '#111C32',
+  backgroundOverlayColor: 'rgba(17,28,50,0.40)',
+  outgoingBubbleColor: '#3352A8',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#182641',
+  incomingTextColor: '#EDF2FF',
+  accentColor: '#718BDB',
+  secondaryAccentColor: '#4A5FA0',
+  timestampColor: '#A2AECB',
+  linkColor: '#A9BFFF',
+  inputBackgroundColor: '#0C1428',
+  inputTextColor: '#EDF2FF',
+  placeholderColor: '#8E9CBC',
+  sendButtonColor: '#3F5CB8',
+  iconColor: '#A9BFFF',
+  replyPreviewColor: '#1B2B4D',
+  borderColor: '#2E4380',
+  glowColor: '#718BDB',
+});
+
+/* AZ — Kento Nanami */
+const NANAMI = palette({
+  backgroundColor: '#2B2417',
+  backgroundOverlayColor: 'rgba(43,36,23,0.42)',
+  outgoingBubbleColor: '#B08A3E',
+  outgoingTextColor: '#1A1408',
+  incomingBubbleColor: '#352D1D',
+  incomingTextColor: '#FBF5E6',
+  accentColor: '#D7B66D',
+  secondaryAccentColor: '#8C7A45',
+  timestampColor: '#C7B68E',
+  linkColor: '#EAD193',
+  inputBackgroundColor: '#1F1A0F',
+  inputTextColor: '#FBF5E6',
+  placeholderColor: '#B7A87E',
+  sendButtonColor: '#C29A45',
+  iconColor: '#EAD193',
+  replyPreviewColor: '#453A22',
+  borderColor: '#7A6836',
+  glowColor: '#D7B66D',
+});
+
+/* BA — Maki Zenin */
+const MAKI = palette({
+  backgroundColor: '#172A23',
+  backgroundOverlayColor: 'rgba(23,42,35,0.40)',
+  outgoingBubbleColor: '#2F8C63',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#1F3A30',
+  incomingTextColor: '#EAF8F0',
+  accentColor: '#64C89A',
+  secondaryAccentColor: '#8FD8B8',
+  timestampColor: '#A3C4B2',
+  linkColor: '#9BE6BE',
+  inputBackgroundColor: '#111F1A',
+  inputTextColor: '#EAF8F0',
+  placeholderColor: '#8FB3A3',
+  sendButtonColor: '#3AA06F',
+  iconColor: '#9BE6BE',
+  replyPreviewColor: '#26493B',
+  borderColor: '#357055',
+  glowColor: '#64C89A',
+});
+
+/* BB — Nobara Kugisaki */
+const NOBARA = palette({
+  backgroundColor: '#341C27',
+  backgroundOverlayColor: 'rgba(52,28,39,0.40)',
+  outgoingBubbleColor: '#C94A72',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#42242F',
+  incomingTextColor: '#FCECF1',
+  accentColor: '#FF789C',
+  secondaryAccentColor: '#B05A78',
+  timestampColor: '#CDA3B1',
+  linkColor: '#FFA6C2',
+  inputBackgroundColor: '#24111A',
+  inputTextColor: '#FCECF1',
+  placeholderColor: '#C097A6',
+  sendButtonColor: '#D6547C',
+  iconColor: '#FFA6C2',
+  replyPreviewColor: '#502B38',
+  borderColor: '#83405A',
+  glowColor: '#FF789C',
+});
+
+/* BC — Geto */
+const GETO = palette({
+  backgroundColor: '#20152B',
+  backgroundOverlayColor: 'rgba(32,21,43,0.42)',
+  outgoingBubbleColor: '#7A4FA8',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#2C1E3A',
+  incomingTextColor: '#F4EEFB',
+  accentColor: '#B08BD8',
+  secondaryAccentColor: '#6A4A96',
+  timestampColor: '#B6A2C6',
+  linkColor: '#D2B8F0',
+  inputBackgroundColor: '#170F20',
+  inputTextColor: '#F4EEFB',
+  placeholderColor: '#A793B6',
+  sendButtonColor: '#8A5CB8',
+  iconColor: '#D2B8F0',
+  replyPreviewColor: '#392648',
+  borderColor: '#5F3F86',
+  glowColor: '#B08BD8',
+});
+
+/* BD — Gojo Red Blue */
+const GOJO_RED_BLUE = palette({
+  backgroundColor: '#141C3D',
+  backgroundOverlayColor: 'rgba(20,28,61,0.40)',
+  outgoingBubbleColor: '#2E6FD6',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#1B2547',
+  incomingTextColor: '#EBF2FF',
+  accentColor: '#4BA8FF',
+  secondaryAccentColor: '#FF5267',
+  timestampColor: '#A2B2D0',
+  linkColor: '#8CCBFF',
+  inputBackgroundColor: '#0E1530',
+  inputTextColor: '#EBF2FF',
+  placeholderColor: '#8EA0C2',
+  sendButtonColor: '#3A86F0',
+  iconColor: '#8CCBFF',
+  replyPreviewColor: '#1F2C57',
+  borderColor: '#2C4685',
+  glowColor: '#4BA8FF',
+});
+
+/* BE — Gojo Hollow Purple */
+const GOJO_HOLLOW_PURPLE = palette({
+  backgroundColor: '#201033',
+  backgroundOverlayColor: 'rgba(32,16,51,0.40)',
+  outgoingBubbleColor: '#8B5CF6',
+  outgoingTextColor: '#FFFFFF',
+  incomingBubbleColor: '#2B1A42',
+  incomingTextColor: '#F5EEFF',
+  accentColor: '#B78CFF',
+  secondaryAccentColor: '#E0A6FF',
+  timestampColor: '#B79FCF',
+  linkColor: '#D2B0FF',
+  inputBackgroundColor: '#170B24',
+  inputTextColor: '#F5EEFF',
+  placeholderColor: '#A68CBC',
+  sendButtonColor: '#9B6CF6',
+  iconColor: '#D2B0FF',
+  replyPreviewColor: '#371C50',
+  borderColor: '#63409A',
+  glowColor: '#B78CFF',
+});
+
 /* King X default — no wallpaper, the safe fallback look */
 export const DEFAULT_THEME_ID = 'default';
 const KINGX_DEFAULT = palette({
@@ -716,7 +1291,7 @@ const KINGX_DEFAULT = palette({
 });
 
 /* ---------- wallpaper inventory ----------
- * 31 unique wallpapers. Every Storage object is registered exactly once and
+ * 57 unique wallpapers. Every Storage object is registered exactly once and
  * every id is unique. Filenames are kept byte-for-byte (including the original
  * "obisidian.webp" and "vegeta-ulta-2-db.webp" spellings).
  */
@@ -753,6 +1328,36 @@ const WALLPAPERS = [
   { id: 'vegeta-db', name: 'Vegeta', category: 'Dragon Ball', file: 'vegeta-db.webp', palette: VEGETA },
   { id: 'vegeta-ulta-2-db', name: 'Vegeta Ultra Ego', category: 'Dragon Ball', file: 'vegeta-ulta-2-db.webp', palette: ULTRA_EGO },
   { id: 'shinron', name: 'Shinron', category: 'Dragon Ball', file: 'shinron.webp', palette: SHINRON },
+  /* anime expansion (26 new; sukuna-jjk already registered above).
+   * Filenames are the exact private Storage object names, including the
+   * original spellings ("trunks-evil-db.webp", "friezza-power-db.webp",
+   * "megumi-fushigoro-jjk.webp") and any spaces. IDs stay stable. */
+  { id: 'gotenks-db', name: 'Gotenks', category: 'Dragon Ball', file: 'gotenks-db.webp', palette: GOTENKS },
+  { id: 'goku-ssj-god-db', name: 'Goku SSJ God', category: 'Dragon Ball', file: 'goku-ssj-god-db.webp', palette: GOKU_SSJ_GOD },
+  { id: 'goku-black-ssj-rose-db', name: 'Goku Black SSJ Rose', category: 'Dragon Ball', file: 'goku-black-ssj-rose-db.webp', palette: GOKU_BLACK },
+  { id: 'gogeta-ssj-blue-db', name: 'Gogeta SSJ Blue', category: 'Dragon Ball', file: 'gogeta-ssj-blue-db.webp', palette: GOGETA_BLUE },
+  { id: 'evil-trunks-db', name: 'Evil Trunks', category: 'Dragon Ball', file: 'trunks-evil-db.webp', palette: EVIL_TRUNKS },
+  { id: 'gojo-jjk', name: 'Gojo', category: 'Jujutsu Kaisen', file: 'gojo-jjk.webp', palette: GOJO },
+  { id: 'goku-ssj4-db', name: 'Goku SSJ4', category: 'Dragon Ball', file: 'goku-ssj-4-db.webp', palette: GOKU_SSJ4 },
+  { id: 'frieza-power-db', name: 'Frieza Power', category: 'Dragon Ball', file: 'friezza-power-db.webp', palette: FRIEZA },
+  { id: 'obito-n', name: 'Obito', category: 'Naruto', file: 'obito-n.webp', palette: OBITO },
+  { id: 'sasuke-n', name: 'Sasuke', category: 'Naruto', file: 'sasuke-n.webp', palette: SASUKE },
+  { id: 'all-titans-x-eren-aot', name: 'All Titans x Eren', category: 'Attack on Titan', file: 'all-titans x eren - aot.webp', palette: ALL_TITANS },
+  { id: 'armin-aot', name: 'Armin', category: 'Attack on Titan', file: 'armin-aot.webp', palette: ARMIN },
+  { id: 'levi-ackerman-aot', name: 'Levi Ackerman', category: 'Attack on Titan', file: 'levi-ackerman-aot.webp', palette: LEVI },
+  { id: 'mikasa-ackerman-aot', name: 'Mikasa Ackerman', category: 'Attack on Titan', file: 'mikasa-ackerman-aot.webp', palette: MIKASA },
+  { id: 'eren-long-hair-titan-aot', name: 'Eren — Long Hair Titan', category: 'Attack on Titan', file: 'eren-long-hair-titans-aot.webp', palette: EREN_LONG_HAIR },
+  { id: 'goku-mui-x-jiren-db', name: 'Goku MUI x Jiren', category: 'Dragon Ball', file: 'goku-mui-jiren-db.webp', palette: GOKU_MUI_JIREN },
+  { id: 'gojo-x-sukuna-jjk', name: 'Gojo x Sukuna', category: 'Jujutsu Kaisen', file: 'gojo x sukuna-jjk.webp', palette: GOJO_X_SUKUNA },
+  { id: 'inumaki-jjk', name: 'Inumaki', category: 'Jujutsu Kaisen', file: 'inumaki-jjk.webp', palette: INUMAKI },
+  { id: 'panda-jjk', name: 'Panda', category: 'Jujutsu Kaisen', file: 'panda-jjk.webp', palette: PANDA },
+  { id: 'megumi-fushiguro-jjk', name: 'Megumi Fushiguro', category: 'Jujutsu Kaisen', file: 'megumi-fushigoro-jjk.webp', palette: MEGUMI },
+  { id: 'kento-nanami-jjk', name: 'Kento Nanami', category: 'Jujutsu Kaisen', file: 'kento-nanami-jjk.webp', palette: NANAMI },
+  { id: 'maki-zenin-jjk', name: 'Maki Zenin', category: 'Jujutsu Kaisen', file: 'maki-zenin-jjk.webp', palette: MAKI },
+  { id: 'nobara-kugisaki-jjk', name: 'Nobara Kugisaki', category: 'Jujutsu Kaisen', file: 'nobara-kugisaki-jjk.webp', palette: NOBARA },
+  { id: 'geto-jjk', name: 'Geto', category: 'Jujutsu Kaisen', file: 'geto-jjk.webp', palette: GETO },
+  { id: 'gojo-red-blue-jjk', name: 'Gojo: Red and Blue', category: 'Jujutsu Kaisen', file: 'gojo-red-blue-jjk.webp', palette: GOJO_RED_BLUE },
+  { id: 'gojo-hollow-purple-jjk', name: 'Gojo: Hollow Purple', category: 'Jujutsu Kaisen', file: 'gojo-hollow-purple-jjk.webp', palette: GOJO_HOLLOW_PURPLE },
 ];
 
 const DEFAULT_THEME = {
@@ -767,7 +1372,9 @@ const buildTheme = (entry) => ({
   id: entry.id,
   name: entry.name,
   category: entry.category,
-  wallpaperUrl: entry.file ? wp(entry.file) : null,
+  // No public URL: the private bucket is only ever reached through the
+  // authenticated signed-URL store, keyed by this theme's `id`.
+  wallpaperUrl: null,
   ...entry.palette,
 });
 
@@ -843,15 +1450,3 @@ export const THEME_CATEGORIES = [
   'Romance',
   'Other',
 ];
-
-/**
- * Small Supabase render URL used for picker thumbnails, so the grid never
- * downloads a full-resolution wallpaper just to show a card. Falls back to the
- * original URL if the transformation endpoint is unavailable.
- */
-export const themeThumbUrl = (url) => {
-  if (!url) return null;
-  const marker = '/storage/v1/object/public/';
-  if (!url.includes(marker)) return url;
-  return `${url.replace(marker, '/storage/v1/render/image/public/')}?width=240&height=320&resize=cover&quality=70`;
-};

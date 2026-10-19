@@ -15,11 +15,11 @@ const {
   idForFile,
 } = require('../lib/wallpaperRegistry');
 
-test('registry has 31 unique ids and filenames', () => {
-  assert.equal(WALLPAPERS.length, 31);
-  assert.equal(new Set(WALLPAPERS.map((w) => w.id)).size, 31);
-  assert.equal(new Set(WALLPAPERS.map((w) => w.file)).size, 31);
-  assert.equal(FILES.length, 31);
+test('registry has 57 unique ids and filenames', () => {
+  assert.equal(WALLPAPERS.length, 57);
+  assert.equal(new Set(WALLPAPERS.map((w) => w.id)).size, 57);
+  assert.equal(new Set(WALLPAPERS.map((w) => w.file)).size, 57);
+  assert.equal(FILES.length, 57);
 });
 
 test('keeps the original spellings byte-for-byte', () => {
