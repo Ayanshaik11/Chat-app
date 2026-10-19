@@ -207,10 +207,10 @@ const WALLPAPERS = [
   { id: 'armin-aot', name: 'Armin Arlert', category: 'Attack on Titan', file: 'armin-aot.webp', palette: paletteFrom('#17232D', '#293B49', '#D8B477', '#7BA9B7', '#F2F5F6') },
   { id: 'eren-long-hair-titans-aot', name: 'Eren — Long Hair Titan', category: 'Attack on Titan', file: 'eren-long-hair-titans-aot.webp', palette: paletteFrom('#1C100E', '#3B211D', '#A64D36', '#C99A76', '#F8EDE5') },
   { id: 'eren-titan-aot', name: 'Eren — Attack Titan', category: 'Attack on Titan', file: 'eren-titan-aot.webp', palette: paletteFrom('#1B100D', '#40231A', '#B94B2D', '#E6A15C', '#FFF0DF') },
-  { id: 'eren-x-mikasa-aot', name: 'Eren & Mikasa', category: 'Attack on Titan', file: 'eren-x-mikasa-aot.webp', palette: paletteFrom('#1A1116', '#39212A', '#B94B43', '#D7A58A', '#FFF2EC') },
+  { id: 'eren-x-mikasa-aot', name: 'Eren & Mikasa', category: 'Attack on Titan', file: 'eren-x-mikasa-aot.webp', palette: paletteFrom('#21141B', '#3B232B', '#C2556B', '#F0BE7E', '#FFF2EC') },
   { id: 'erwin-aot', name: 'Erwin Smith', category: 'Attack on Titan', file: 'erwin-aot.webp', palette: paletteFrom('#18202A', '#303C49', '#B99A63', '#7996AA', '#F4F5F2') },
   { id: 'levi-ackerman-aot', name: 'Levi Ackerman', category: 'Attack on Titan', file: 'levi-ackerman-aot.webp', palette: paletteFrom('#111A1A', '#263534', '#8FAFA4', '#D8CDB5', '#F7F7F0') },
-  { id: 'mikasa-ackerman-aot', name: 'Mikasa Ackerman', category: 'Attack on Titan', file: 'mikasa-ackerman-aot.webp', palette: paletteFrom('#171116', '#34222A', '#A84445', '#CFA49A', '#FFF3EF') },
+  { id: 'mikasa-ackerman-aot', name: 'Mikasa Ackerman', category: 'Attack on Titan', file: 'mikasa-ackerman-aot.webp', palette: paletteFrom('#101823', '#23303D', '#B84A5C', '#C9DCEB', '#F2F8FD') },
 
   /* ---------- Jujutsu Kaisen (16) ---------- */
   { id: 'geto-jjk', name: 'Suguru Geto', category: 'Jujutsu Kaisen', file: 'geto-jjk.webp', palette: paletteFrom('#160F20', '#30203D', '#9062B7', '#D6A4C7', '#F7F0FA') },
