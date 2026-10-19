@@ -120,11 +120,26 @@ export default function MusicPicker({ initial, onPick, onClose }) {
     }
   };
 
+  const isRestricted = (track) =>
+    !!(track?.disabled || track?.isDrm);
+
+  const restrictionMessage = (track) =>
+    track?.disabledText || track?.rightsReason ||
+    'This track is restricted by the music provider.';
+
   const preview = async (track, from = 0, retry = true) => {
     await stop();
 
     if (!track?.url && retry) {
       track = await refreshPreview(track);
+    }
+
+    if (isRestricted(track)) {
+      if (mounted.current) {
+        setPlayingId(null);
+        setError(restrictionMessage(track));
+      }
+      return;
     }
 
     if (!track?.url) {
@@ -283,6 +298,11 @@ export default function MusicPicker({ initial, onPick, onClose }) {
     if (!chosen) return;
 
     const track = chosen.url ? chosen : await refreshPreview(chosen);
+
+    if (isRestricted(track)) {
+      setError(restrictionMessage(track));
+      return;
+    }
 
     if (!track?.url) {
       setError('This song does not have a playable preview.');

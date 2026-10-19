@@ -137,6 +137,11 @@ export function normalizeTrack(raw) {
     url: previewUrl,
     previewUrl,
     providerUrl,
+    tunePreviewUrl: httpUrl(raw.tunePreviewUrl ?? raw.vlink),
+    disabled: raw.disabled === true || String(raw.disabled).toLowerCase() === 'true',
+    disabledText: asText(raw.disabledText ?? raw.disabled_text),
+    isDrm: raw.isDrm === true || Number(raw.isDrm ?? raw.is_drm) === 1,
+    rightsReason: asText(raw.rightsReason ?? raw.rights?.reason),
     ccurl: '',
   };
 }
