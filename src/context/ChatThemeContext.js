@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
-import { DEFAULT_THEME_ID } from '../utils/chatTheme';
+import { DEFAULT_THEME_ID, resolveThemeId } from '../utils/chatTheme';
 import {
   clearStoredChatTheme,
   getStoredDefaultThemeId,
@@ -27,7 +27,7 @@ export function ChatThemeProvider({ children }) {
       const [map, def] = await Promise.all([getStoredThemes(), getStoredDefaultThemeId()]);
       if (!alive) return;
       setByChat(map || {});
-      setDefaultId(def || DEFAULT_THEME_ID);
+      setDefaultId(resolveThemeId(def || DEFAULT_THEME_ID));
       setLoaded(true);
     })();
     return () => {
@@ -36,14 +36,15 @@ export function ChatThemeProvider({ children }) {
   }, []);
 
   const themeIdFor = useCallback(
-    (chatId) => (chatId && byChat[chatId]) || defaultId || DEFAULT_THEME_ID,
+    (chatId) => resolveThemeId((chatId && byChat[chatId]) || defaultId || DEFAULT_THEME_ID),
     [byChat, defaultId]
   );
 
   const applyTheme = useCallback(async (chatId, themeId) => {
     if (!chatId || !themeId) return;
-    setByChat((prev) => ({ ...prev, [chatId]: themeId }));
-    await setStoredChatTheme(chatId, themeId);
+    const resolved = resolveThemeId(themeId);
+    setByChat((prev) => ({ ...prev, [chatId]: resolved }));
+    await setStoredChatTheme(chatId, resolved);
   }, []);
 
   const resetTheme = useCallback(async (chatId) => {
@@ -58,7 +59,7 @@ export function ChatThemeProvider({ children }) {
   }, []);
 
   const makeDefault = useCallback(async (themeId) => {
-    const next = themeId || DEFAULT_THEME_ID;
+    const next = resolveThemeId(themeId || DEFAULT_THEME_ID);
     setDefaultId(next);
     await setStoredDefaultThemeId(next === DEFAULT_THEME_ID ? null : next);
   }, []);

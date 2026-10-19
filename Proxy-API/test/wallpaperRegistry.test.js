@@ -15,24 +15,24 @@ const {
   idForFile,
 } = require('../lib/wallpaperRegistry');
 
-test('registry has 57 unique ids and filenames', () => {
-  assert.equal(WALLPAPERS.length, 57);
-  assert.equal(new Set(WALLPAPERS.map((w) => w.id)).size, 57);
-  assert.equal(new Set(WALLPAPERS.map((w) => w.file)).size, 57);
-  assert.equal(FILES.length, 57);
+test('registry has 83 unique ids and filenames', () => {
+  assert.equal(WALLPAPERS.length, 83);
+  assert.equal(new Set(WALLPAPERS.map((w) => w.id)).size, 83);
+  assert.equal(new Set(WALLPAPERS.map((w) => w.file)).size, 83);
+  assert.equal(FILES.length, 83);
 });
 
-test('keeps the original spellings byte-for-byte', () => {
-  assert.ok(FILES.includes('obisidian.webp'));
-  assert.ok(FILES.includes('vegeta-ulta-2-db.webp'));
-  assert.ok(FILES.includes('shinron.webp'));
-  assert.ok(FILES.includes('goku-ultra-2-db.webp'));
+test('keeps the supplied Storage filenames byte-for-byte', () => {
+  assert.ok(FILES.includes('goku-black-ssj-rose-db.webp'));
+  assert.ok(FILES.includes('eren-x-mikasa-aot.webp'));
+  assert.ok(FILES.includes('gojo-x-sukuna-jjk.webp'));
+  assert.ok(FILES.includes('goku-ultra-stand.webp'));
 });
 
 test('resolves a known id to its filename', () => {
-  assert.equal(resolveWallpaper('goku-ultra'), 'goku-ultra-db.webp');
+  assert.equal(resolveWallpaper('goku-ultra-db'), 'goku-ultra-db.webp');
   assert.equal(resolveWallpaper('naruto-n'), 'naruto-n.webp');
-  assert.equal(fileForId('obisidian'), 'obisidian.webp');
+  assert.equal(fileForId('obsidian'), 'obsidian.webp');
 });
 
 test('resolves a known filename to itself and back to its id', () => {

@@ -18,7 +18,7 @@ import {
   chatIdFor, deleteMessageForMe, markChatRead, markMessagesSeen, reactToMessage, removeReaction,
   sendGifMessage, sendImageMessage, sendMessage, sendVoiceMessage, setChatTheme, setTyping, unsendMessage,
 } from '../services/chat';
-import { DEFAULT_THEME_ID, getTheme } from '../utils/chatTheme';
+import { DEFAULT_THEME_ID, getTheme, resolveThemeId } from '../utils/chatTheme';
 import { useChatTheme } from '../context/ChatThemeContext';
 import { useAuth } from '../context/AuthContext';
 import { ensureWallpaperUrls } from '../services/wallpaperUrlStore';
@@ -366,7 +366,7 @@ export default function ChatScreen({ route, navigation }) {
       (s) => {
         setPeerTypingValue(s.data()?.typing?.[otherId] || 0);
         setPeerRead(ms(s.data()?.lastRead?.[otherId]));
-        const remoteTheme = s.data()?.theme || null;
+        const remoteTheme = s.data()?.theme ? resolveThemeId(s.data().theme) : null;
         setActiveThemeId((current) => (current && !remoteTheme ? current : remoteTheme)); // shared theme for both people
       },
       () => {}
