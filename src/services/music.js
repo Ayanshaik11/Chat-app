@@ -1,11 +1,12 @@
 import { isAbortError, kingXMusicApi, toErrorMessage } from './kingXMusicApi';
 
 const SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
-const PREVIEW_CACHE_TTL_MS = 2 * 60 * 1000;
+const PREVIEW_CACHE_TTL_MS = 10 * 60 * 1000;
 
 const searchCache = new Map();
 const previewCache = new Map();
 const inFlightSearches = new Map();
+const inFlightPreviews = new Map();
 
 function decodeHtml(str) {
   if (!str || typeof str !== 'string') return '';
@@ -112,8 +113,21 @@ export function normalizeTrack(raw) {
     ) || 'Unknown artist';
 
   const image = httpUrl(raw.artwork ?? raw.image ?? raw.artworkUrl);
-  const previewUrl = httpUrl(raw.previewUrl ?? raw.playback?.previewUrl ?? raw.media_preview_url);
-  const providerUrl = httpUrl(raw.url ?? raw.providerUrl ?? raw.playback?.url ?? raw.perma_url);
+  const previewUrl = httpUrl(
+    raw.previewUrl ??
+      raw.playback?.previewUrl ??
+      raw.media_preview_url ??
+      raw.vlink
+  );
+  const previewFallbackUrl = httpUrl(
+    raw.previewFallbackUrl ??
+      raw.tunePreviewUrl ??
+      raw.vlink ??
+      raw.media_preview_url
+  );
+  const providerUrl = httpUrl(
+    raw.providerUrl ?? raw.url ?? raw.playback?.url ?? raw.perma_url
+  );
 
   const rawDuration = Number(
     raw.duration != null
@@ -126,6 +140,18 @@ export function normalizeTrack(raw) {
     ? Math.max(0, Math.round(rawDuration))
     : 0;
 
+  const disabled =
+    raw.disabled === true || String(raw.disabled).toLowerCase() === 'true';
+  const disabledText = asText(raw.disabledText ?? raw.disabled_text);
+  const rightsReason = asText(raw.rightsReason ?? raw.rights?.reason);
+  const isDrm = raw.isDrm === true || Number(raw.isDrm ?? raw.is_drm) === 1;
+  const playable =
+    raw.playable === true ||
+    (raw.playable !== false &&
+      !!previewUrl &&
+      !disabled &&
+      !rightsReason);
+
   return {
     id,
     name,
@@ -136,15 +162,35 @@ export function normalizeTrack(raw) {
     duration,
     url: previewUrl,
     previewUrl,
+    previewFallbackUrl:
+      previewFallbackUrl && previewFallbackUrl !== previewUrl
+        ? previewFallbackUrl
+        : '',
     providerUrl,
     tunePreviewUrl: httpUrl(raw.tunePreviewUrl ?? raw.vlink),
-    disabled: raw.disabled === true || String(raw.disabled).toLowerCase() === 'true',
-    disabledText: asText(raw.disabledText ?? raw.disabled_text),
-    isDrm: raw.isDrm === true || Number(raw.isDrm ?? raw.is_drm) === 1,
-    rightsReason: asText(raw.rightsReason ?? raw.rights?.reason),
-    source: asText(raw.source ?? raw.provider ?? (String(id).startsWith('itunes_') ? 'itunes' : 'jiosaavn')).toLowerCase(),
+    playbackType:
+      asText(raw.playbackType).toLowerCase() ||
+      (previewUrl ? 'preview' : 'unavailable'),
+    isFullTrack: raw.isFullTrack === true,
+    fullTrackAvailable: raw.fullTrackAvailable === true,
+    playbackMessage: asText(raw.playbackMessage),
+    playable,
+    disabled,
+    disabledText,
+    isDrm,
+    rightsReason,
+    source: asText(
+      raw.source ??
+        raw.provider ??
+        (String(id).startsWith('itunes_') ? 'itunes' : 'jiosaavn')
+    ).toLowerCase(),
     ccurl: '',
   };
+}
+
+export function isTrackPlayable(track) {
+  if (!track || track.disabled || track.rightsReason) return false;
+  return Boolean(track.url || track.previewUrl) && track.playable !== false;
 }
 
 // The stored song keeps the app's existing field names and the API's field
@@ -165,28 +211,22 @@ export function clearMusicCache() {
   searchCache.clear();
   previewCache.clear();
   inFlightSearches.clear();
+  inFlightPreviews.clear();
 }
 
-export async function searchMusic(q = '', options = {}) {
-  const query = String(q || '').trim();
-  if (!query) throw new Error('Type a song or artist to search.');
+export function getCachedSearch(q = '') {
+  const key = String(q || '').trim().toLowerCase();
+  if (!key) return null;
 
-  throwIfAborted(options.signal);
-
-  const key = query.toLowerCase();
   const cached = cacheGet(searchCache, key, SEARCH_CACHE_TTL_MS);
-  if (cached) return cached.map(cloneTrack);
+  return cached ? cached.map(cloneTrack) : null;
+}
 
-  // Reuse an identical request that is already in flight.
+async function fetchSearchItems(query, options = {}) {
+  const key = query.toLowerCase();
+
   if (inFlightSearches.has(key)) {
-    try {
-      const items = await inFlightSearches.get(key);
-      throwIfAborted(options.signal);
-      return items.map(cloneTrack);
-    } catch (error) {
-      if (!isAbortError(error) || options.signal?.aborted) throw error;
-      // Another caller cancelled the shared request. Start a fresh one below.
-    }
+    return inFlightSearches.get(key);
   }
 
   const request = (async () => {
@@ -194,7 +234,7 @@ export async function searchMusic(q = '', options = {}) {
     params.append('q', query);
     const data = await kingXMusicApi(
       `/api/music/search?${params.toString()}`,
-      options
+      { timeoutMs: options.timeoutMs }
     );
 
     const seenIds = new Set();
@@ -215,9 +255,46 @@ export async function searchMusic(q = '', options = {}) {
   inFlightSearches.set(key, request);
 
   try {
-    return (await request).map(cloneTrack);
+    return await request;
   } finally {
     if (inFlightSearches.get(key) === request) inFlightSearches.delete(key);
+  }
+}
+
+export async function searchMusic(q = '', options = {}) {
+  const query = String(q || '').trim();
+  if (!query) throw new Error('Type a song or artist to search.');
+
+  throwIfAborted(options.signal);
+
+  const key = query.toLowerCase();
+  const cached = cacheGet(searchCache, key, SEARCH_CACHE_TTL_MS);
+
+  if (cached && !options.forceRefresh) {
+    if (options.revalidate !== false) {
+      fetchSearchItems(query, options)
+        .then((items) => {
+          if (options.signal?.aborted) return;
+          options.onRevalidate?.(items.map(cloneTrack));
+        })
+        .catch(() => {
+          // Cached results remain usable when the background refresh fails.
+        });
+    }
+
+    return cached.map(cloneTrack);
+  }
+
+  try {
+    const items = await fetchSearchItems(query, options);
+    throwIfAborted(options.signal);
+    return items.map(cloneTrack);
+  } catch (error) {
+    if (!isAbortError(error) || options.signal?.aborted) throw error;
+
+    const items = await fetchSearchItems(query, options);
+    throwIfAborted(options.signal);
+    return items.map(cloneTrack);
   }
 }
 
@@ -229,26 +306,40 @@ export async function getTrackPreview(id, q, options = {}) {
     throw new Error('Invalid song.');
   }
 
-  if (!query) {
-    throw new Error('A song title or artist is needed to load the preview.');
-  }
-
   throwIfAborted(options.signal);
 
   const key = `${trackId}:${query.toLowerCase()}`;
   const cached = cacheGet(previewCache, key, PREVIEW_CACHE_TTL_MS);
   if (cached) return cloneTrack(cached);
 
-  const params = new URLSearchParams();
-  params.append('q', query);
-  const data = await kingXMusicApi(
-    `/api/music/preview/${encodeURIComponent(trackId)}?${params.toString()}`,
-    options
-  );
-  const track = readTrack(data);
-  cacheSet(previewCache, key, track);
+  if (inFlightPreviews.has(key)) {
+    const track = await inFlightPreviews.get(key);
+    throwIfAborted(options.signal);
+    return cloneTrack(track);
+  }
 
-  return cloneTrack(track);
+  const request = (async () => {
+    const params = new URLSearchParams();
+    if (query) params.append('q', query);
+    const suffix = params.toString() ? `?${params.toString()}` : '';
+    const data = await kingXMusicApi(
+      `/api/music/preview/${encodeURIComponent(trackId)}${suffix}`,
+      { timeoutMs: options.timeoutMs }
+    );
+    const track = readTrack(data);
+    cacheSet(previewCache, key, track);
+    return track;
+  })();
+
+  inFlightPreviews.set(key, request);
+
+  try {
+    const track = await request;
+    throwIfAborted(options.signal);
+    return cloneTrack(track);
+  } finally {
+    if (inFlightPreviews.get(key) === request) inFlightPreviews.delete(key);
+  }
 }
 
 export async function getDiscoverMusic(category = 'latest', options = {}) {

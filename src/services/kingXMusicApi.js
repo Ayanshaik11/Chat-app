@@ -1,5 +1,8 @@
-const FALLBACK_MUSIC_API_BASE_URL = 'https://kingx-music-api-backend.onrender.com';
-const DEFAULT_TIMEOUT_MS = 30000;
+const FALLBACK_MUSIC_API_BASE_URLS = [
+  'https://kingx-music-api-backend.onrender.com',
+  'https://king-x-music-api-backend.vercel.app',
+];
+const DEFAULT_TIMEOUT_MS = 12000;
 
 function normalizeBaseUrl(value) {
   const raw = String(value || '').trim();
@@ -12,16 +15,21 @@ function normalizeBaseUrl(value) {
   return raw.replace(/\/+$/, '');
 }
 
-const MUSIC_API_BASE_URL =
-  normalizeBaseUrl(process.env.EXPO_PUBLIC_MUSIC_API_BASE_URL) ||
-  FALLBACK_MUSIC_API_BASE_URL;
+const MUSIC_API_BASE_URLS = [
+  normalizeBaseUrl(process.env.EXPO_PUBLIC_MUSIC_API_BASE_URL),
+  ...FALLBACK_MUSIC_API_BASE_URLS,
+].filter((value, index, list) => value && list.indexOf(value) === index);
 
 if (typeof __DEV__ !== 'undefined' && __DEV__) {
-  console.log(`KING X Music API base URL: ${MUSIC_API_BASE_URL}`);
+  console.log(`KING X Music API base URLs: ${MUSIC_API_BASE_URLS.join(', ')}`);
 }
 
 export function getMusicApiBaseUrl() {
-  return MUSIC_API_BASE_URL;
+  return MUSIC_API_BASE_URLS[0] || '';
+}
+
+export function getMusicApiBaseUrls() {
+  return [...MUSIC_API_BASE_URLS];
 }
 
 export function isAbortError(error) {
@@ -78,14 +86,25 @@ function createAbortController() {
   }
 }
 
-// Small wrapper around the King X Music API. It never sends authentication:
-// the backend endpoints used by the app are public.
-export async function kingXMusicApi(path, options = {}) {
-  if (typeof path !== 'string' || !path.startsWith('/api/')) {
-    throw new Error('Invalid Music API path.');
-  }
+function timeoutError() {
+  const error = new Error(
+    'The music service took too long to respond. Please try again.'
+  );
+  error.code = 'TIMEOUT';
+  error.isTimeout = true;
+  return error;
+}
 
-  const { signal, timeoutMs = DEFAULT_TIMEOUT_MS, headers, ...rest } = options;
+function canTryNextHost(error) {
+  if (!error || error.isTimeout || isAbortError(error)) return false;
+  if (error.tryNextHost === true) return true;
+  if (error instanceof TypeError) return true;
+
+  return [404, 410, 429, 502, 503, 504].includes(Number(error.status));
+}
+
+async function requestOnce(baseUrl, path, options) {
+  const { signal, timeoutMs, headers, ...rest } = options;
   const controller = createAbortController();
   let timedOut = false;
   let timer = null;
@@ -96,9 +115,6 @@ export async function kingXMusicApi(path, options = {}) {
     else signal.addEventListener?.('abort', forwardAbort);
   }
 
-  const timeoutError = () =>
-    new Error('The music service took too long to respond. Please try again.');
-
   const timeout = new Promise((_, reject) => {
     timer = setTimeout(() => {
       timedOut = true;
@@ -108,22 +124,22 @@ export async function kingXMusicApi(path, options = {}) {
   });
 
   try {
-    const request = fetch(`${MUSIC_API_BASE_URL}${path}`, {
+    const request = fetch(`${baseUrl}${path}`, {
       ...rest,
       headers: { Accept: 'application/json', ...(headers || {}) },
       ...(controller ? { signal: controller.signal } : {}),
     });
 
     const response = await Promise.race([request, timeout]);
-
     const text = await response.text();
     let data = null;
+    let invalidJson = false;
 
     if (text) {
       try {
         data = JSON.parse(text);
       } catch {
-        throw new Error('The music service returned an invalid response.');
+        invalidJson = true;
       }
     }
 
@@ -134,11 +150,23 @@ export async function kingXMusicApi(path, options = {}) {
         `Music service request failed (${response.status}).`;
       const error = new Error(message);
       error.status = response.status;
+      error.code = data?.code || 'HTTP_ERROR';
+      error.tryNextHost = [404, 410, 429, 502, 503, 504].includes(
+        Number(response.status)
+      );
+      throw error;
+    }
+
+    if (invalidJson) {
+      const error = new Error('The music service returned an invalid response.');
+      error.code = 'INVALID_RESPONSE';
       throw error;
     }
 
     if (!data || typeof data !== 'object') {
-      throw new Error('The music service returned an empty response.');
+      const error = new Error('The music service returned an empty response.');
+      error.code = 'EMPTY_RESPONSE';
+      throw error;
     }
 
     return data;
@@ -148,16 +176,67 @@ export async function kingXMusicApi(path, options = {}) {
     if (isAbortError(error)) throw error;
 
     if (error instanceof TypeError) {
-      throw new Error(
-        `Could not reach the music service at ${MUSIC_API_BASE_URL}. Check your connection and try again.`
+      const nextError = new Error(
+        `Could not reach the music service at ${baseUrl}. Check your connection and try again.`
       );
+      nextError.code = 'NETWORK_ERROR';
+      nextError.tryNextHost = true;
+      throw nextError;
     }
 
     if (error instanceof Error) throw error;
 
-    throw new Error(toErrorMessage(error, 'The music service request failed.'));
+    const nextError = new Error(
+      toErrorMessage(error, 'The music service request failed.')
+    );
+    nextError.tryNextHost = true;
+    throw nextError;
   } finally {
     clearTimeout(timer);
     signal?.removeEventListener?.('abort', forwardAbort);
   }
+}
+
+// Small wrapper around the King X Music API. It never sends authentication:
+// the backend endpoints used by the app are public.
+export async function kingXMusicApi(path, options = {}) {
+  if (typeof path !== 'string' || !path.startsWith('/api/')) {
+    throw new Error('Invalid Music API path.');
+  }
+
+  if (!MUSIC_API_BASE_URLS.length) {
+    throw new Error('No music service is configured.');
+  }
+
+  const { timeoutMs = DEFAULT_TIMEOUT_MS, signal, ...rest } = options;
+  let firstError = null;
+  let lastError = null;
+
+  for (const baseUrl of MUSIC_API_BASE_URLS) {
+    try {
+      return await requestOnce(baseUrl, path, {
+        ...rest,
+        signal,
+        timeoutMs,
+      });
+    } catch (error) {
+      if (isAbortError(error) || signal?.aborted) throw error;
+
+      if (!firstError) firstError = error;
+      lastError = error;
+
+      if (!canTryNextHost(error)) {
+        if (firstError !== error && Number(firstError.status) >= 500) {
+          throw firstError;
+        }
+        throw error;
+      }
+    }
+  }
+
+  if (firstError && firstError !== lastError && Number(firstError.status) >= 500) {
+    throw firstError;
+  }
+
+  throw lastError || new Error('The music service request failed.');
 }

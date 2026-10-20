@@ -14,8 +14,10 @@ import { Audio } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 
 import {
+  getCachedSearch,
   getTrackPreview,
   isAbortError,
+  isTrackPlayable,
   searchMusic,
   toErrorMessage,
   toSelectedMusic,
@@ -63,15 +65,34 @@ export default function MusicPicker({ initial, onPick, onClose }) {
   );
   const [start, setStart] = useState(initial?.start || 0);
   const [playingId, setPlayingId] = useState(null);
+  const [loadingTrackId, setLoadingTrackId] = useState(null);
+  const [chosenQuery, setChosenQuery] = useState(null);
+  const [activeQuery, setActiveQuery] = useState('latest songs');
 
   const sound = useRef(null);
+  const loadedTrackId = useRef(null);
+  const pausedTrackId = useRef(null);
+  const playRequestId = useRef(0);
+  const playTimer = useRef(null);
   const requestId = useRef(0);
   const mounted = useRef(true);
   const lastQuery = useRef('latest songs');
 
+  const clearPlayTimer = () => {
+    if (playTimer.current) {
+      clearTimeout(playTimer.current);
+      playTimer.current = null;
+    }
+  };
+
   const stop = async () => {
+    playRequestId.current += 1;
+    clearPlayTimer();
+
     const current = sound.current;
     sound.current = null;
+    loadedTrackId.current = null;
+    pausedTrackId.current = null;
 
     if (current) {
       try {
@@ -80,6 +101,25 @@ export default function MusicPicker({ initial, onPick, onClose }) {
         await current.unloadAsync().catch(() => {});
       } catch {}
     }
+
+    if (mounted.current) {
+      setPlayingId(null);
+      setLoadingTrackId(null);
+    }
+  };
+
+  const pause = async () => {
+    const current = sound.current;
+
+    if (!current) {
+      if (mounted.current) setPlayingId(null);
+      return;
+    }
+
+    try {
+      await current.pauseAsync();
+      pausedTrackId.current = loadedTrackId.current;
+    } catch {}
 
     if (mounted.current) setPlayingId(null);
   };
@@ -121,14 +161,24 @@ export default function MusicPicker({ initial, onPick, onClose }) {
   };
 
   const isRestricted = (track) =>
-    !!(track?.disabled || track?.isDrm);
+    !!(track?.disabled || track?.rightsReason);
 
   const restrictionMessage = (track) =>
     track?.disabledText || track?.rightsReason ||
     'This track is restricted by the music provider.';
 
+  const trackSourceLabel = (track) => {
+    const provider = track?.source === 'itunes' ? 'Apple Music' : 'JioSaavn';
+    const preview =
+      track?.playbackType === 'preview' ||
+      !!track?.previewUrl ||
+      !!track?.url;
+
+    return preview ? `${provider} · Preview clip` : `${provider} · Unavailable`;
+  };
+
   const preview = async (track, from = 0, retry = true) => {
-    await stop();
+    if (!track) return;
 
     if (!track?.url && retry) {
       track = await refreshPreview(track);
@@ -137,6 +187,7 @@ export default function MusicPicker({ initial, onPick, onClose }) {
     if (isRestricted(track)) {
       if (mounted.current) {
         setPlayingId(null);
+        setLoadingTrackId(null);
         setError(restrictionMessage(track));
       }
       return;
@@ -144,10 +195,56 @@ export default function MusicPicker({ initial, onPick, onClose }) {
 
     if (!track?.url) {
       if (mounted.current) {
+        setLoadingTrackId(null);
         setError('No playable preview is available for this song.');
       }
       return;
     }
+
+    const current = sound.current;
+    if (
+      current &&
+      loadedTrackId.current === track.id &&
+      pausedTrackId.current === track.id
+    ) {
+      try {
+        await current.playAsync();
+        pausedTrackId.current = null;
+        if (mounted.current) {
+          setPlayingId(track.id);
+          setError('');
+        }
+        return;
+      } catch {
+        // Fall through and reload the clip from the start.
+      }
+    }
+
+    await stop();
+
+    const token = playRequestId.current;
+    const candidates = [
+      ...new Set([track.url, track.previewFallbackUrl].filter(Boolean)),
+    ];
+
+    if (mounted.current) {
+      setLoadingTrackId(track.id);
+      setPlayingId(null);
+      setError('');
+    }
+
+    clearPlayTimer();
+    playTimer.current = setTimeout(() => {
+      if (token !== playRequestId.current) return;
+
+      playRequestId.current += 1;
+      clearPlayTimer();
+      if (mounted.current) {
+        setLoadingTrackId(null);
+        setPlayingId(null);
+        setError('Playback took too long to start. Please try again.');
+      }
+    }, 15000);
 
     try {
       await Audio.setAudioModeAsync({
@@ -155,58 +252,127 @@ export default function MusicPicker({ initial, onPick, onClose }) {
         staysActiveInBackground: false,
         shouldDuckAndroid: true,
       });
+    } catch {}
 
-      const { sound: newSound } = await Audio.Sound.createAsync(
-        { uri: track.url },
-        {
-          shouldPlay: true,
-          positionMillis: Math.max(0, from) * 1000,
-          volume: 1,
+    let lastError = null;
+
+    for (const uri of candidates) {
+      try {
+        const { sound: newSound } = await Audio.Sound.createAsync(
+          { uri },
+          {
+            shouldPlay: true,
+            positionMillis: Math.max(0, from) * 1000,
+            volume: 1,
+          }
+        );
+
+        if (!mounted.current || token !== playRequestId.current) {
+          await newSound.unloadAsync().catch(() => {});
+          return;
         }
-      );
 
-      if (!mounted.current) {
-        await newSound.unloadAsync().catch(() => {});
+        clearPlayTimer();
+        sound.current = newSound;
+        loadedTrackId.current = track.id;
+        pausedTrackId.current = null;
+
+        if (mounted.current) {
+          setPlayingId(track.id);
+          setLoadingTrackId(null);
+          setError('');
+        }
+
+        newSound.setOnPlaybackStatusUpdate((status) => {
+          if (token !== playRequestId.current) return;
+
+          if (!status.isLoaded) {
+            if (status.error) {
+              if (mounted.current) {
+                setError('Could not play this song preview.');
+                setPlayingId(null);
+                setLoadingTrackId(null);
+              }
+
+              newSound.unloadAsync().catch(() => {});
+              if (sound.current === newSound) sound.current = null;
+              loadedTrackId.current = null;
+            }
+            return;
+          }
+
+          if (status.isBuffering) {
+            if (mounted.current) setLoadingTrackId(track.id);
+
+            if (!playTimer.current) {
+              playTimer.current = setTimeout(() => {
+                if (token !== playRequestId.current) return;
+
+                playRequestId.current += 1;
+                clearPlayTimer();
+                newSound.unloadAsync().catch(() => {});
+                if (sound.current === newSound) sound.current = null;
+                loadedTrackId.current = null;
+                pausedTrackId.current = null;
+
+                if (mounted.current) {
+                  setPlayingId(null);
+                  setLoadingTrackId(null);
+                  setError('Playback stalled. Check your connection and try again.');
+                }
+              }, 15000);
+            }
+          } else {
+            clearPlayTimer();
+            if (mounted.current) setLoadingTrackId(null);
+          }
+
+          if (status.didJustFinish) {
+            clearPlayTimer();
+            newSound.unloadAsync().catch(() => {});
+            if (sound.current === newSound) sound.current = null;
+            loadedTrackId.current = null;
+            pausedTrackId.current = null;
+            if (mounted.current) {
+              setPlayingId(null);
+              setLoadingTrackId(null);
+            }
+          }
+        });
+
+        return;
+      } catch (e) {
+        lastError = e;
+      }
+    }
+
+    clearPlayTimer();
+
+    if (!mounted.current || token !== playRequestId.current) return;
+
+    if (retry) {
+      const fresh = await refreshPreview(track);
+      const freshCandidates = [
+        ...new Set([fresh?.url, fresh?.previewFallbackUrl].filter(Boolean)),
+      ];
+      const changed = freshCandidates.some((url) => !candidates.includes(url));
+
+      if (changed) {
+        if (mounted.current) setError('');
+        await preview(fresh, from, false);
         return;
       }
+    }
 
-      sound.current = newSound;
-      setPlayingId(track.id);
-
-      newSound.setOnPlaybackStatusUpdate((status) => {
-        if (!status.isLoaded) {
-          if (status.error && mounted.current) {
-            setError('Could not play this song preview.');
-          }
-          return;
-        }
-
-        if (status.didJustFinish) {
-          newSound.unloadAsync().catch(() => {});
-          if (sound.current === newSound) sound.current = null;
-          if (mounted.current) setPlayingId(null);
-        }
-      });
-    } catch (e) {
-      if (retry) {
-        const fresh = await refreshPreview(track);
-
-        if (fresh?.url && fresh.url !== track.url) {
-          if (mounted.current) setError('');
-          await preview(fresh, from, false);
-          return;
-        }
-      }
-
-      if (mounted.current) {
-        setPlayingId(null);
-        setError(
-          toErrorMessage(
-            e,
-            'Could not play this song preview. The preview may have expired.'
-          )
-        );
-      }
+    if (mounted.current) {
+      setPlayingId(null);
+      setLoadingTrackId(null);
+      setError(
+        toErrorMessage(
+          lastError,
+          'Could not play this song preview. The preview may have expired.'
+        )
+      );
     }
   };
 
@@ -216,6 +382,9 @@ export default function MusicPicker({ initial, onPick, onClose }) {
 
     return () => {
       mounted.current = false;
+      playRequestId.current += 1;
+      clearPlayTimer();
+
       const current = sound.current;
       sound.current = null;
 
@@ -233,22 +402,40 @@ export default function MusicPicker({ initial, onPick, onClose }) {
       typeof AbortController === 'function' ? new AbortController() : null;
     let cancelled = false;
 
-    setLoading(true);
-    setError('');
-
     const activeCat = CATEGORIES.find((c) => c.id === selectedCategory);
     const queryToSearch = q.trim() || activeCat?.query || 'latest songs';
+    const cachedResults = getCachedSearch(queryToSearch);
+
+    setError('');
+
+    if (cachedResults) {
+      lastQuery.current = queryToSearch;
+      setActiveQuery(queryToSearch);
+      setItems(cachedResults);
+      setLoading(false);
+    } else {
+      setLoading(true);
+    }
 
     const timer = setTimeout(async () => {
       try {
         const results = await searchMusic(queryToSearch, {
           ...(controller ? { signal: controller.signal } : {}),
+          onRevalidate: (freshResults) => {
+            if (cancelled || thisRequest !== requestId.current) return;
+
+            lastQuery.current = queryToSearch;
+            setActiveQuery(queryToSearch);
+            setItems(freshResults);
+          },
         });
 
         if (cancelled || thisRequest !== requestId.current) return;
 
         lastQuery.current = queryToSearch;
+        setActiveQuery(queryToSearch);
         setItems(results);
+        setError('');
       } catch (e) {
         if (
           cancelled ||
@@ -258,14 +445,14 @@ export default function MusicPicker({ initial, onPick, onClose }) {
           return;
         }
 
-        setItems([]);
+        if (!cachedResults) setItems([]);
         setError(toErrorMessage(e, 'Could not load music.'));
       } finally {
         if (!cancelled && thisRequest === requestId.current) {
           setLoading(false);
         }
       }
-    }, q.trim() ? 400 : 0);
+    }, q.trim() ? 300 : 0);
 
     return () => {
       cancelled = true;
@@ -276,6 +463,7 @@ export default function MusicPicker({ initial, onPick, onClose }) {
 
   const choose = async (track) => {
     setChosen(track);
+    setChosenQuery(track?.searchQuery || activeQuery);
     setStart(0);
     setError('');
     await preview(track, 0);
@@ -283,29 +471,33 @@ export default function MusicPicker({ initial, onPick, onClose }) {
 
   const togglePreview = async (track) => {
     if (playingId === track.id) {
+      await pause();
+      return;
+    }
+
+    if (loadingTrackId === track.id) {
       await stop();
       return;
     }
 
     setChosen(track);
+    setChosenQuery(track?.searchQuery || activeQuery);
     setStart(0);
     setError('');
     await preview(track, 0);
   };
-
 
   const useSong = async () => {
     if (!chosen) return;
 
     const track = chosen.url ? chosen : await refreshPreview(chosen);
 
-    if (isRestricted(track)) {
-      setError(restrictionMessage(track));
-      return;
-    }
-
-    if (!track?.url) {
-      setError('This song does not have a playable preview.');
+    if (isRestricted(track) || !isTrackPlayable(track)) {
+      setError(
+        isRestricted(track)
+          ? restrictionMessage(track)
+          : track?.playbackMessage || 'This song does not have a playable preview.'
+      );
       return;
     }
 
@@ -429,6 +621,20 @@ export default function MusicPicker({ initial, onPick, onClose }) {
           : `${CATEGORIES.find((c) => c.id === selectedCategory)?.label || 'New'} songs`}
       </Text>
 
+      {!!error && items.length > 0 && (
+        <Text
+          style={{
+            color: '#FF9999',
+            fontSize: 12,
+            lineHeight: 17,
+            marginHorizontal: 16,
+            marginBottom: 8,
+          }}
+        >
+          {error}
+        </Text>
+      )}
+
       {/* Search status */}
       {loading ? (
         <ActivityIndicator color={RED} style={{ marginTop: 40 }} />
@@ -483,9 +689,11 @@ export default function MusicPicker({ initial, onPick, onClose }) {
             </Text>
           }
           renderItem={({ item }) => {
-            const selected = chosen?.id === item.id;
+            const selected =
+              chosen?.id === item.id && chosenQuery === activeQuery;
             const isPlaying = playingId === item.id;
-            const hasPreview = !!item.url;
+            const isBuffering = loadingTrackId === item.id;
+            const hasPreview = !!item.url && isTrackPlayable(item);
 
             return (
               <Pressable
@@ -560,7 +768,7 @@ export default function MusicPicker({ initial, onPick, onClose }) {
                       marginTop: 3,
                     }}
                   >
-                    {item.source === 'itunes' ? 'Apple Music · Preview clip' : 'JioSaavn'}
+                    {trackSourceLabel(item)}
                   </Text>
                 </View>
 
@@ -571,13 +779,17 @@ export default function MusicPicker({ initial, onPick, onClose }) {
                   }}
                   disabled={!hasPreview}
                   hitSlop={8}
-                  style={{ padding: 4 }}
+                  style={{ padding: 4, minWidth: 37, alignItems: 'center' }}
                 >
-                  <Ionicons
-                    name={isPlaying ? 'pause-circle' : 'play-circle-outline'}
-                    size={29}
-                    color={isPlaying ? RED : hasPreview ? '#CCCCCC' : '#555555'}
-                  />
+                  {isBuffering ? (
+                    <ActivityIndicator color={RED} size="small" />
+                  ) : (
+                    <Ionicons
+                      name={isPlaying ? 'pause-circle' : 'play-circle-outline'}
+                      size={29}
+                      color={isPlaying ? RED : hasPreview ? '#CCCCCC' : '#555555'}
+                    />
+                  )}
                 </Pressable>
               </Pressable>
             );
@@ -621,16 +833,20 @@ export default function MusicPicker({ initial, onPick, onClose }) {
                 numberOfLines={1}
                 style={{ color: '#999999', fontSize: 12, marginTop: 3 }}
               >
-                {chosen.artist}
+                {chosen.artist} · {trackSourceLabel(chosen)}
               </Text>
             </View>
 
             <Pressable onPress={() => togglePreview(chosen)} hitSlop={8}>
-              <Ionicons
-                name={playingId === chosen.id ? 'pause-circle' : 'play-circle'}
-                size={32}
-                color={RED}
-              />
+              {loadingTrackId === chosen.id ? (
+                <ActivityIndicator color={RED} />
+              ) : (
+                <Ionicons
+                  name={playingId === chosen.id ? 'pause-circle' : 'play-circle'}
+                  size={32}
+                  color={RED}
+                />
+              )}
             </Pressable>
           </View>
 
