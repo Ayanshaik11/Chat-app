@@ -15,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import {
   getCachedSearch,
+  getPlaybackVerification,
   getTrackPreview,
   isAbortError,
   isTrackPlayable,
@@ -24,6 +25,22 @@ import {
 } from '../services/music';
 
 const RED = '#E11D2A';
+
+let audioModePromise = null;
+
+function ensureAudioMode() {
+  if (!audioModePromise) {
+    audioModePromise = Audio.setAudioModeAsync({
+      playsInSilentModeIOS: true,
+      staysActiveInBackground: false,
+      shouldDuckAndroid: true,
+    }).catch(() => {
+      audioModePromise = null;
+    });
+  }
+
+  return audioModePromise;
+}
 
 const CATEGORIES = [
   { id: 'latest', label: '🔥 New', query: 'latest songs' },
@@ -77,6 +94,11 @@ export default function MusicPicker({ initial, onPick, onClose }) {
   const requestId = useRef(0);
   const mounted = useRef(true);
   const lastQuery = useRef('latest songs');
+  const itemsRef = useRef(items);
+  const recoveryTrackId = useRef(null);
+  const verifiedTrackId = useRef(null);
+
+  itemsRef.current = items;
 
   const clearPlayTimer = () => {
     if (playTimer.current) {
@@ -93,6 +115,7 @@ export default function MusicPicker({ initial, onPick, onClose }) {
     sound.current = null;
     loadedTrackId.current = null;
     pausedTrackId.current = null;
+    verifiedTrackId.current = null;
 
     if (current) {
       try {
@@ -124,8 +147,21 @@ export default function MusicPicker({ initial, onPick, onClose }) {
     if (mounted.current) setPlayingId(null);
   };
 
-  // Preview URLs can expire. Before giving up, ask the backend for a fresh one.
-  const refreshPreview = async (track) => {
+  const patchTrack = (id, patch) => {
+    if (!mounted.current || !id || !patch) return;
+
+    setItems((list) =>
+      list.map((item) =>
+        item.id === id ? { ...item, ...patch } : item
+      )
+    );
+    setChosen((current) =>
+      current?.id === id ? { ...current, ...patch } : current
+    );
+  };
+
+  // Stream URLs can expire. Ask the backend for a fresh one before retrying.
+  const refreshPreview = async (track, options = {}) => {
     if (!track?.id) return track;
 
     const query =
@@ -135,50 +171,140 @@ export default function MusicPicker({ initial, onPick, onClose }) {
 
     try {
       const fresh = await getTrackPreview(track.id, query, {
-        timeoutMs: 8000,
+        timeoutMs: options.timeoutMs || 8000,
+        forceRefresh: !!options.force,
       });
       const freshValues = Object.fromEntries(
-        Object.entries(fresh).filter(([, value]) => value !== '' && value != null)
+        Object.entries(fresh).filter(
+          ([, value]) => value !== '' && value != null
+        )
       );
       const updated = { ...track, ...freshValues };
 
-      if (mounted.current) {
-        setItems((list) =>
-          list.map((item) =>
-            item.id === track.id ? { ...item, ...freshValues } : item
-          )
-        );
-        setChosen((current) =>
-          current?.id === track.id ? { ...current, ...freshValues } : current
-        );
-      }
+      patchTrack(track.id, freshValues);
 
       return updated;
     } catch {
-      // Keep the URL we already have; the caller decides whether it is usable.
       return track;
     }
   };
 
   const isRestricted = (track) =>
-    !!(track?.disabled || track?.rightsReason);
+    !!(
+      track?.disabled ||
+      track?.rightsReason ||
+      track?.isDrm
+    );
 
   const restrictionMessage = (track) =>
-    track?.disabledText || track?.rightsReason ||
+    track?.disabledText ||
+    track?.rightsReason ||
     'This track is restricted by the music provider.';
 
   const trackSourceLabel = (track) => {
-    const provider = track?.source === 'itunes' ? 'Apple Music' : 'JioSaavn';
-    const preview =
-      track?.playbackType === 'preview' ||
-      !!track?.previewUrl ||
-      !!track?.url;
+    const source = String(track?.source || '').trim();
+    const provider = source
+      ? source.charAt(0).toUpperCase() + source.slice(1)
+      : 'Music';
 
-    return preview ? `${provider} · Preview clip` : `${provider} · Unavailable`;
+    const restriction =
+      track?.disabledText ||
+      track?.rightsReason ||
+      (track?.disabled ? 'Unavailable' : '');
+
+    const unavailable =
+      !!restriction ||
+      track?.isDrm ||
+      track?.playbackType === 'unavailable' ||
+      track?.playable === false ||
+      !track?.url;
+
+    if (unavailable) {
+      return `${provider} · ${restriction || 'Unavailable'}`;
+    }
+
+    if (track?.playbackType === 'preview' || track?.isPreview) {
+      return `${provider} · Preview only`;
+    }
+
+    if (track?.playbackType === 'full' || track?.isFullTrack) {
+      return `${provider} · Full track`;
+    }
+
+    return `${provider} · Audio stream`;
+  };
+
+  const trackSourceColor = (track) => {
+    if (track?.playbackType === 'preview' || track?.isPreview) {
+      return '#F5C66A';
+    }
+
+    if (
+      track?.playbackType === 'unavailable' ||
+      track?.playable === false ||
+      !track?.url
+    ) {
+      return '#FF9999';
+    }
+
+    return '#8BD5A7';
+  };
+
+  const recoverExpiredStream = async (
+    track,
+    from = 0,
+    options = {}
+  ) => {
+    if (!track?.id || recoveryTrackId.current === track.id) {
+      return false;
+    }
+
+    recoveryTrackId.current = track.id;
+
+    const fresh = await refreshPreview(track, { force: true });
+    const freshUrl = fresh?.streamUrl || fresh?.url;
+    const oldUrl = track.streamUrl || track.url;
+    const sameUrl = !freshUrl || freshUrl === oldUrl;
+
+    if ((sameUrl && !options.retrySameUrl) || !mounted.current) {
+      return false;
+    }
+
+    await preview(fresh, from, false);
+
+    return true;
+  };
+
+  const prefetchNextStream = (track) => {
+    const list = itemsRef.current;
+    const index = list.findIndex((item) => item.id === track.id);
+    const next = index >= 0 ? list[index + 1] : null;
+
+    if (!next?.id || next.url || next.streamUrl) return;
+
+    getTrackPreview(
+      next.id,
+      next.searchQuery || lastQuery.current,
+      { timeoutMs: 8000 }
+    )
+      .then((fresh) => {
+        if (!mounted.current) return;
+
+        const values = Object.fromEntries(
+          Object.entries(fresh).filter(
+            ([, value]) => value !== '' && value != null
+          )
+        );
+
+        patchTrack(next.id, values);
+      })
+      .catch(() => {});
   };
 
   const preview = async (track, from = 0, retry = true) => {
     if (!track) return;
+
+    const startAt = Math.max(0, Math.floor(Number(from) || 0));
 
     if (!track?.url && retry) {
       track = await refreshPreview(track);
@@ -196,7 +322,7 @@ export default function MusicPicker({ initial, onPick, onClose }) {
     if (!track?.url) {
       if (mounted.current) {
         setLoadingTrackId(null);
-        setError('No playable preview is available for this song.');
+        setError('No playable audio is available for this song.');
       }
       return;
     }
@@ -216,7 +342,7 @@ export default function MusicPicker({ initial, onPick, onClose }) {
         }
         return;
       } catch {
-        // Fall through and reload the clip from the start.
+        // Fall through and reload the stream from the requested position.
       }
     }
 
@@ -224,7 +350,13 @@ export default function MusicPicker({ initial, onPick, onClose }) {
 
     const token = playRequestId.current;
     const candidates = [
-      ...new Set([track.url, track.previewFallbackUrl].filter(Boolean)),
+      ...new Set(
+        [
+          track.streamUrl,
+          track.url,
+          track.previewFallbackUrl,
+        ].filter(Boolean)
+      ),
     ];
 
     if (mounted.current) {
@@ -239,20 +371,19 @@ export default function MusicPicker({ initial, onPick, onClose }) {
 
       playRequestId.current += 1;
       clearPlayTimer();
+
       if (mounted.current) {
         setLoadingTrackId(null);
         setPlayingId(null);
-        setError('Playback took too long to start. Please try again.');
+        setError('Playback took too long to start. Retrying…');
       }
+
+      recoverExpiredStream(track, startAt, {
+        retrySameUrl: true,
+      }).catch(() => {});
     }, 15000);
 
-    try {
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: false,
-        shouldDuckAndroid: true,
-      });
-    } catch {}
+    await ensureAudioMode();
 
     let lastError = null;
 
@@ -262,7 +393,7 @@ export default function MusicPicker({ initial, onPick, onClose }) {
           { uri },
           {
             shouldPlay: true,
-            positionMillis: Math.max(0, from) * 1000,
+            positionMillis: startAt * 1000,
             volume: 1,
           }
         );
@@ -283,22 +414,49 @@ export default function MusicPicker({ initial, onPick, onClose }) {
           setError('');
         }
 
+        prefetchNextStream(track);
+
         newSound.setOnPlaybackStatusUpdate((status) => {
           if (token !== playRequestId.current) return;
 
           if (!status.isLoaded) {
             if (status.error) {
-              if (mounted.current) {
-                setError('Could not play this song preview.');
-                setPlayingId(null);
-                setLoadingTrackId(null);
-              }
+              const position = Math.floor(
+                (Number(status.positionMillis) || 0) / 1000
+              );
 
               newSound.unloadAsync().catch(() => {});
               if (sound.current === newSound) sound.current = null;
               loadedTrackId.current = null;
+              pausedTrackId.current = null;
+
+              if (mounted.current) {
+                setError('Refreshing this song’s stream…');
+                setPlayingId(null);
+                setLoadingTrackId(null);
+              }
+
+              recoverExpiredStream(
+                track,
+                position || startAt,
+                { retrySameUrl: true }
+              ).catch(() => {});
             }
             return;
+          }
+
+          if (
+            status.durationMillis &&
+            verifiedTrackId.current !== track.id
+          ) {
+            verifiedTrackId.current = track.id;
+
+            const patch = getPlaybackVerification(
+              track,
+              status.durationMillis / 1000
+            );
+
+            if (patch) patchTrack(track.id, patch);
           }
 
           if (status.isBuffering) {
@@ -307,6 +465,10 @@ export default function MusicPicker({ initial, onPick, onClose }) {
             if (!playTimer.current) {
               playTimer.current = setTimeout(() => {
                 if (token !== playRequestId.current) return;
+
+                const position = Math.floor(
+                  (Number(status.positionMillis) || 0) / 1000
+                );
 
                 playRequestId.current += 1;
                 clearPlayTimer();
@@ -318,8 +480,14 @@ export default function MusicPicker({ initial, onPick, onClose }) {
                 if (mounted.current) {
                   setPlayingId(null);
                   setLoadingTrackId(null);
-                  setError('Playback stalled. Check your connection and try again.');
+                  setError('Playback stalled. Reconnecting…');
                 }
+
+                recoverExpiredStream(
+                  track,
+                  position || startAt,
+                  { retrySameUrl: true }
+                ).catch(() => {});
               }, 15000);
             }
           } else {
@@ -351,15 +519,25 @@ export default function MusicPicker({ initial, onPick, onClose }) {
     if (!mounted.current || token !== playRequestId.current) return;
 
     if (retry) {
-      const fresh = await refreshPreview(track);
+      const fresh = await refreshPreview(track, {
+        force: true,
+      });
       const freshCandidates = [
-        ...new Set([fresh?.url, fresh?.previewFallbackUrl].filter(Boolean)),
+        ...new Set(
+          [
+            fresh?.streamUrl,
+            fresh?.url,
+            fresh?.previewFallbackUrl,
+          ].filter(Boolean)
+        ),
       ];
-      const changed = freshCandidates.some((url) => !candidates.includes(url));
+      const changed = freshCandidates.some(
+        (url) => !candidates.includes(url)
+      );
 
       if (changed) {
         if (mounted.current) setError('');
-        await preview(fresh, from, false);
+        await preview(fresh, startAt, false);
         return;
       }
     }
@@ -370,7 +548,7 @@ export default function MusicPicker({ initial, onPick, onClose }) {
       setError(
         toErrorMessage(
           lastError,
-          'Could not play this song preview. The preview may have expired.'
+          'Could not play this song. The stream may have expired.'
         )
       );
     }
@@ -404,7 +582,9 @@ export default function MusicPicker({ initial, onPick, onClose }) {
 
     const activeCat = CATEGORIES.find((c) => c.id === selectedCategory);
     const queryToSearch = q.trim() || activeCat?.query || 'latest songs';
-    const cachedResults = getCachedSearch(queryToSearch);
+    const cachedResults = getCachedSearch(queryToSearch, {
+      allowStale: true,
+    });
 
     setError('');
 
@@ -452,7 +632,7 @@ export default function MusicPicker({ initial, onPick, onClose }) {
           setLoading(false);
         }
       }
-    }, q.trim() ? 300 : 0);
+    }, q.trim() ? 250 : 0);
 
     return () => {
       cancelled = true;
@@ -462,6 +642,7 @@ export default function MusicPicker({ initial, onPick, onClose }) {
   }, [q, selectedCategory, reloadKey]);
 
   const choose = async (track) => {
+    recoveryTrackId.current = null;
     setChosen(track);
     setChosenQuery(track?.searchQuery || activeQuery);
     setStart(0);
@@ -480,6 +661,7 @@ export default function MusicPicker({ initial, onPick, onClose }) {
       return;
     }
 
+    recoveryTrackId.current = null;
     setChosen(track);
     setChosenQuery(track?.searchQuery || activeQuery);
     setStart(0);
@@ -496,7 +678,7 @@ export default function MusicPicker({ initial, onPick, onClose }) {
       setError(
         isRestricted(track)
           ? restrictionMessage(track)
-          : track?.playbackMessage || 'This song does not have a playable preview.'
+          : track?.playbackMessage || 'This song does not have playable audio.'
       );
       return;
     }
@@ -697,13 +879,16 @@ export default function MusicPicker({ initial, onPick, onClose }) {
 
             return (
               <Pressable
-                onPress={() => choose(item)}
+                onPress={() => {
+                  if (hasPreview) choose(item);
+                }}
                 style={{
                   flexDirection: 'row',
                   alignItems: 'center',
                   gap: 12,
                   paddingHorizontal: 16,
                   paddingVertical: 9,
+                  opacity: hasPreview ? 1 : 0.55,
                   backgroundColor: selected ? '#251316' : 'transparent',
                 }}
               >
@@ -757,13 +942,14 @@ export default function MusicPicker({ initial, onPick, onClose }) {
                     }}
                   >
                     {item.artist}
-                    {hasPreview ? ` · ${mmss(item.duration)}` : ' · Preview unavailable'}
+                    {item.duration ? ` · ${mmss(item.duration)}` : ''}
+                    {!hasPreview ? ' · Unavailable' : ''}
                   </Text>
 
                   <Text
                     numberOfLines={1}
                     style={{
-                      color: item.source === 'itunes' ? '#8AB4F8' : '#8BD5A7',
+                      color: trackSourceColor(item),
                       fontSize: 10,
                       marginTop: 3,
                     }}
