@@ -1,6 +1,6 @@
 import { auth } from '../config/firebase';
 
-const API_BASE_URL = 'https://music-api-etqi.onrender.com';
+const API_BASE_URL = 'https://backend-music.onrender.com';
 const DEFAULT_TIMEOUT_MS = 20000;
 
 export function getMusicApiBaseUrl() {
