@@ -3,7 +3,7 @@
     "name": "King X",
     "slug": "chat-app",
     "scheme": "chatapp",
-    "version": "1.0.0",
+    "version": "1.1.10",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -37,7 +37,7 @@
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "googleServicesFile": "./google-services.json",
-      "versionCode": 10000
+      "versionCode": 10110
     },
     "plugins": [
       [
