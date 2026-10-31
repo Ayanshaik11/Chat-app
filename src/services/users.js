@@ -1,5 +1,19 @@
-import { collection, doc, getDocs, limit, orderBy, query, updateDoc, where } from 'firebase/firestore';
+import { collection, doc, documentId, getDocs, limit, orderBy, query, updateDoc, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
+import { chunk } from '../utils/helpers';
+
+// Profiles for a known set of ids (used for chats with people who are not friends).
+export async function getUsersByIds(ids = []) {
+  const clean = [...new Set(ids.filter(Boolean))];
+  if (!clean.length) return [];
+  const parts = await Promise.all(
+    chunk(clean, 10).map(async (part) => {
+      const snap = await getDocs(query(collection(db, 'users'), where(documentId(), 'in', part)));
+      return snap.docs.map((d) => ({ ...d.data(), id: d.id }));
+    })
+  );
+  return parts.flat();
+}
 
 // Find people by Gmail address (prefix search, e.g. "john" or "john@gmail.com")
 export async function searchUsersByEmail(text, meId) {
