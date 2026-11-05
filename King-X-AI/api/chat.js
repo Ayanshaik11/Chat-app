@@ -6,6 +6,66 @@ const { generateReply } = require('../lib/gemini');
 
 const ID_PATTERN = /^[a-zA-Z0-9_-]{1,100}$/;
 
+/*
+ Daily limit for EACH user (Google's free quota is shared by everyone, so nobody can use it all up).
+ - Counted per user per day in kingXAIUsers/{uid}/usage/{day}; people who do not use the AI use nothing.
+ - DAILY_LIMIT (default 15) and LIMIT_TZ_OFFSET_MIN (default 330 = India time, resets at midnight) can be set in Vercel.
+ - A failed answer is not counted.
+*/
+const DAILY_LIMIT = Math.max(1, parseInt(process.env.DAILY_LIMIT, 10) || 15);
+const TZ_OFFSET_MIN = Number.isFinite(parseInt(process.env.LIMIT_TZ_OFFSET_MIN, 10))
+  ? parseInt(process.env.LIMIT_TZ_OFFSET_MIN, 10)
+  : 330;
+
+function dayInfo() {
+  const local = new Date(Date.now() + TZ_OFFSET_MIN * 60000);
+  const day = local.toISOString().slice(0, 10);
+  const resetsAt =
+    Date.UTC(local.getUTCFullYear(), local.getUTCMonth(), local.getUTCDate() + 1) - TZ_OFFSET_MIN * 60000;
+  return { day, resetsAt };
+}
+
+const usageRef = (db, uid, day) =>
+  db.collection('kingXAIUsers').doc(uid).collection('usage').doc(day);
+
+const usageView = (used, resetsAt) => ({
+  used,
+  limit: DAILY_LIMIT,
+  remaining: Math.max(0, DAILY_LIMIT - used),
+  resetsAt,
+});
+
+async function readUsage(db, uid) {
+  const { day, resetsAt } = dayInfo();
+  const snap = await usageRef(db, uid, day).get();
+  return usageView(snap.exists ? snap.data().count || 0 : 0, resetsAt);
+}
+
+// Takes one message from today's allowance (safe when two requests arrive together).
+async function reserveMessage(db, uid) {
+  const { day, resetsAt } = dayInfo();
+  const ref = usageRef(db, uid, day);
+
+  const used = await db.runTransaction(async (t) => {
+    const snap = await t.get(ref);
+    const count = snap.exists ? snap.data().count || 0 : 0;
+    if (count >= DAILY_LIMIT) return -1;
+    t.set(ref, { count: count + 1, day, updatedAt: admin.firestore.FieldValue.serverTimestamp() }, { merge: true });
+    return count + 1;
+  });
+
+  if (used < 0) {
+    const error = new Error(
+      `You've used all ${DAILY_LIMIT} King X AI messages for today. They come back at midnight.`
+    );
+    error.status = 429;
+    error.usage = usageView(DAILY_LIMIT, resetsAt);
+    throw error;
+  }
+
+  return { ref, usage: usageView(used, resetsAt) };
+}
+
 // Light protection against spamming: 20 requests per minute per user (per server instance).
 const hits = new Map();
 function rateLimited(uid) {
@@ -75,7 +135,9 @@ module.exports = async (req, res) => {
         })
         .filter((m) => ['user', 'model'].includes(m.role) && typeof m.text === 'string');
 
-      return res.status(200).json({ success: true, conversationId: id, messages: list });
+      const usage = await readUsage(db, user.uid).catch(() => null);
+
+      return res.status(200).json({ success: true, conversationId: id, messages: list, usage });
     }
 
     // ---------- DELETE: clear this user's conversation ----------
@@ -124,7 +186,16 @@ module.exports = async (req, res) => {
       .slice(0, 60);
 
     const clean = message.trim();
-    const reply = await generateReply(history, clean, { userName: name });
+
+    const reserved = await reserveMessage(db, user.uid);
+    let reply;
+    try {
+      reply = await generateReply(history, clean, { userName: name });
+    } catch (error) {
+      // the AI failed, so this try does not count against the user's day
+      await reserved.ref.set({ count: FieldValue.increment(-1) }, { merge: true }).catch(() => {});
+      throw error;
+    }
 
     // two different times, so the question always sorts before the answer
     const now = Date.now();
@@ -144,15 +215,16 @@ module.exports = async (req, res) => {
 
     await batch.commit();
 
-    return res.status(200).json({ success: true, conversationId: id, reply });
+    return res.status(200).json({ success: true, conversationId: id, reply, usage: reserved.usage });
   } catch (error) {
     const status = error.status && error.status >= 400 && error.status < 600 ? error.status : 500;
 
     if (status >= 500) console.error('King X AI error:', error?.message || error);
 
     return res.status(status).json({
+      ...(error.usage ? { usage: error.usage } : {}),
       error:
-        status === 429 && !/too fast/.test(error.message || '')
+        status === 429 && !error.usage && !/too fast/.test(error.message || '')
           ? 'King X AI is busy right now. Please try again in a moment.'
           : status === 500
             ? 'King X AI encountered a server error'
