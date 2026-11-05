@@ -19,7 +19,7 @@ const modelGone = (error) =>
   [400, 404].includes(error.status) &&
   /no longer available|not found|not supported|deprecated|retired|unknown model/i.test(error.message || '');
 const DOWNLOAD_URL =
-  process.env.KING_X_DOWNLOAD_URL || 'https://github.com/Ayanshaik11/Chat-app/releases/latest';
+  process.env.KING_X_DOWNLOAD_URL || 'https://download-kingx.vercel.app/';
 
 function buildSystemPrompt(userName) {
   const name = String(userName || '').trim();
