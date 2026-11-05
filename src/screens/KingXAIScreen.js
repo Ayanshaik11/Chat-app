@@ -42,10 +42,10 @@ const Message = React.memo(function Message({ item, typing, skipKey, onTypingDon
         {item.error ? (
           <View style={{ gap: 8, alignItems: 'flex-start' }}>
             <T size={14} color="danger">{item.error}</T>
-            <Pressable onPress={() => onRetry(item)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, height: 32, borderRadius: 16, backgroundColor: colors.inputBg }}>
+            {item.noRetry ? null : <Pressable onPress={() => onRetry(item)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, height: 32, borderRadius: 16, backgroundColor: colors.inputBg }}>
               <Ionicons name="refresh" size={15} color={colors.text} />
               <T size={13} weight="semibold">Try again</T>
-            </Pressable>
+            </Pressable>}
           </View>
         ) : typing ? (
           <TypedMarkdown text={item.text} skipKey={skipKey} onDone={() => onTypingDone(item.id)} />
@@ -76,6 +76,7 @@ export default function KingXAIScreen({ navigation }) {
   const [skipKey, setSkipKey] = useState(0);
   const [input, setInput] = useState('');
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [usage, setUsage] = useState(null); // { used, limit, remaining } - this user's messages today
 
   const scrollRef = useRef(null);
   const stick = useRef(true);
@@ -107,7 +108,11 @@ export default function KingXAIScreen({ navigation }) {
       if (alive && cached.length) { setHistory(cached); historyRef.current = cached; }
 
       const refresh = fetchHistory(fbUser)
-        .then((list) => { if (alive) { setHistory(list); historyRef.current = list; saveCachedHistory(uid, list); } })
+        .then(({ list, usage: u }) => {
+          if (!alive) return;
+          setHistory(list); historyRef.current = list; saveCachedHistory(uid, list);
+          if (u) setUsage(u);
+        })
         .catch(() => {}); // offline or older backend: the saved copy on the phone is used
       setLoadingHistory(false);
 
@@ -142,13 +147,15 @@ export default function KingXAIScreen({ navigation }) {
           reply = answer;
         } else {
           const [result] = await Promise.all([askKingXAI(fbUser, prompt || text, userName), sleep(700)]);
-          reply = result;
+          reply = result.reply;
+          if (result.usage) setUsage(result.usage);
         }
         setThinking(false);
         addAnswer(reply, { local: !!answer });
       } catch (e) {
         setThinking(false);
-        setSession((s) => [...s, { id: nextId(), role: 'model', text: '', error: friendlyError(e), retryText: text }]);
+        if (e?.usage) setUsage(e.usage);
+        setSession((s) => [...s, { id: nextId(), role: 'model', text: '', error: friendlyError(e), retryText: text, noRetry: e?.status === 429 && !!e?.usage }]);
       }
       setTimeout(persist, 50);
     },
@@ -197,7 +204,8 @@ export default function KingXAIScreen({ navigation }) {
   };
 
   const all = [...history, ...session];
-  const canSend = input.trim().length > 0 && !busy;
+  const limitReached = !!usage && usage.remaining <= 0;
+  const canSend = input.trim().length > 0 && !busy && !limitReached;
 
   return (
     <Screen edges={['top', 'bottom']}>
@@ -211,7 +219,13 @@ export default function KingXAIScreen({ navigation }) {
           <T weight="bold" size={16}>King X AI</T>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
             <View style={{ width: 7, height: 7, borderRadius: 4, backgroundColor: colors.online }} />
-            <T size={11} color="subtext">{busy ? (typingId ? 'Typing...' : 'Thinking...') : 'AI assistant'}</T>
+            <T size={11} color="subtext">
+              {busy
+                ? (typingId ? 'Typing...' : 'Thinking...')
+                : usage
+                  ? (usage.remaining > 0 ? `${usage.remaining} of ${usage.limit} messages left today` : 'Daily limit reached - back tomorrow')
+                  : 'AI assistant'}
+            </T>
           </View>
         </View>
         <Pressable onPress={clearChat} hitSlop={12} style={{ padding: 8 }}>
@@ -276,8 +290,9 @@ export default function KingXAIScreen({ navigation }) {
           <TextInput
             value={input}
             onChangeText={setInput}
-            placeholder="Ask King X AI..."
+            placeholder={limitReached ? 'Daily limit reached - back tomorrow' : 'Ask King X AI...'}
             placeholderTextColor={colors.subtext}
+            editable={!limitReached}
             multiline
             maxLength={4000}
             onFocus={() => { stick.current = true; setTimeout(() => scrollEnd(true), 250); }}
