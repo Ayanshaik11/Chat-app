@@ -4,6 +4,23 @@ import { db } from '../config/firebase';
 import { encryptFor } from './crypto';
 import { sendPushNotification } from './notifications';
 
+const tsMs = (v) =>
+  !v ? 0 : typeof v === 'number' ? v : v.toMillis ? v.toMillis() : v.seconds ? v.seconds * 1000 : 0;
+
+/**
+ * How many unread messages I have in a chat.
+ * Uses the counter the sender increments. If that counter is missing / 0 but the
+ * last message is from the other person and newer than my last read, it counts as 1.
+ */
+export function unreadFor(chat, meId) {
+  if (!chat || !meId) return 0;
+  const counted = Number(chat.unread?.[meId]) || 0;
+  if (counted > 0) return counted;
+  if (chat._pending || !chat.lastMessage || !chat.lastSender || chat.lastSender === meId) return 0;
+  const last = tsMs(chat.lastMessageAt);
+  return last && last > tsMs(chat.lastRead?.[meId]) ? 1 : 0;
+}
+
 export const chatIdFor = (a, b) => [a, b].filter(Boolean).sort().join('_');
 
 const messageRef = (chatId, id) => doc(db, 'chats', chatId, 'messages', id);
