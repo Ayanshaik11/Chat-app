@@ -3,6 +3,7 @@ import {
   ActivityIndicator, Alert, Animated, AppState, FlatList, Image, KeyboardAvoidingView, Modal, PanResponder,
   Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
+import { useIsFocused } from '@react-navigation/native';
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { FontAwesome } from '@expo/vector-icons';
@@ -21,6 +22,7 @@ import {
 import { DEFAULT_THEME_ID, getTheme } from '../utils/chatTheme';
 import { useChatTheme } from '../context/ChatThemeContext';
 import { useAuth } from '../context/AuthContext';
+import { useAppData } from '../context/AppDataContext';
 import { ensureWallpaperUrls } from '../services/wallpaperUrlStore';
 import useReducedMotion from '../hooks/useReducedMotion';
 
@@ -235,7 +237,10 @@ const MessageRow = React.memo(function MessageRow({ item, seenText, dateLabel, t
    ========================================================= */
 
 export default function ChatScreen({ route, navigation }) {
-  const { user, otherUser, friendProfiles = {} } = route.params || {};
+  const { user, otherUser, friendProfiles: paramProfiles } = route.params || {};
+  // friends come from the live app data (route params never carried them, so the forward list was empty)
+  const appData = useAppData();
+  const friendProfiles = paramProfiles && Object.keys(paramProfiles).length ? paramProfiles : appData?.friendProfiles || {};
   const me = user || {}, other = otherUser || {};
   const meId = me.id || me.uid || null;
   const otherId = other.id || other.uid || null;
@@ -263,6 +268,9 @@ export default function ChatScreen({ route, navigation }) {
   const [peerTypingValue, setPeerTypingValue] = useState(0);
   const [menuOpen, setMenuOpen] = useState(false);
   const [peerRead, setPeerRead] = useState(0); // when the other person last read this chat
+  const [myUnread, setMyUnread] = useState(0); // my unread counter on the chat document
+  const focused = useIsFocused(); // false while another screen (e.g. a profile) is on top of this chat
+  const [appActive, setAppActive] = useState(AppState.currentState === 'active');
   const [tick, setTick] = useState(0); // re-renders the "Seen 2m ago" text
 
   /*
@@ -379,12 +387,18 @@ export default function ChatScreen({ route, navigation }) {
       (s) => {
         setPeerTypingValue(s.data()?.typing?.[otherId] || 0);
         setPeerRead(ms(s.data()?.lastRead?.[otherId]));
+        setMyUnread(Number(s.data()?.unread?.[meId]) || 0);
         const remoteTheme = s.data()?.theme || null;
         setActiveThemeId((current) => (current && !remoteTheme ? current : remoteTheme)); // shared theme for both people
       },
       () => {}
     );
-  }, [chatId, otherId]);
+  }, [chatId, otherId, meId]);
+
+  useEffect(() => {
+    const sub = AppState.addEventListener('change', (s) => setAppActive(s === 'active'));
+    return () => sub.remove();
+  }, []);
 
   // refresh "Seen 2m ago" every 30 seconds
   useEffect(() => {
@@ -433,17 +447,21 @@ export default function ChatScreen({ route, navigation }) {
         sigCache.current = next;
         setRawMessages((old) => (old.length === list.length && old.every((x, i) => x === list[i]) ? old : list));
         setLoading(false);
-
-        const unseen = list.filter((m) => m.senderId !== meId && !m.seenBy?.[meId] && !m._pending && !seenSent.current.has(m.id));
-        if (unseen.length && AppState.currentState === 'active') {
-          unseen.forEach((m) => seenSent.current.add(m.id));
-          markChatRead(chatId, meId).catch(() => {});
-          markMessagesSeen(chatId, unseen, meId).catch((e) => console.log('Read/seen:', e?.message || e));
-        }
       },
       (e) => { console.log('Messages:', e?.message || e); setLoading(false); }
     );
   }, [chatId, meId, otherId, limitN]);
+
+  // Messages count as read only while this chat is really on screen (focused + app open).
+  // Before, a chat hidden under another screen kept marking new messages as read.
+  useEffect(() => {
+    if (!focused || !appActive || !meId || !chatId) return;
+    const unseen = rawMessages.filter((m) => m.senderId !== meId && !m.seenBy?.[meId] && !m._pending && !seenSent.current.has(m.id));
+    if (!unseen.length && !myUnread) return;
+    unseen.forEach((m) => seenSent.current.add(m.id));
+    markChatRead(chatId, meId).catch(() => {});
+    if (unseen.length) markMessagesSeen(chatId, unseen, meId).catch((e) => console.log('Read/seen:', e?.message || e));
+  }, [rawMessages, focused, appActive, myUnread, chatId, meId]);
 
   // load older messages when scrolling to the top
   const loadOlder = useCallback(() => {
@@ -517,11 +535,11 @@ export default function ChatScreen({ route, navigation }) {
 
   // no banner for this chat while it is open, and clear its old notifications
   useEffect(() => {
-    if (!otherId) return undefined;
+    if (!otherId || !focused) return undefined;
     setActiveChatUser(otherId);
     Notifications.dismissAllNotificationsAsync().catch(() => {});
     return () => setActiveChatUser(null);
-  }, [otherId]);
+  }, [otherId, focused]);
 
   const isSeen = (m) => m.senderId === meId && m.type !== 'system' && (!!m.seenBy?.[otherId] || (peerRead > 0 && ms(m.createdAt) > 0 && ms(m.createdAt) <= peerRead));
   const latestSeenMsg = useMemo(() => messages.find(isSeen) || null, [messages, peerRead, meId, otherId]);
