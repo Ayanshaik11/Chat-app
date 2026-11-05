@@ -2,12 +2,14 @@
 
 // Tried in this order. If Google retires a model ("no longer available"), the next one is used.
 // You can also force one without changing code: set GEMINI_MODEL in Vercel.
+// Free tier (per Google project, shared by ALL users): the Flash-Lite models allow about 500 requests a day,
+// gemini-3.8-flash only about 20 - so Flash-Lite goes first and 3.8 Flash is the backup.
 const MODELS = [
   process.env.GEMINI_MODEL,
+  'gemini-3.5-flash-lite',
+  'gemini-3.1-flash-lite',
   'gemini-3.8-flash',
-  'gemini-flash-latest',
   'gemini-flash-lite-latest',
-  'gemini-2.5-flash',
 ].filter((m, i, list) => m && list.indexOf(m) === i);
 
 // Google is busy / overloaded: wait a moment, then try the next model
@@ -129,7 +131,8 @@ async function generateReply(history, message, { userName } = {}) {
     }
   }
 
-  if (!data && lastError && overloaded(lastError.status)) {
+  if (!data && lastError && (overloaded(lastError.status) || modelGone(lastError))) {
+    console.error('Gemini unavailable:', lastError.status, lastError.message); // the real reason stays in the Vercel logs
     lastError.message = 'King X AI is very busy right now. Please try again in a few seconds.';
     lastError.status = 503;
   }
