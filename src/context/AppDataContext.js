@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { collection, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { chunk } from '../utils/helpers';
+import { unreadFor } from '../services/chat';
 import { useAuth } from './AuthContext';
 import { useSettings } from './SettingsContext';
 
@@ -73,7 +74,7 @@ export function AppDataProvider({ children }) {
         query(collection(db, 'chats'), where('members', 'array-contains', meId)),
         (snap) => {
           const map = {};
-          snap.docs.forEach((d) => (map[d.id] = { id: d.id, ...d.data() }));
+          snap.docs.forEach((d) => (map[d.id] = { id: d.id, ...d.data(), _pending: d.metadata.hasPendingWrites }));
           setChats(map);
           // The chat document also changes when someone is typing or reads a chat.
           // Only a genuinely NEWER last-message time counts as a new message.
@@ -141,7 +142,7 @@ export function AppDataProvider({ children }) {
   );
 
   const unreadNotifs = notifications.filter((n) => !n.read).length;
-  const unreadMessages = Object.values(chats).reduce((sum, c) => sum + (c.unread?.[meId] || 0), 0);
+  const unreadMessages = Object.values(chats).reduce((sum, c) => sum + unreadFor(c, meId), 0);
 
   const value = useMemo(
     () => ({ friendIds, friends, friendProfiles, incoming, outgoing, notifications, chats, relationTo, unreadNotifs, unreadMessages }),
