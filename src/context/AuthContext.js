@@ -1,10 +1,11 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { AppState } from 'react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { GoogleSignin, statusCodes } from '@react-native-google-signin/google-signin';
 import {
   GoogleAuthProvider, onAuthStateChanged, signInWithCredential, signOut as fbSignOut,
 } from 'firebase/auth';
-import { doc, getDoc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
+import { doc, onSnapshot, serverTimestamp, setDoc, updateDoc } from 'firebase/firestore';
 import { auth, db, GOOGLE_WEB_CLIENT_ID } from '../config/firebase';
 import { addNotification } from '../services/notifications';
 import { setAuthorizedUser } from '../services/wallpaperUrlStore';
@@ -43,11 +44,16 @@ export function AuthProvider({ children }) {
   );
 
   // create / load my profile document: users/{googleId}
+  // The last known profile is kept on the phone, so the app opens instantly and shows
+  // YOUR saved name and picture even with mobile data off. The Google name / photo is
+  // only used to create a brand-new profile - never to replace an existing one.
   useEffect(() => {
     if (!fbUser || !googleId) return undefined;
     let cancelled = false;
-    let unsub = null;
+    let touched = false;
+    let creating = false;
     const ref = doc(db, 'users', googleId);
+    const cacheKey = `kx_profile_v1_${googleId}`;
     const fallback = {
       id: googleId,
       name: fbUser.displayName || 'User',
@@ -56,12 +62,41 @@ export function AuthProvider({ children }) {
       username: (fbUser.email || 'user').split('@')[0],
       about: '',
     };
+
+    let haveProfile = false;
     (async () => {
       try {
-        const snap = await getDoc(ref);
-        if (!snap.exists()) {
+        const cached = JSON.parse((await AsyncStorage.getItem(cacheKey)) || 'null');
+        if (!cancelled && !haveProfile && cached?.id === googleId) {
+          haveProfile = true;
+          setProfile(cached);
+        }
+      } catch {}
+    })();
+
+    // if nothing arrives (offline and nothing saved yet) show the basic profile after a moment
+    const wait = setTimeout(() => {
+      if (!cancelled && !haveProfile) { haveProfile = true; setProfile(fallback); }
+    }, 4000);
+
+    const unsub = onSnapshot(
+      ref,
+      (s) => {
+        if (cancelled) return;
+        if (s.exists()) {
+          const data = { id: s.id, ...s.data() };
+          haveProfile = true;
+          setProfile(data);
+          AsyncStorage.setItem(cacheKey, JSON.stringify(data)).catch(() => {});
+          if (!touched && !s.metadata.fromCache) {
+            touched = true;
+            updateDoc(ref, { online: showOnlineRef.current, lastSeen: serverTimestamp() }).catch(() => {});
+          }
+        } else if (!s.metadata.fromCache && !creating) {
+          // really no profile on the server yet -> create it from the Google account
+          creating = true;
           const email = fbUser.email || '';
-          await setDoc(ref, {
+          setDoc(ref, {
             id: googleId,
             uid: fbUser.uid,
             name: fbUser.displayName || email.split('@')[0] || 'User',
@@ -73,25 +108,16 @@ export function AuthProvider({ children }) {
             online: showOnlineRef.current,
             lastSeen: serverTimestamp(),
             createdAt: serverTimestamp(),
-          });
-        } else {
-          await updateDoc(ref, { online: showOnlineRef.current, lastSeen: serverTimestamp() });
+          }).catch((e) => { creating = false; console.warn('profile init failed', e); });
         }
-      } catch (e) {
-        console.warn('profile init failed', e);
-        if (!cancelled) setProfile(fallback);
-        return;
-      }
-      if (cancelled) return;
-      unsub = onSnapshot(
-        ref,
-        (s) => s.exists() && setProfile({ id: s.id, ...s.data() }),
-        () => {}
-      );
-    })();
+      },
+      (e) => console.warn('profile listener failed', e)
+    );
+
     return () => {
       cancelled = true;
-      unsub && unsub();
+      clearTimeout(wait);
+      unsub();
     };
   }, [fbUser?.uid, googleId]);
 
