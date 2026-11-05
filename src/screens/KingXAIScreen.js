@@ -42,6 +42,7 @@ const Message = React.memo(function Message({ item, typing, skipKey, onTypingDon
         {item.error ? (
           <View style={{ gap: 8, alignItems: 'flex-start' }}>
             <T size={14} color="danger">{item.error}</T>
+            {item.trail?.length ? <T size={10} color="subtext">Details: {item.trail.join(', ')}</T> : null}
             {item.noRetry ? null : <Pressable onPress={() => onRetry(item)} style={{ flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, height: 32, borderRadius: 16, backgroundColor: colors.inputBg }}>
               <Ionicons name="refresh" size={15} color={colors.text} />
               <T size={13} weight="semibold">Try again</T>
@@ -155,7 +156,7 @@ export default function KingXAIScreen({ navigation }) {
       } catch (e) {
         setThinking(false);
         if (e?.usage) setUsage(e.usage);
-        setSession((s) => [...s, { id: nextId(), role: 'model', text: '', error: friendlyError(e), retryText: text, noRetry: e?.status === 429 && !!e?.usage }]);
+        setSession((s) => [...s, { id: nextId(), role: 'model', text: '', error: friendlyError(e), retryText: text, trail: e?.trail || null, noRetry: e?.status === 429 && !!e?.usage }]);
       }
       setTimeout(persist, 50);
     },
