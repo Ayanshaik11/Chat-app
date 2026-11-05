@@ -2,7 +2,7 @@
 
 const admin = require('firebase-admin');
 const { getFirebaseApp, verifyUser } = require('../lib/firebase');
-const { generateReply } = require('../lib/gemini');
+const { generateReply, MODELS, VERSION } = require('../lib/gemini');
 
 const ID_PATTERN = /^[a-zA-Z0-9_-]{1,100}$/;
 
@@ -105,6 +105,19 @@ module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
 
   try {
+    // Open https://<your-domain>/api/chat?health=1 in a browser: shows which version is deployed. No secrets.
+    if (req.method === 'GET' && req.query?.health) {
+      return res.status(200).json({
+        ok: true,
+        version: VERSION,
+        models: MODELS,
+        dailyLimit: DAILY_LIMIT,
+        geminiKeySet: !!process.env.GEMINI_API_KEY,
+        firebaseSet: !!process.env.FIREBASE_SERVICE_ACCOUNT,
+        geminiModelOverride: process.env.GEMINI_MODEL || null,
+      });
+    }
+
     if (!['GET', 'POST', 'DELETE'].includes(req.method)) {
       return res.status(405).json({ error: 'Method not allowed' });
     }
@@ -223,6 +236,7 @@ module.exports = async (req, res) => {
 
     return res.status(status).json({
       ...(error.usage ? { usage: error.usage } : {}),
+      ...(error.trail ? { trail: error.trail } : {}),
       error:
         status === 429 && !error.usage && !/too fast/.test(error.message || '')
           ? 'King X AI is busy right now. Please try again in a moment.'
