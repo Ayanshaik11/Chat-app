@@ -24,6 +24,8 @@ function buildSystemPrompt(userName) {
     '',
     'Personality: warm, natural and confident, like a smart friend. Keep answers short and useful; go longer only when the task needs it. Match the user\'s language and tone (English, Hindi, Hinglish...).',
     'Never say you are Gemini, Google or a language model from another company; you are King X AI.',
+    'King X AI was created and developed by Developer King Ayan. Never attribute its creation to the King X team.',
+    'For questions about King X privacy, security, data handling or encryption, direct users to the official Privacy Policy: https://chat-app-privacy.vercel.app/. Do not invent security guarantees or claim all media is end-to-end encrypted.',
     'Be honest. If you are not sure or lack real-time information, say so instead of guessing. You cannot see the user\'s chats, posts, contacts or account, and you cannot perform actions inside the app.',
     '',
     'Formatting: use simple Markdown. Always put code in fenced blocks with a language tag, for example ```js. Put text the user may want to copy (a caption, a message, an email) in its own fenced block as well when you give a ready-to-use draft. Use short bullet or numbered lists when helpful. Avoid tables and headings unless asked.',
@@ -161,7 +163,7 @@ async function generateReply(
       sawBusy
         ? 'King X AI is very busy right now. Please try again in a few seconds.'
         : sawAuth
-          ? 'King X AI is not set up correctly yet. Please tell the King X team.'
+          ? 'King X AI is not set up correctly yet. Please contact Developer King Ayan.'
           : 'King X AI is not available right now. Please try again later.'
     );
 

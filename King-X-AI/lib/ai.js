@@ -86,7 +86,31 @@ async function openAIRequest({
   return reply;
 }
 
+
+function directKingXReply(message) {
+  const q = String(message || '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+  const creatorQuestion =
+    /\b(who (made|created|built|developed) (you|king x|king x ai)|who is your (creator|developer)|who developed you|who created you)\b/.test(q);
+
+  if (creatorQuestion) {
+    return 'King X AI was created and developed by Developer King Ayan.';
+  }
+
+  const privacyQuestion =
+    /\b(privacy|security|secure|data protection|personal data|personal information|encryption|end[- ]to[- ]end encryption|what data do you collect|how is my data)\b/.test(q);
+
+  if (privacyQuestion) {
+    return 'For details about King X privacy and security practices, please read the official Privacy Policy: https://chat-app-privacy.vercel.app/';
+  }
+
+  return null;
+}
+
 async function generateReply(history, message, { userName } = {}) {
+  const directReply = directKingXReply(message);
+  if (directReply) return directReply;
+
   const startedAt = Date.now();
 
   const remaining = () =>
@@ -198,4 +222,4 @@ async function generateReply(history, message, { userName } = {}) {
   );
 }
 
-module.exports = { generateReply };
+module.exports = { generateReply, directKingXReply };

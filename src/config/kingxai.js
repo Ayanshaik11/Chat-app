@@ -5,7 +5,7 @@ export const KING_X_AI_URL = (
 
 // Official download page / latest APK. Change it here if you host the download page somewhere else.
 export const KING_X_DOWNLOAD_URL =
-  process.env.EXPO_PUBLIC_KING_X_DOWNLOAD_URL || 'https://github.com/Ayanshaik11/Chat-app/releases/latest';
+  process.env.EXPO_PUBLIC_KING_X_DOWNLOAD_URL || 'https://download-kingx.vercel.app/';
 
 // Ready-made messages shown when the chat opens.
 //  - `answer`  : answered instantly by the app (no internet needed), still shown with thinking + typing
