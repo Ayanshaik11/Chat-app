@@ -245,7 +245,7 @@ export default function MessagesScreen({ navigation }) {
               <KingXAIAvatar size={54} />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  <T weight="semibold" numberOfLines={1}>King X AI</T>
+                  <T weight="semibold" numberOfLines={1}>King X</T>
                   <View style={{ backgroundColor: colors.primary, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 }}>
                     <T size={9} weight="bold" color="#fff">AI</T>
                   </View>
