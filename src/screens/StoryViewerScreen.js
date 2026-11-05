@@ -14,7 +14,7 @@ import Avatar from '../components/Avatar';
 import EditedVideo from '../components/EditedVideo';
 import T from '../components/T';
 
-const IMAGE_DURATION = 5000;
+const IMAGE_DURATION = 30000; // a photo story stays for 30 seconds
 const RED = '#E11D2A';
 const fill = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 };
 
