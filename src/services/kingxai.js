@@ -35,7 +35,7 @@ async function call(fbUser, { method = 'GET', query = '', body } = {}, retry = t
     if (response.status === 401 && retry) return call(fbUser, { method, query, body }, false);
 
     if (!response.ok) {
-      throw Object.assign(new Error(data?.error || `Request failed (${response.status})`), { status: response.status });
+      throw Object.assign(new Error(data?.error || `Request failed (${response.status})`), { status: response.status, usage: data?.usage || null });
     }
     return data;
   } finally {
@@ -49,16 +49,17 @@ export async function askKingXAI(fbUser, message, userName) {
     body: { message, conversationId: CONVERSATION, userName: userName || '' },
   });
   if (!data?.reply) throw new Error('King X AI sent an empty answer.');
-  return data.reply;
+  return { reply: data.reply, usage: data.usage || null };
 }
 
 export async function fetchHistory(fbUser) {
   const data = await call(fbUser, { query: `?conversationId=${CONVERSATION}&limit=60` });
-  return (Array.isArray(data?.messages) ? data.messages : []).map((m) => ({
+  const list = (Array.isArray(data?.messages) ? data.messages : []).map((m) => ({
     id: `h_${m.id}`,
     role: m.role,
     text: m.text,
   }));
+  return { list, usage: data?.usage || null };
 }
 
 export async function clearHistory(fbUser) {
