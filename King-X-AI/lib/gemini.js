@@ -1,6 +1,17 @@
 'use strict';
 
-const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
+// Tried in this order. If Google retires a model ("no longer available"), the next one is used.
+// You can also force one without changing code: set GEMINI_MODEL in Vercel.
+const MODELS = [
+  process.env.GEMINI_MODEL,
+  'gemini-3.8-flash',
+  'gemini-flash-latest',
+  'gemini-2.5-flash',
+].filter((m, i, list) => m && list.indexOf(m) === i);
+
+const modelGone = (error) =>
+  [400, 404].includes(error.status) &&
+  /no longer available|not found|not supported|deprecated|retired|unknown model/i.test(error.message || '');
 const DOWNLOAD_URL =
   process.env.KING_X_DOWNLOAD_URL || 'https://github.com/Ayanshaik11/Chat-app/releases/latest';
 
@@ -65,33 +76,38 @@ async function generateReply(history, message, { userName } = {}) {
     { role: 'user', parts: [{ text: message }] },
   ];
 
-  const response = await fetch(
-    `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-      },
-      body: JSON.stringify({
-        contents,
-        systemInstruction: { parts: [{ text: buildSystemPrompt(userName) }] },
-        generationConfig: {
-          temperature: 0.8,
-          maxOutputTokens: 4096,
-          thinkingConfig: { thinkingBudget: 512 },
-        },
-      }),
+  const body = JSON.stringify({
+    contents,
+    systemInstruction: { parts: [{ text: buildSystemPrompt(userName) }] },
+    generationConfig: { temperature: 0.8, maxOutputTokens: 4096 },
+  });
+
+  let data;
+  let lastError;
+
+  for (const model of MODELS) {
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+        body,
+      }
+    );
+
+    const json = await response.json().catch(() => ({}));
+
+    if (response.ok) {
+      data = json;
+      break;
     }
-  );
 
-  const data = await response.json().catch(() => ({}));
-
-  if (!response.ok) {
-    const error = new Error(data.error?.message || 'Gemini request failed');
-    error.status = response.status;
-    throw error;
+    lastError = new Error(json.error?.message || 'Gemini request failed');
+    lastError.status = response.status;
+    if (!modelGone(lastError)) throw lastError; // a real problem (key, quota...) - do not hide it
   }
+
+  if (!data) throw lastError || new Error('Gemini request failed');
 
   const reply = data.candidates?.[0]?.content?.parts
     ?.map((part) => part.text || '')
