@@ -9,7 +9,7 @@ import { KING_X_AI_URL } from '../config/kingxai';
 
 const CONVERSATION = 'main';
 const CACHE_LIMIT = 60;
-const TIMEOUT_MS = 60000;
+const TIMEOUT_MS = 75000; // the backend gives up after ~50s, so this is only a safety net
 const cacheKey = (uid) => `kingxai.history.v1.${uid}`;
 
 async function call(fbUser, { method = 'GET', query = '', body } = {}, retry = true) {
@@ -86,9 +86,13 @@ export const clearCachedHistory = (uid) => AsyncStorage.removeItem(cacheKey(uid)
 
 export function friendlyError(error) {
   const message = String(error?.message || '');
-  if (/network request failed|failed to fetch|abort|timed? ?out/i.test(message) || error?.name === 'AbortError') {
+  if (error?.name === 'AbortError' || /abort|timed? ?out/i.test(message)) {
+    return 'King X AI is taking too long to answer. Please try again.';
+  }
+  if (/network request failed|failed to fetch/i.test(message)) {
     return 'I couldn\'t reach King X AI. Check your internet and try again.';
   }
+  if (error?.status === 503 || error?.status === 504) return 'King X AI is very busy right now. Please try again in a few seconds.';
   if (error?.status === 401) return 'Your session expired. Please sign in again.';
   if (error?.status === 429) return error.message || 'King X AI is busy. Try again in a moment.';
   return message || 'Something went wrong. Please try again.';
