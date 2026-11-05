@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../context/AuthContext';
 import { useAppData } from '../context/AppDataContext';
 import { useTheme } from '../context/SettingsContext';
-import { chatIdFor } from '../services/chat';
+import { chatIdFor, unreadFor } from '../services/chat';
 import { getUsersByIds } from '../services/users';
 import { isOnline, timeAgo, toMillis } from '../utils/helpers';
 import Screen from '../components/Screen';
@@ -93,20 +93,20 @@ export default function MessagesScreen({ navigation }) {
       if (q && !name.toLowerCase().includes(q) && !email.toLowerCase().includes(q)) return;
       seen.add(id);
 
-      // Only real timestamps count: a missing/pending timestamp must not push a
-      // chat to the top (toMillis(null) returns "now", so guard it first).
+      // Only real timestamps count (toMillis(null) would return "now").
       const lastMessageAt = chat?.lastMessageAt ? toMillis(chat.lastMessageAt) : 0;
       const updatedAt = chat?.updatedAt ? toMillis(chat.updatedAt) : 0;
       let lastActivity = Math.max(lastMessageAt, updatedAt);
-      // message just sent: server timestamp not confirmed yet -> treat as newest
-      if (!lastActivity && chat?.lastMessage) lastActivity = Date.now();
+      // only a message that is still being sent (timestamp not confirmed yet) counts as "now";
+      // old chats without any timestamp go to the bottom instead of jumping above new ones
+      if (!lastActivity && chat?._pending && chat?.lastMessage) lastActivity = Date.now();
 
       list.push({
         id,
         profile: profile || { id, name: 'User' },
         chat,
         lastActivity,
-        unread: chat?.unread?.[myId] || 0,
+        unread: unreadFor(chat, myId),
       });
     };
 
@@ -125,7 +125,9 @@ export default function MessagesScreen({ navigation }) {
       add(id, friend, chats?.[chatIdFor(myId, id)] || null);
     });
 
-    return list.sort((a, b) => b.lastActivity - a.lastActivity);
+    return list.sort(
+      (a, b) => b.lastActivity - a.lastActivity || String(a.profile?.name || '').localeCompare(String(b.profile?.name || ''))
+    );
   }, [friends, chats, text, myId, profileFor]);
 
   const sections = useMemo(() => {
