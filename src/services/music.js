@@ -11,6 +11,12 @@ const PREVIEW_CACHE_TTL_MS = 5 * 60 * 1000;
 const MAX_SEARCH_CACHE_ENTRIES = 30;
 const MAX_PREVIEW_CACHE_ENTRIES = 60;
 
+const ITUNES_SEARCH_URL = 'https://itunes.apple.com/search';
+const ITUNES_LOOKUP_URL = 'https://itunes.apple.com/lookup';
+const ITUNES_COUNTRY = 'IN';
+const ITUNES_LIMIT = 15;
+const ITUNES_TIMEOUT_MS = 8000;
+
 const searchCache = new Map();
 const previewCache = new Map();
 const inFlightSearches = new Map();
@@ -365,6 +371,117 @@ export function normalizeTrack(raw) {
   };
 }
 
+/* ---------- Apple Music (iTunes) previews, fetched straight from the phone ----------
+   Free, no key. Used next to the King X backend so previews still show up
+   even when the backend's own iTunes request fails or is slow. */
+
+async function fetchItunesJson(url, signal, timeoutMs = ITUNES_TIMEOUT_MS) {
+  const controller = typeof AbortController === 'function' ? new AbortController() : null;
+  const forward = () => controller?.abort();
+
+  if (controller && signal) {
+    if (signal.aborted) controller.abort();
+    else signal.addEventListener?.('abort', forward);
+  }
+
+  const timer = setTimeout(() => controller?.abort(), timeoutMs);
+
+  try {
+    const response = await fetch(url, {
+      headers: { Accept: 'application/json' },
+      ...(controller ? { signal: controller.signal } : {}),
+    });
+    if (!response.ok) throw new Error(`Apple Music error (${response.status}).`);
+    return await response.json();
+  } finally {
+    clearTimeout(timer);
+    signal?.removeEventListener?.('abort', forward);
+  }
+}
+
+function mapItunesSong(item) {
+  if (!item || item.trackId == null || !item.trackName) return null;
+
+  const previewUrl = httpUrl(item.previewUrl);
+  if (!previewUrl) return null;
+
+  const artwork = httpUrl(item.artworkUrl100 || item.artworkUrl60).replace(
+    /\/\d+x\d+(bb)?\.(jpg|jpeg|png|webp)$/i,
+    '/600x600bb.$2'
+  );
+
+  return normalizeTrack({
+    id: `itunes_${item.trackId}`,
+    title: item.trackName,
+    artist: item.artistName,
+    artwork,
+    duration: Number(item.trackTimeMillis) / 1000 || 0,
+    previewUrl,
+    provider: 'itunes',
+    playbackType: 'preview',
+    playbackMessage: 'Authorized Apple Music preview clip.',
+    permalink: item.trackViewUrl,
+  });
+}
+
+async function searchItunes(query, { signal, timeoutMs } = {}) {
+  const params = new URLSearchParams({
+    term: query,
+    media: 'music',
+    entity: 'song',
+    limit: String(ITUNES_LIMIT),
+    country: ITUNES_COUNTRY,
+  });
+  const data = await fetchItunesJson(`${ITUNES_SEARCH_URL}?${params.toString()}`, signal, timeoutMs);
+  return (Array.isArray(data?.results) ? data.results : []).map(mapItunesSong).filter(Boolean);
+}
+
+async function lookupItunes(trackId, { signal, timeoutMs } = {}) {
+  const nativeId = String(trackId).replace(/^itunes_/, '');
+  if (!/^\d+$/.test(nativeId)) return null;
+
+  const params = new URLSearchParams({ id: nativeId, entity: 'song', country: ITUNES_COUNTRY });
+  const data = await fetchItunesJson(`${ITUNES_LOOKUP_URL}?${params.toString()}`, signal, timeoutMs);
+  const list = Array.isArray(data?.results) ? data.results : [];
+  return list.map(mapItunesSong).find(Boolean) || null;
+}
+
+const trackKey = (track) =>
+  `${String(track.name || '').toLowerCase().trim()}|${String(track.artist || '').toLowerCase().trim()}`;
+
+// Alternates the two lists (Apple Music first) and drops duplicates, keeping the playable copy.
+function mergeTracks(primary, secondary) {
+  const mixed = [];
+  for (let i = 0; i < Math.max(primary.length, secondary.length); i += 1) {
+    if (primary[i]) mixed.push(primary[i]);
+    if (secondary[i]) mixed.push(secondary[i]);
+  }
+
+  const out = [];
+  const byId = new Set();
+  const byKey = new Map();
+
+  for (const track of mixed) {
+    if (byId.has(track.id)) continue;
+    const key = trackKey(track);
+    const at = byKey.get(key);
+
+    if (at !== undefined) {
+      if (!isTrackPlayable(out[at]) && isTrackPlayable(track)) {
+        byId.add(track.id);
+        out[at] = track;
+      }
+      continue;
+    }
+
+    byId.add(track.id);
+    byKey.set(key, out.length);
+    out.push(track);
+  }
+
+  return out;
+}
+
 export function getPlaybackVerification(track, actualDuration) {
   const seconds = Math.max(
     0,
@@ -488,32 +605,47 @@ async function fetchSearchItems(query, options = {}) {
     async (signal) => {
       const params = new URLSearchParams({ q: query });
 
-      const data = await kingXMusicApi(
-        `/v1/search?${params.toString()}`,
-        {
+      const [backend, apple] = await Promise.allSettled([
+        kingXMusicApi(`/v1/search?${params.toString()}`, {
           timeoutMs: options.timeoutMs,
           signal,
+        }),
+        searchItunes(query, { signal }),
+      ]);
+
+      let backendTracks = [];
+      let backendError =
+        backend.status === 'rejected' ? backend.reason : null;
+
+      if (backend.status === 'fulfilled') {
+        try {
+          const data = backend.value;
+          const seen = new Set();
+
+          for (const raw of readResults(data)) {
+            const track = normalizeTrack({
+              ...raw,
+              provider: raw.provider ?? raw.source ?? data?.provider,
+            });
+
+            if (!track || seen.has(track.id)) continue;
+            seen.add(track.id);
+            backendTracks.push(track);
+          }
+        } catch (error) {
+          backendError = error;
         }
-      );
-
-      const seen = new Set();
-      const tracks = [];
-
-      for (const raw of readResults(data)) {
-        const track = normalizeTrack({
-          ...raw,
-          provider: raw.provider ?? raw.source ?? data?.provider,
-        });
-
-        if (!track || seen.has(track.id)) continue;
-
-        seen.add(track.id);
-
-        tracks.push({
-          ...track,
-          searchQuery: query,
-        });
       }
+
+      const appleTracks = apple.status === 'fulfilled' ? apple.value : [];
+
+      // Only fail when neither source gave anything
+      if (backendError && !appleTracks.length) throw backendError;
+
+      const tracks = mergeTracks(appleTracks, backendTracks).map((track) => ({
+        ...track,
+        searchQuery: query,
+      }));
 
       tracks.sort(
         (a, b) =>
@@ -611,6 +743,23 @@ export async function getTrackPreview(
     inFlightPreviews,
     key,
     async (signal) => {
+      if (trackId.startsWith('itunes_')) {
+        const direct = await lookupItunes(trackId, {
+          signal,
+          timeoutMs: options.timeoutMs,
+        }).catch(() => null);
+
+        if (direct && isTrackPlayable(direct)) {
+          const known = (
+            getCachedSearch(queryText, { allowStale: true }) || []
+          ).find((track) => track.id === trackId);
+
+          const merged = { ...(known || {}), ...direct };
+          cacheSet(previewCache, key, merged, MAX_PREVIEW_CACHE_ENTRIES);
+          return merged;
+        }
+      }
+
       const data = await kingXMusicApi(
         `/v1/stream/${encodeURIComponent(trackId)}`,
         {
