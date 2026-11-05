@@ -16,6 +16,7 @@ const fill = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 };
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
 const dist = (a, b) => Math.hypot(a.pageX - b.pageX, a.pageY - b.pageY);
 const angle = (a, b) => Math.atan2(b.pageY - a.pageY, b.pageX - a.pageX);
+const wrap = (a) => Math.atan2(Math.sin(a), Math.cos(a)); // keeps a turn between -180° and 180°
 
 // One finger = move, two fingers = pinch to zoom (and twist if rotate is on). Tap = onTap.
 function useTransform({ min = 0.5, max = 8, rotate = false, onTap } = {}) {
@@ -34,13 +35,17 @@ function useTransform({ min = 0.5, max = 8, rotate = false, onTap } = {}) {
       if (Math.abs(gs.dx) + Math.abs(gs.dy) > 6 || p.length > 1) g.moved = true;
       if (p.length !== g.n) { // finger added/removed: start from where we are now
         g.n = p.length; g.base = { ...t }; g.ox = gs.dx; g.oy = gs.dy;
-        if (p.length > 1) { g.d0 = dist(p[0], p[1]); g.a0 = angle(p[0], p[1]); }
+        if (p.length > 1) { g.d0 = dist(p[0], p[1]); g.aPrev = angle(p[0], p[1]); g.rot = 0; }
       }
       t.x = g.base.x + gs.dx - g.ox;
       t.y = g.base.y + gs.dy - g.oy;
       if (p.length > 1) {
         t.s = clamp(g.base.s * dist(p[0], p[1]) / g.d0, min, max);
-        if (rotate) t.r = g.base.r + angle(p[0], p[1]) - g.a0;
+        if (rotate) { // add up small turns so the picture follows the fingers, even past 180°
+          const a = angle(p[0], p[1]);
+          g.rot += wrap(a - g.aPrev); g.aPrev = a;
+          t.r = g.base.r + g.rot;
+        }
       }
       v.x.setValue(t.x); v.y.setValue(t.y); v.s.setValue(t.s); v.r.setValue(t.r);
     },
@@ -69,7 +74,7 @@ export default function StoryEditor({ asset, ratio = 9 / 16, allowMusic = false,
   const fh = Math.min(height - 250, (width - 24) / ratio), fw = fh * ratio;
   const frame = useRef(null);
   const reg = useRef({}).current;
-  const img = useTransform({ min: 0.3 });
+  const img = useTransform({ min: 0.3, rotate: true });
   const [size, setSize] = useState({ w: asset.width || 0, h: asset.height || 0 });
   const [filter, setFilter] = useState(0);
   const [texts, setTexts] = useState([]);
@@ -103,7 +108,7 @@ export default function StoryEditor({ asset, ratio = 9 / 16, allowMusic = false,
       if (vid) {
         const m = img.get();
         const t = texts.map((it) => { const p = reg[it.id](); return { text: it.text, color: it.color, bg: it.bg, bold: it.bold, sz: it.size / fw, x: p.x / fw, y: p.y / fh, s: p.s, r: p.r }; });
-        onDone({ ...asset, ...(music ? { music } : {}), edit: { a: ratio, s: m.s, x: m.x / fw, y: m.y / fh, f: filter, t, ...(size.w ? { bw: (size.w * k) / fw, bh: (size.h * k) / fh } : {}) } });
+        onDone({ ...asset, ...(music ? { music } : {}), edit: { a: ratio, s: m.s, r: m.r, x: m.x / fw, y: m.y / fh, f: filter, t, ...(size.w ? { bw: (size.w * k) / fw, bh: (size.h * k) / fh } : {}) } });
       } else {
         const uri = await captureRef(frame, { format: 'jpg', quality: 0.92, result: 'tmpfile', width: 1080, height: Math.round(1080 / ratio) });
         onDone({ uri, type: 'image', mimeType: 'image/jpeg', width: 1080, height: Math.round(1080 / ratio), ...(music ? { music } : {}) });
@@ -137,7 +142,7 @@ export default function StoryEditor({ asset, ratio = 9 / 16, allowMusic = false,
               <Text style={{ flex: 1, color: '#fff', fontSize: 12 }} numberOfLines={1}>{music.name || music.title} · {music.artist}</Text>
               <Ionicons name="close" size={14} color="#fff" />
             </Pressable>
-          ) : <Text style={{ color: '#aaa', fontSize: 12 }}>Pinch to zoom · drag to move</Text>}
+          ) : <Text style={{ color: '#aaa', fontSize: 12 }}>Pinch to zoom · twist to rotate · drag to move</Text>}
           <View style={{ flexDirection: 'row', gap: 8 }}>
             {allowMusic && <Pressable onPress={() => setPicking(true)} hitSlop={10} style={tool(!!music)}><Ionicons name="musical-notes" size={18} color={music ? '#000' : '#fff'} /></Pressable>}
             <Pressable onPress={newText} hitSlop={10} style={tool(false)}><Text style={{ color: '#fff', fontWeight: '700', fontSize: 16 }}>Aa</Text></Pressable>
