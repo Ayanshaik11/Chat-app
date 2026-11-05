@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, Animated, AppState, FlatList, Image, KeyboardAvoidingView, Modal, PanResponder,
-  Platform, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
+  Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
+import { SafeAreaView } from 'react-native-safe-area-context'; // keeps the header (and the 3 dots) below the phone's status bar
 import * as Clipboard from 'expo-clipboard';
 import * as Haptics from 'expo-haptics';
 import { FontAwesome } from '@expo/vector-icons';
@@ -708,7 +709,7 @@ export default function ChatScreen({ route, navigation }) {
   /* ---------- screen ---------- */
 
   return (
-    <SafeAreaView style={[styles.safe, { backgroundColor: theme.backgroundColor }]}>
+    <SafeAreaView edges={['top']} style={[styles.safe, { backgroundColor: theme.backgroundColor }]}>
       <KeyboardAvoidingView style={[styles.safe, { backgroundColor: theme.backgroundColor }]} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
 
         {/* wallpaper layer, behind header, messages and composer (never blocks touches) */}
