@@ -18,7 +18,7 @@ import MusicPicker from '../components/MusicPicker';
 import Btn from '../components/Btn';
 import T from '../components/T';
 
-// mode = 'post' -> up to 10 photos (swipeable) | 'story' -> photo or video | 'reel' -> video. All can open the editor.
+// mode = 'post' -> up to 10 photos (swipeable) | 'story' -> photo or video | 'reel' -> photo or video. All can open the editor.
 const TITLES = { post: 'New post', story: 'New story', reel: 'New reel' };
 const MAX_PHOTOS = 10;
 
@@ -119,7 +119,7 @@ export default function CreateScreen({ route, navigation }) {
             ) : (
               <View style={{ alignItems: 'center', gap: 8 }}>
                 <Ionicons name={isReel ? 'videocam-outline' : 'images-outline'} size={40} color={colors.primary} />
-                <T weight="medium">{isReel ? 'Choose a video' : isStory ? 'Choose a photo or video' : 'Choose photos'}</T>
+                <T weight="medium">{isReel ? 'Choose a photo or video' : isStory ? 'Choose a photo or video' : 'Choose photos'}</T>
                 {isPost ? <T size={12} color="subtext">Up to {MAX_PHOTOS} photos</T> : null}
               </View>
             )}
@@ -181,7 +181,7 @@ export default function CreateScreen({ route, navigation }) {
             />
           ) : null}
 
-          {isReel ? hint('Videos can be up to 30 seconds.') : null}
+          {isReel ? hint('Photos or videos. Videos can be up to 30 seconds.') : null}
 
           <Btn style={{ alignSelf: 'stretch' }} disabled={!ready} loading={uploading} label={isStory ? 'Share to story' : isReel ? 'Share reel' : 'Share post'} onPress={share} />
 
