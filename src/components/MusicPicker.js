@@ -50,6 +50,13 @@ const CATEGORIES = [
   { id: 'romantic', label: '❤️ Romantic', query: 'romantic songs' },
 ];
 
+const PROVIDER_NAMES = {
+  itunes: 'Apple Music',
+  jiosaavn: 'JioSaavn',
+  soundcloud: 'SoundCloud',
+  youtube: 'YouTube',
+};
+
 const fill = {
   position: 'absolute',
   top: 0,
@@ -204,7 +211,8 @@ export default function MusicPicker({ initial, onPick, onClose }) {
   const trackSourceLabel = (track) => {
     const source = String(track?.source || '').trim();
     const provider = source
-      ? source.charAt(0).toUpperCase() + source.slice(1)
+      ? PROVIDER_NAMES[source.toLowerCase()] ||
+        source.charAt(0).toUpperCase() + source.slice(1)
       : 'Music';
 
     const restriction =
