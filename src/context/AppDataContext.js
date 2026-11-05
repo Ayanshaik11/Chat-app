@@ -1,8 +1,8 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { collection, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { chunk } from '../utils/helpers';
-import { unreadFor } from '../services/chat';
+import { chatIdFor, unreadFor } from '../services/chat';
 import { useAuth } from './AuthContext';
 import { useSettings } from './SettingsContext';
 
@@ -23,6 +23,7 @@ export function AppDataProvider({ children }) {
   const [outgoing, setOutgoing] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [chats, setChats] = useState({});
+  const [chatsFallback, setChatsFallback] = useState(false); // true when the all-chats query is refused by Firestore
 
   useEffect(() => {
     if (!meId) {
@@ -94,7 +95,11 @@ export function AppDataProvider({ children }) {
           }
           firstC = false;
         },
-        noop
+        (err) => {
+          // Before, this error was ignored, so the chat list never got live data (no unread, no order).
+          console.warn('chats listener failed:', err?.code || err?.message || err);
+          setChatsFallback(true);
+        }
       )
     );
     return () => unsubs.forEach((u) => u());
@@ -140,6 +145,28 @@ export function AppDataProvider({ children }) {
     },
     [friendIds, incoming, outgoing]
   );
+
+  // Fallback: if the all-chats query is refused, listen to each friend's chat document one by one
+  // (single-document reads are allowed by the rules). Chats with non-friends need the rules fix.
+  const chatFriendKey = friendIds.slice().sort().join(',');
+  useEffect(() => {
+    if (!meId || !chatsFallback || !chatFriendKey) return undefined;
+    const unsubs = chatFriendKey.split(',').map((fid) => {
+      const id = chatIdFor(meId, fid);
+      return onSnapshot(
+        doc(db, 'chats', id),
+        (s) =>
+          setChats((prev) => {
+            const next = { ...prev };
+            if (s.exists()) next[id] = { id, ...s.data(), _pending: s.metadata.hasPendingWrites };
+            else delete next[id];
+            return next;
+          }),
+        noop
+      );
+    });
+    return () => unsubs.forEach((u) => u());
+  }, [meId, chatsFallback, chatFriendKey]);
 
   const unreadNotifs = notifications.filter((n) => !n.read).length;
   const unreadMessages = Object.values(chats).reduce((sum, c) => sum + unreadFor(c, meId), 0);
