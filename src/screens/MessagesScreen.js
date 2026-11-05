@@ -9,6 +9,7 @@ import { getUsersByIds } from '../services/users';
 import { isOnline, timeAgo, toMillis } from '../utils/helpers';
 import Screen from '../components/Screen';
 import Avatar from '../components/Avatar';
+import KingXAIAvatar from '../components/KingXAIAvatar';
 import EmptyState from '../components/EmptyState';
 import T from '../components/T';
 import { usePeerTyping } from '../utils/typing';
@@ -232,6 +233,29 @@ export default function MessagesScreen({ navigation }) {
       </View>
 
       <SectionList
+        ListHeaderComponent={
+          !text.trim() || 'king x ai'.includes(text.trim().toLowerCase()) ? (
+            <Pressable
+              onPress={() => navigation.navigate('KingXAI')}
+              style={({ pressed }) => ({
+                flexDirection: 'row', alignItems: 'center', paddingHorizontal: 16, paddingVertical: 10, gap: 12,
+                backgroundColor: pressed ? colors.inputBg : 'transparent',
+              })}
+            >
+              <KingXAIAvatar size={54} />
+              <View style={{ flex: 1, minWidth: 0 }}>
+                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                  <T weight="semibold" numberOfLines={1}>King X AI</T>
+                  <View style={{ backgroundColor: colors.primary, borderRadius: 6, paddingHorizontal: 6, paddingVertical: 1 }}>
+                    <T size={9} weight="bold" color="#fff">AI</T>
+                  </View>
+                </View>
+                <T size={13} color="subtext" numberOfLines={1}>Ask me anything - captions, replies, code and more</T>
+              </View>
+              <Ionicons name="sparkles" size={18} color={colors.primary} />
+            </Pressable>
+          ) : null
+        }
         sections={sections}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
