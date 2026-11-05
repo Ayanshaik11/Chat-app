@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Pressable, Text, View } from 'react-native';
+import { Animated, Image, Pressable, Text, View } from 'react-native';
 import { Video, ResizeMode } from 'expo-av';
 import { Ionicons } from '@expo/vector-icons';
 import Avatar from './Avatar';
@@ -7,6 +7,7 @@ import EditedVideo from './EditedVideo';
 import { useMusic } from '../utils/useMusic';
 
 const DOUBLE_TAP_MS = 280;
+const IMAGE_URL = /\.(jpe?g|png|webp|gif|heic)(\?|#|$)|\/image\/upload\//i;
 const fill = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 };
 const shadow = { textShadowColor: 'rgba(0,0,0,0.8)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 };
 
@@ -30,6 +31,7 @@ const RailButton = ({ icon, color = '#fff', label, onPress }) => (
  */
 export default function FriendReelItem({ item, width, height, isActive, muted, meId, author, commentCount = 0, onToggleMute, onLike, onComments, onShare, onDelete }) {
   const uri = item?.videoURL || item?.videoUrl || item?.url || item?.video || item?.mediaUrl;
+  const isPhoto = item?.mediaType ? item.mediaType === 'image' : !!uri && IMAGE_URL.test(uri) && !/\/video\/upload\//i.test(uri);
   const likes = Array.isArray(item?.likes) ? item.likes : [];
   const liked = !!meId && likes.includes(meId);
   const isMine = !!meId && item?.authorId === meId;
@@ -80,7 +82,9 @@ export default function FriendReelItem({ item, width, height, isActive, muted, m
   return (
     <View style={{ width, height, backgroundColor: '#000' }}>
       {uri ? (
-        item.edit
+        isPhoto
+          ? <Image source={{ uri }} style={fill} resizeMode="cover" />
+          : item.edit
           ? <View style={fill}><EditedVideo uri={uri} edit={item.edit} width={width} height={height} {...playing} /></View>
           : <Video source={{ uri }} style={fill} resizeMode={ResizeMode.COVER} {...playing} />
       ) : null}
