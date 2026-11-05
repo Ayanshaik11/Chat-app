@@ -12,12 +12,6 @@ const MODELS = [
   'gemini-flash-lite-latest',
 ].filter((m, i, list) => m && list.indexOf(m) === i);
 
-// Google is busy / overloaded: wait a moment, then try the next model
-const overloaded = (status) => [429, 500, 503, 504].includes(status);
-
-const modelGone = (error) =>
-  [400, 404].includes(error.status) &&
-  /no longer available|not found|not supported|deprecated|retired|unknown model/i.test(error.message || '');
 const DOWNLOAD_URL =
   process.env.KING_X_DOWNLOAD_URL || 'https://download-kingx.vercel.app/';
 
@@ -89,16 +83,18 @@ async function generateReply(history, message, { userName } = {}) {
   });
 
   let data;
-  let lastError;
+  const trail = []; // e.g. ['gemini-3.5-flash-lite:429', ...] - shows what happened, never a raw Google message
+  let sawBusy = false;
+  let sawAuth = false;
 
-  // The whole request must finish well inside the 60s serverless limit (vercel.json),
-  // so every Gemini call has its own time limit and a busy model is skipped quickly.
+  // The whole request must finish inside the 60s serverless limit (vercel.json),
+  // so every Gemini call has its own time limit and any failing model just moves on to the next one.
   const startedAt = Date.now();
   const BUDGET_MS = 50000;
 
   for (const model of MODELS) {
     const left = BUDGET_MS - (Date.now() - startedAt);
-    if (left < 4000) break;
+    if (left < 4000) { trail.push('out-of-time'); break; }
 
     try {
       const response = await fetch(
@@ -118,26 +114,30 @@ async function generateReply(history, message, { userName } = {}) {
         break;
       }
 
-      lastError = new Error(json.error?.message || 'Gemini request failed');
-      lastError.status = response.status;
-
-      if (modelGone(lastError)) continue; // retired model -> next
-      if (!overloaded(response.status)) throw lastError; // a real problem (key, bad request...) - do not hide it
-      // busy model -> straight to the next one
+      const message = String(json.error?.message || 'Gemini request failed');
+      console.error(`Gemini ${model} -> ${response.status}: ${message.slice(0, 200)}`); // see Vercel > Logs
+      trail.push(`${model}:${response.status}`);
+      if ([429, 500, 503, 504].includes(response.status)) sawBusy = true;
+      if (response.status === 401 || response.status === 403 || /api key/i.test(message)) sawAuth = true;
     } catch (error) {
-      if (error.status) throw error;
-      // a call that took too long or dropped: treat like "busy" and try the next model
-      lastError = Object.assign(new Error('Gemini did not answer in time'), { status: 503 });
+      console.error(`Gemini ${model} -> no answer in time (${error?.name || 'error'})`);
+      trail.push(`${model}:timeout`);
+      sawBusy = true;
     }
   }
 
-  if (!data && lastError && (overloaded(lastError.status) || modelGone(lastError))) {
-    console.error('Gemini unavailable:', lastError.status, lastError.message); // the real reason stays in the Vercel logs
-    lastError.message = 'King X AI is very busy right now. Please try again in a few seconds.';
-    lastError.status = 503;
+  if (!data) {
+    const error = new Error(
+      sawBusy
+        ? 'King X AI is very busy right now. Please try again in a few seconds.'
+        : sawAuth
+          ? 'King X AI is not set up correctly yet. Please tell the King X team.'
+          : 'King X AI is not available right now. Please try again later.'
+    );
+    error.status = sawAuth && !sawBusy ? 500 : 503;
+    error.trail = trail;
+    throw error;
   }
-
-  if (!data) throw lastError || new Error('Gemini request failed');
 
   const reply = data.candidates?.[0]?.content?.parts
     ?.map((part) => part.text || '')
@@ -157,4 +157,6 @@ async function generateReply(history, message, { userName } = {}) {
   return reply;
 }
 
-module.exports = { generateReply, buildSystemPrompt, cleanHistory };
+const VERSION = '2026-11-05-d';
+
+module.exports = { generateReply, buildSystemPrompt, cleanHistory, MODELS, VERSION };
