@@ -15,7 +15,7 @@ import Screen from '../components/Screen';
 import T from '../components/T';
 import KingXAIAvatar from '../components/KingXAIAvatar';
 import KingXAIThinking from '../components/KingXAIThinking';
-import { CopyButton, Markdown, TypedMarkdown } from '../components/KingXAIMarkdown';
+import { Markdown, TypedMarkdown } from '../components/KingXAIMarkdown';
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 let counter = 0;
@@ -53,9 +53,6 @@ const Message = React.memo(function Message({ item, typing, skipKey, onTypingDon
         ) : (
           <>
             <Markdown text={item.text} />
-            <View style={{ flexDirection: 'row', marginTop: 6 }}>
-              <CopyButton text={item.text} color={colors.subtext} />
-            </View>
           </>
         )}
       </View>
