@@ -27,7 +27,7 @@ export const textBox = { position: 'absolute', left: '5%', right: '5%', top: '40
 const fill = { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 };
 
 // Plays a video with the author's edits (zoom, move, effect, text) applied live.
-// `edit` = { a: frame ratio, s: zoom, x/y: move (fraction of the frame), f: effect, t: [text...] }.
+// `edit` = { a: frame ratio, s: zoom, r: rotation (radians), x/y: move (fraction of the frame), f: effect, t: [text...] }.
 // Extra props (shouldPlay, isMuted, onPlaybackStatusUpdate...) go straight to the Video.
 export default function EditedVideo({ uri, edit = {}, width, height, ...video }) {
   const ratio = edit.a || 9 / 16;
@@ -42,7 +42,7 @@ export default function EditedVideo({ uri, edit = {}, width, height, ...video })
         <Video
           source={{ uri }}
           resizeMode={ResizeMode.CONTAIN}
-          style={[box, { transform: [{ translateX: (edit.x || 0) * fw }, { translateY: (edit.y || 0) * fh }, { scale: edit.s || 1 }] }]}
+          style={[box, { transform: [{ translateX: (edit.x || 0) * fw }, { translateY: (edit.y || 0) * fh }, { rotate: `${edit.r || 0}rad` }, { scale: edit.s || 1 }] }]}
           {...video}
         />
         {f.c && <LinearGradient colors={f.c} pointerEvents="none" style={fill} />}
