@@ -6,8 +6,13 @@ const MODELS = [
   process.env.GEMINI_MODEL,
   'gemini-3.8-flash',
   'gemini-flash-latest',
+  'gemini-flash-lite-latest',
   'gemini-2.5-flash',
 ].filter((m, i, list) => m && list.indexOf(m) === i);
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+// Google is busy / overloaded: wait a moment, then try the next model
+const overloaded = (status) => [429, 500, 503, 504].includes(status);
 
 const modelGone = (error) =>
   [400, 404].includes(error.status) &&
@@ -85,26 +90,40 @@ async function generateReply(history, message, { userName } = {}) {
   let data;
   let lastError;
 
-  for (const model of MODELS) {
-    const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
-        body,
+  const startedAt = Date.now();
+
+  models: for (const model of MODELS) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      if (Date.now() - startedAt > 40000) break models; // stay inside the serverless time limit
+
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+          body,
+        }
+      );
+
+      const json = await response.json().catch(() => ({}));
+
+      if (response.ok) {
+        data = json;
+        break models;
       }
-    );
 
-    const json = await response.json().catch(() => ({}));
+      lastError = new Error(json.error?.message || 'Gemini request failed');
+      lastError.status = response.status;
 
-    if (response.ok) {
-      data = json;
-      break;
+      if (modelGone(lastError)) break; // this model is retired -> next model
+      if (!overloaded(response.status)) throw lastError; // a real problem (key, bad request...) - do not hide it
+      if (attempt === 0) await sleep(900); // busy: one quick retry, then the next model
     }
+  }
 
-    lastError = new Error(json.error?.message || 'Gemini request failed');
-    lastError.status = response.status;
-    if (!modelGone(lastError)) throw lastError; // a real problem (key, quota...) - do not hide it
+  if (!data && lastError && overloaded(lastError.status)) {
+    lastError.message = 'King X AI is very busy right now. Please try again in a few seconds.';
+    lastError.status = 503;
   }
 
   if (!data) throw lastError || new Error('Gemini request failed');
