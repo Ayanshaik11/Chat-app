@@ -10,7 +10,6 @@ const MODELS = [
   'gemini-2.5-flash',
 ].filter((m, i, list) => m && list.indexOf(m) === i);
 
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // Google is busy / overloaded: wait a moment, then try the next model
 const overloaded = (status) => [429, 500, 503, 504].includes(status);
 
@@ -90,18 +89,23 @@ async function generateReply(history, message, { userName } = {}) {
   let data;
   let lastError;
 
+  // The whole request must finish well inside the 60s serverless limit (vercel.json),
+  // so every Gemini call has its own time limit and a busy model is skipped quickly.
   const startedAt = Date.now();
+  const BUDGET_MS = 50000;
 
-  models: for (const model of MODELS) {
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      if (Date.now() - startedAt > 40000) break models; // stay inside the serverless time limit
+  for (const model of MODELS) {
+    const left = BUDGET_MS - (Date.now() - startedAt);
+    if (left < 4000) break;
 
+    try {
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
           body,
+          signal: AbortSignal.timeout(Math.min(22000, left - 2000)),
         }
       );
 
@@ -109,15 +113,19 @@ async function generateReply(history, message, { userName } = {}) {
 
       if (response.ok) {
         data = json;
-        break models;
+        break;
       }
 
       lastError = new Error(json.error?.message || 'Gemini request failed');
       lastError.status = response.status;
 
-      if (modelGone(lastError)) break; // this model is retired -> next model
+      if (modelGone(lastError)) continue; // retired model -> next
       if (!overloaded(response.status)) throw lastError; // a real problem (key, bad request...) - do not hide it
-      if (attempt === 0) await sleep(900); // busy: one quick retry, then the next model
+      // busy model -> straight to the next one
+    } catch (error) {
+      if (error.status) throw error;
+      // a call that took too long or dropped: treat like "busy" and try the next model
+      lastError = Object.assign(new Error('Gemini did not answer in time'), { status: 503 });
     }
   }
 
