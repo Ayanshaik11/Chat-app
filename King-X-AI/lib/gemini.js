@@ -1,9 +1,5 @@
 'use strict';
 
-// Tried in this order. If Google retires a model ("no longer available"), the next one is used.
-// You can also force one without changing code: set GEMINI_MODEL in Vercel.
-// Free tier (per Google project, shared by ALL users): the Flash-Lite models allow about 500 requests a day,
-// gemini-3.8-flash only about 20 - so Flash-Lite goes first and 3.8 Flash is the backup.
 const MODELS = [
   process.env.GEMINI_MODEL,
   'gemini-3.5-flash-lite',
@@ -39,7 +35,6 @@ function buildSystemPrompt(userName) {
   ].join('\n');
 }
 
-// Gemini wants the conversation to start with the user and alternate roles.
 function cleanHistory(items) {
   const out = [];
 
@@ -61,7 +56,11 @@ function cleanHistory(items) {
   return out;
 }
 
-async function generateReply(history, message, { userName } = {}) {
+async function generateReply(
+  history,
+  message,
+  { userName, timeoutMs = 50000 } = {}
+) {
   const apiKey = process.env.GEMINI_API_KEY;
 
   if (!apiKey) {
@@ -83,25 +82,37 @@ async function generateReply(history, message, { userName } = {}) {
   });
 
   let data;
-  const trail = []; // e.g. ['gemini-3.5-flash-lite:429', ...] - shows what happened, never a raw Google message
+  const trail = [];
   let sawBusy = false;
   let sawAuth = false;
 
-  // The whole request must finish inside the 60s serverless limit (vercel.json),
-  // so every Gemini call has its own time limit and any failing model just moves on to the next one.
+  // Keep Gemini inside the shared serverless execution budget.
   const startedAt = Date.now();
-  const BUDGET_MS = 50000;
+  const requestedBudget = Number(timeoutMs);
+  const BUDGET_MS = Math.min(
+    50000,
+    Number.isFinite(requestedBudget) && requestedBudget > 0
+      ? requestedBudget
+      : 50000
+  );
 
   for (const model of MODELS) {
     const left = BUDGET_MS - (Date.now() - startedAt);
-    if (left < 4000) { trail.push('out-of-time'); break; }
+
+    if (left < 4000) {
+      trail.push('out-of-time');
+      break;
+    }
 
     try {
       const response = await fetch(
         `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`,
         {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey,
+          },
           body,
           signal: AbortSignal.timeout(Math.min(22000, left - 2000)),
         }
@@ -114,13 +125,32 @@ async function generateReply(history, message, { userName } = {}) {
         break;
       }
 
-      const message = String(json.error?.message || 'Gemini request failed');
-      console.error(`Gemini ${model} -> ${response.status}: ${message.slice(0, 200)}`); // see Vercel > Logs
+      const errorMessage = String(
+        json.error?.message || 'Gemini request failed'
+      );
+
+      console.error(
+        `Gemini ${model} -> ${response.status}: ${errorMessage.slice(0, 200)}`
+      );
+
       trail.push(`${model}:${response.status}`);
-      if ([429, 500, 503, 504].includes(response.status)) sawBusy = true;
-      if (response.status === 401 || response.status === 403 || /api key/i.test(message)) sawAuth = true;
+
+      if ([429, 500, 503, 504].includes(response.status)) {
+        sawBusy = true;
+      }
+
+      if (
+        response.status === 401 ||
+        response.status === 403 ||
+        /api key/i.test(errorMessage)
+      ) {
+        sawAuth = true;
+      }
     } catch (error) {
-      console.error(`Gemini ${model} -> no answer in time (${error?.name || 'error'})`);
+      console.error(
+        `Gemini ${model} -> no answer in time (${error?.name || 'error'})`
+      );
+
       trail.push(`${model}:timeout`);
       sawBusy = true;
     }
@@ -134,6 +164,7 @@ async function generateReply(history, message, { userName } = {}) {
           ? 'King X AI is not set up correctly yet. Please tell the King X team.'
           : 'King X AI is not available right now. Please try again later.'
     );
+
     error.status = sawAuth && !sawBusy ? 500 : 503;
     error.trail = trail;
     throw error;
@@ -150,6 +181,7 @@ async function generateReply(history, message, { userName } = {}) {
         ? 'I can\'t help with that one. Try asking in a different way.'
         : 'King X AI could not come up with an answer. Please try again.'
     );
+
     error.status = 422;
     throw error;
   }
@@ -159,4 +191,10 @@ async function generateReply(history, message, { userName } = {}) {
 
 const VERSION = '2026-11-05-d';
 
-module.exports = { generateReply, buildSystemPrompt, cleanHistory, MODELS, VERSION };
+module.exports = {
+  generateReply,
+  buildSystemPrompt,
+  cleanHistory,
+  MODELS,
+  VERSION,
+};

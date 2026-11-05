@@ -2,7 +2,8 @@
 
 const admin = require('firebase-admin');
 const { getFirebaseApp, verifyUser } = require('../lib/firebase');
-const { generateReply, MODELS, VERSION } = require('../lib/gemini');
+const { MODELS, VERSION } = require('../lib/gemini');
+const { generateReply } = require('../lib/ai');
 
 const ID_PATTERN = /^[a-zA-Z0-9_-]{1,100}$/;
 
