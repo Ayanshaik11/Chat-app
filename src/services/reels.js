@@ -1,10 +1,11 @@
 import { arrayRemove, arrayUnion, collection, deleteDoc, doc, getDocs, query, serverTimestamp, setDoc, updateDoc, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { deleteFile, extOf, mimeOf, uploadFile } from './media';
+import { deleteFile, extOf, isVideo, mimeOf, uploadFile } from './media';
 import { chunk, toMillis } from '../utils/helpers';
 
 const byNewest = (a, b) => toMillis(b.createdAt) - toMillis(a.createdAt);
 
+// A reel can be a video or a photo (mediaType). The file link stays in `videoURL` so older app versions still find it.
 // asset.edit = zoom / effect / text, applied live when the reel is played
 export async function createReel(me, asset, caption, onProgress) {
   const id = doc(collection(db, 'reels')).id;
@@ -14,6 +15,7 @@ export async function createReel(me, asset, caption, onProgress) {
   await setDoc(doc(db, 'reels', id), {
     authorId: me.id,
     videoURL,
+    mediaType: isVideo(asset) ? 'video' : 'image',
     ...(asset.edit ? { edit: asset.edit } : {}),
     ...(asset.music ? { music: asset.music } : {}),
     storagePath,
