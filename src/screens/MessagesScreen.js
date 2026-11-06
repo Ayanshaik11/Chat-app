@@ -178,15 +178,9 @@ export default function MessagesScreen({ navigation }) {
           online={isOnline(profile)}
         />
         <View style={{ flex: 1, minWidth: 0 }}>
-          <Pressable
-            onPress={() => navigation.navigate('UserProfile', { userId: id })}
-            hitSlop={6}
-            style={{ alignSelf: 'flex-start', maxWidth: '100%' }}
-          >
-            <T weight={unread ? 'bold' : 'semibold'} numberOfLines={1}>
-              {profile?.name || profile?.displayName || 'User'}
-            </T>
-          </Pressable>
+          <T weight={unread ? 'bold' : 'semibold'} numberOfLines={1}>
+            {profile?.name || profile?.displayName || 'User'}
+          </T>
           <PreviewText typingValue={chat?.typing?.[id]} preview={preview} unread={unread} />
         </View>
         <View style={{ alignItems: 'flex-end', gap: 6 }}>
