@@ -747,6 +747,34 @@ jobs:
           echo "=========================================="
 
 
+          AAPT=$(
+              find "$ANDROID_HOME/build-tools" \
+                  -name aapt \
+                  -type f \
+                  | sort -V \
+                  | tail -1
+          )
+
+          if [ -z "$AAPT" ]; then
+              echo "ERROR: aapt not found."
+              exit 1
+          fi
+
+          ACTUAL_PACKAGE=$(
+              "$AAPT" dump badging "$APK" \
+                  | sed -n "s/^package: name='\\([^']*\\)'.*/\\1/p" \
+                  | head -1
+          )
+
+          echo "Actual APK package: $ACTUAL_PACKAGE"
+
+          if [ "$ACTUAL_PACKAGE" != "com.chat.app" ]; then
+              echo "ERROR: APK package ID is not com.chat.app."
+              exit 1
+          fi
+
+          echo "APK package verification: PASS"
+
           APKSIGNER=$(
             find "$ANDROID_HOME/build-tools" \
               -name apksigner \
