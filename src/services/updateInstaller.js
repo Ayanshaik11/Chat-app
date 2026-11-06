@@ -3,7 +3,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as FileSystem from 'expo-file-system';
 import * as IntentLauncher from 'expo-intent-launcher';
 
-const PACKAGE_NAME = 'com.chat.app';
+const PACKAGE_NAME = 'com.aiyan.kingx';
 const ASKED_KEY = 'king_x_install_permission_asked';
 
 const STALL_TIMEOUT_MS = 30 * 1000; // no progress for 30s = the connection is stuck

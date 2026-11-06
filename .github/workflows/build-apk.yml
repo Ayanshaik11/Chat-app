@@ -158,13 +158,13 @@ jobs:
                   package_name
               )
 
-              if package_name == "com.chat.app":
+              if package_name == "com.aiyan.kingx":
                   found = True
 
           if not found:
               raise SystemExit(
                   "ERROR: Firebase JSON does not contain "
-                  "package com.chat.app"
+                  "package com.aiyan.kingx"
               )
 
           print(

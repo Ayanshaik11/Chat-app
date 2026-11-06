@@ -3,7 +3,7 @@
     "name": "King X",
     "slug": "chat-app",
     "scheme": "chatapp",
-    "version": "1.1.10",
+    "version": "1.1.11",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -20,10 +20,11 @@
         "NSPhotoLibraryUsageDescription": "Chat App needs your photos so you can share posts, stories and set a profile picture.",
         "NSCameraUsageDescription": "Chat App needs the camera so you can take photos for posts and stories.",
         "NSMicrophoneUsageDescription": "Chat App needs the microphone so you can send voice messages."
-      }
+      },
+      "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
-      "package": "com.chat.app",
+      "package": "com.aiyan.kingx",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0D0D0D"
@@ -37,13 +38,13 @@
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "googleServicesFile": "./google-services.json",
-      "versionCode": 10110
+      "versionCode": 10111
     },
     "plugins": [
       [
         "@react-native-google-signin/google-signin",
         {
-          "iosUrlScheme": "com.googleusercontent.apps.REPLACE_WITH_IOS_CLIENT_ID"
+          "iosUrlScheme": "com.googleusercontent.apps.736943642281-4vbhfhi4tkmp9qldgdet9jc9luqfht2f"
         }
       ],
       [
