@@ -1,8 +1,12 @@
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, getDocFromServer } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { CURRENT_VERSION } from '../config/appVersion';
 
-const parts = (v) => String(v || '0').split('.').map((n) => parseInt(n, 10) || 0);
+const parts = (v) =>
+  String(v || '0')
+    .replace(/^v/i, '')
+    .split('.')
+    .map((n) => parseInt(n, 10) || 0);
 
 export function isNewer(a, b) {
   const pa = parts(a);
@@ -17,25 +21,54 @@ export function isNewer(a, b) {
   return false;
 }
 
-export async function fetchUpdateInfo() {
+// Reads config/appVersion straight from the server (never a stale cached copy).
+// Throws when the network is not ready, so the caller can retry.
+async function readAppVersionDoc() {
   try {
-    const snap = await getDoc(doc(db, 'config', 'appVersion'));
+    return await getDocFromServer(doc(db, 'config', 'appVersion'));
+  } catch (e) {
+    // offline right now: fall back to whatever is cached, but only if there is something
+    const cached = await getDoc(doc(db, 'config', 'appVersion'));
+    if (cached.exists()) return cached;
+    throw e;
+  }
+}
 
-    if (!snap.exists()) return null;
+// Returns { checked, info }
+//  - checked=false : could not reach Firestore (caller should try again later)
+//  - checked=true, info=null : app is up to date (or no release published)
+//  - checked=true, info={...} : a newer version exists
+export async function checkForUpdate() {
+  let snap;
 
-    const data = snap.data();
+  try {
+    snap = await readAppVersionDoc();
+  } catch (e) {
+    console.warn('KING X: update check failed:', e?.code || e?.message || e);
+    return { checked: false, info: null };
+  }
 
-    if (!data.latestVersion || !isNewer(data.latestVersion, CURRENT_VERSION)) {
-      return null;
-    }
+  if (!snap.exists()) return { checked: true, info: null };
 
-    return {
-      latestVersion: data.latestVersion,
+  const data = snap.data() || {};
+  const latest = String(data.latestVersion || '').replace(/^v/i, '');
+
+  if (!latest || !isNewer(latest, CURRENT_VERSION)) {
+    return { checked: true, info: null };
+  }
+
+  return {
+    checked: true,
+    info: {
+      latestVersion: latest,
       url: data.url || '',
       notes: data.notes || '',
       forced: !!data.minVersion && isNewer(data.minVersion, CURRENT_VERSION),
-    };
-  } catch {
-    return null;
-  }
+    },
+  };
+}
+
+// kept for any older imports
+export async function fetchUpdateInfo() {
+  return (await checkForUpdate()).info;
 }
