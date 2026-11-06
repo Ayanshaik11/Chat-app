@@ -1,6 +1,7 @@
 import React from 'react';
 import { Linking, Platform, Pressable, View } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/SettingsContext';
 import { gradientProps } from '../theme';
@@ -10,11 +11,12 @@ import T from './T';
 // notice. Update happens without ever leaving the app.
 export default function UpdateCard({ state }) {
   const { colors, gradient } = useTheme();
+  const insets = useSafeAreaInsets();
   const { info, visible, downloading, progress, error, install, dismiss } = state;
   if (!visible) return null;
 
   return (
-    <View pointerEvents="box-none" style={{ position: 'absolute', left: 14, right: 14, bottom: 14 }}>
+    <View pointerEvents="box-none" style={{ position: 'absolute', left: 14, right: 14, bottom: 14 + insets.bottom, zIndex: 9999, elevation: 20 }}>
       <View
         style={{
           backgroundColor: colors.card, borderRadius: 20, borderWidth: 1, borderColor: colors.border, padding: 14,
@@ -27,7 +29,7 @@ export default function UpdateCard({ state }) {
           </LinearGradient>
           <View style={{ flex: 1 }}>
             <T weight="semibold" size={14}>New version {info.latestVersion}</T>
-            <T size={12} color="subtext" numberOfLines={2}>{info.notes || 'A new version of Chat App is ready.'}</T>
+            <T size={12} color="subtext" numberOfLines={2}>{info.notes || 'A new version of King X is ready.'}</T>
           </View>
           {!info.forced ? (
             <Pressable onPress={dismiss} hitSlop={10}>
@@ -39,7 +41,7 @@ export default function UpdateCard({ state }) {
         {error ? (
           <View style={{ marginTop: 8 }}>
             <T size={12} color="danger">{error}</T>
-            <Pressable onPress={() => Linking.openURL(info.url).catch(() => {})} style={{ marginTop: 4 }}>
+            <Pressable onPress={() => Linking.openURL(info.url || 'https://download-kingx.vercel.app/').catch(() => {})} style={{ marginTop: 4 }}>
               <T size={12} color="primary" weight="medium">Or open the download link in your browser</T>
             </Pressable>
           </View>
