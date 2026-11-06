@@ -3,7 +3,7 @@
     "name": "King X",
     "slug": "chat-app",
     "scheme": "chatapp",
-    "version": "1.1.11",
+    "version": "1.2.2",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -24,7 +24,7 @@
       "googleServicesFile": "./GoogleService-Info.plist"
     },
     "android": {
-      "package": "com.aiyan.kingx",
+      "package": "com.chat.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#0D0D0D"
@@ -38,7 +38,7 @@
         "android.permission.MODIFY_AUDIO_SETTINGS"
       ],
       "googleServicesFile": "./google-services.json",
-      "versionCode": 10111
+      "versionCode": 10202
     },
     "plugins": [
       [

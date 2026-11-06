@@ -1,4 +1,4 @@
-// Publishes release information exclusively to the new King X Android channel.
+// Publishes release information to the existing King X update channel.
 const admin = require('firebase-admin');
 
 const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_JSON);
@@ -14,16 +14,13 @@ async function main() {
     throw new Error('RELEASE_VERSION and RELEASE_URL are required');
   }
 
-  const documentId = 'appVersion-com-aiyan-kingx';
-
-  await db.collection('config').doc(documentId).set({
+  await db.collection('config').doc('appVersion').set({
     latestVersion: version,
     url,
     notes,
-    androidPackage: 'com.aiyan.kingx',
   }, { merge: true });
 
-  console.log(`Updated ${documentId} -> ${version}`);
+  console.log(`config/appVersion updated -> ${version} (${url})`);
 }
 
 main()

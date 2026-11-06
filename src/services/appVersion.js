@@ -1,6 +1,4 @@
 import { doc, getDoc } from 'firebase/firestore';
-import Constants from 'expo-constants';
-import { Platform } from 'react-native';
 import { db } from '../config/firebase';
 import { CURRENT_VERSION } from '../config/appVersion';
 
@@ -21,16 +19,7 @@ export function isNewer(a, b) {
 
 export async function fetchUpdateInfo() {
   try {
-    const packageName = Constants.expoConfig?.android?.package;
-
-    // Only the new Android package uses the new update channel.
-    // Old Android users and iOS retain the existing channel.
-    const documentId =
-      Platform.OS === 'android' && packageName === 'com.aiyan.kingx'
-        ? 'appVersion-com-aiyan-kingx'
-        : 'appVersion';
-
-    const snap = await getDoc(doc(db, 'config', documentId));
+    const snap = await getDoc(doc(db, 'config', 'appVersion'));
 
     if (!snap.exists()) return null;
 

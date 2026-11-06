@@ -139,7 +139,7 @@ export default function SettingsScreen({ navigation }) {
 
         <Section title="About">
           <Row icon="information-circle-outline" label="King X" hint={`Version ${CURRENT_VERSION}`} />
-          <Row icon="cube-outline" label="Package" hint="com.aiyan.kingx" last />
+          <Row icon="cube-outline" label="Package" hint="com.chat.app" last />
         </Section>
       </ScrollView>
     </Screen>
