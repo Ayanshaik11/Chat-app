@@ -19,7 +19,10 @@ import { usePeerTyping } from '../utils/typing';
 import {
   chatIdFor, deleteMessageForMe, markChatRead, markMessagesSeen, reactToMessage, removeReaction,
   sendGifMessage, sendImageMessage, sendMessage, sendVoiceMessage, setChatTheme, setTyping, unsendMessage,
+  sendGroupGif, sendGroupImages, sendGroupMessage, sendGroupVoice,
 } from '../services/chat';
+import useGroupMembers from '../hooks/useGroupMembers';
+import GroupAvatar from '../components/GroupAvatar';
 import { DEFAULT_THEME_ID, getTheme } from '../utils/chatTheme';
 import { useChatTheme } from '../context/ChatThemeContext';
 import { useAuth } from '../context/AuthContext';
@@ -41,6 +44,9 @@ import ChatWallpaper from '../components/ChatWallpaper';
 
 const RED = '#E11D2A', BG = '#080808', CARD = '#171717', BORDER = '#292929', MUTED = '#8F8F8F';
 const MAX_PHOTOS = 10;
+// In a group, the sender's small picture + name sits under their bubble.
+// false = only under the last bubble of a run from the same person, true = under every bubble.
+const SHOW_SENDER_ON_EVERY_MESSAGE = false;
 const QUICK = ['❤️', '😂', '😅', '😢', '🔥', '👍'];
 const EXTRA = [
   '👎', '👏', '🙌', '😍', '🥰', '😘', '🤣', '😎', '🤔', '😮', '😱', '😡', '😭', '🥹', '🤗',
@@ -89,20 +95,30 @@ const MenuItem = ({ icon, label, onPress, danger, theme }) => (
    ONE MESSAGE (swipe to reply, long press for the menu)
    ========================================================= */
 
-// small centred line in the chat, e.g. "Ayan changed the theme to Saiyan Blue"
-function SystemNotice({ item, name, theme, dateLabel }) {
-  const who = item.senderId === item._meId ? 'You' : String(name || 'Your friend').split(' ')[0];
+// small centred line in the chat, e.g. "Ayan changed the theme to Saiyan Blue" / "Sam left the group"
+function SystemNotice({ item, theme, dateLabel, actor }) {
+  const bold = { color: theme.accentColor, fontWeight: '700' };
+  const who = item.senderId === item._meId ? 'You' : actor || 'Someone';
+  let line;
+  switch (item.event) {
+    case 'created': line = <>{who} created the group <Text style={bold}>{item.text}</Text></>; break;
+    case 'added': line = <>{who} added <Text style={bold}>{item.text}</Text></>; break;
+    case 'removed': line = <>{who} removed <Text style={bold}>{item.text}</Text></>; break;
+    case 'left': line = <>{who} left the group</>; break;
+    case 'renamed': line = <>{who} renamed the group to <Text style={bold}>{item.text}</Text></>; break;
+    case 'photo': line = <>{who} changed the group photo</>; break;
+    case 'admin': line = <>{who} made <Text style={bold}>{item.text}</Text> an admin</>; break;
+    default: line = <>{who} changed the theme to <Text style={bold}>{item.text}</Text></>;
+  }
   return (
     <View style={{ alignItems: 'center', marginVertical: 10, paddingHorizontal: 20 }}>
       {dateLabel ? <Text style={{ color: theme.timestampColor, fontSize: 11, marginBottom: 8 }}>{dateLabel}</Text> : null}
-      <Text style={{ color: theme.timestampColor, fontSize: 12, textAlign: 'center' }}>
-        {who} changed the theme to <Text style={{ color: theme.accentColor, fontWeight: '700' }}>{item.text}</Text>
-      </Text>
+      <Text style={{ color: theme.timestampColor, fontSize: 12, textAlign: 'center' }}>{line}</Text>
     </View>
   );
 }
 
-const MessageRow = React.memo(function MessageRow({ item, seenText, dateLabel, theme, onLongPress, onReply, onReactionPress, inputRef }) {
+const MessageRow = React.memo(function MessageRow({ item, seenText, dateLabel, theme, onLongPress, onReply, onReactionPress, inputRef, isGroup, sender, showSender, readers, onSenderPress, onSeenPress }) {
   const mine = item.senderId === item._meId;
   const bubbleText = mine ? theme.outgoingTextColor : theme.incomingTextColor;
   const tc = { color: bubbleText }; // text colour that is readable on this bubble
@@ -227,6 +243,25 @@ const MessageRow = React.memo(function MessageRow({ item, seenText, dateLabel, t
         )}
       </Animated.View>
 
+      {isGroup && !mine && showSender && !item.unsent && (
+        <TouchableOpacity activeOpacity={0.7} onPress={() => onSenderPress(item.senderId)} style={styles.senderRow}>
+          <Avatar uri={photoOf(sender)} name={nameOf(sender)} size={18} />
+          <Text style={[styles.senderName, { color: theme.timestampColor }]} numberOfLines={1}>{nameOf(sender)}</Text>
+        </TouchableOpacity>
+      )}
+
+      {isGroup && !!readers?.length && !item._pending && (
+        <TouchableOpacity activeOpacity={0.7} onPress={() => onSeenPress(item)} style={styles.seenBy}>
+          <Text style={[styles.seenByText, { color: theme.timestampColor }]}>Seen by</Text>
+          {readers.slice(0, 5).map((p, i) => (
+            <View key={p.id || i} style={{ marginLeft: i ? -5 : 5, borderRadius: 9, borderWidth: 1, borderColor: theme.backgroundColor }}>
+              <Avatar uri={photoOf(p)} name={nameOf(p)} size={16} />
+            </View>
+          ))}
+          {readers.length > 5 && <Text style={[styles.seenByText, { color: theme.timestampColor, marginLeft: 4 }]}>+{readers.length - 5}</Text>}
+        </TouchableOpacity>
+      )}
+
       {item._pending && mine && !item.unsent && <Text style={[styles.seen, { color: theme.timestampColor }]}>Sending…</Text>}
       {!!seenText && !item._pending && <Text style={[styles.seen, { color: theme.timestampColor }]}>{seenText}</Text>}
     </View>
@@ -238,16 +273,29 @@ const MessageRow = React.memo(function MessageRow({ item, seenText, dateLabel, t
    ========================================================= */
 
 export default function ChatScreen({ route, navigation }) {
-  const { user, otherUser, friendProfiles: paramProfiles } = route.params || {};
+  const { user, otherUser, friendProfiles: paramProfiles, groupId, groupName } = route.params || {};
+  const isGroup = !!groupId;
   // friends come from the live app data (route params never carried them, so the forward list was empty)
   const appData = useAppData();
   const friendProfiles = paramProfiles && Object.keys(paramProfiles).length ? paramProfiles : appData?.friendProfiles || {};
   const me = user || {}, other = otherUser || {};
   const meId = me.id || me.uid || null;
-  const otherId = other.id || other.uid || null;
-  const chatId = chatIdFor(meId, otherId);
-  const profile = friendProfiles?.[otherId] || other;
+  const otherId = isGroup ? null : other.id || other.uid || null;
+  const chatId = isGroup ? groupId : chatIdFor(meId, otherId);
+  const hasTarget = isGroup ? !!groupId : !!otherId;
+
+  // group state (the chat document) + live profiles of its members
+  const [group, setGroup] = useState(null);
+  const [kicked, setKicked] = useState(false); // I was removed from this group
+  const [lastReadMap, setLastReadMap] = useState({});
+  const [typerId, setTyperId] = useState(null);
+  const [seenFor, setSeenFor] = useState(null); // message whose "Seen by" list is open
+  const memberIds = isGroup ? group?.members || [] : [];
+  const memberProfiles = useGroupMembers(memberIds);
+  const profile = isGroup ? { name: group?.name || groupName || 'Group', photoURL: group?.photoURL || '' } : friendProfiles?.[otherId] || other;
   const name = nameOf(profile);
+  const personOf = (id, m) => memberProfiles[id] || (m ? { id, name: m.senderName || 'Member', photoURL: m.senderPhoto || '' } : { id, name: 'Member' });
+  const firstNameOf = (id, m) => String(nameOf(personOf(id, m))).split(' ')[0];
 
   const [rawMessages, setRawMessages] = useState([]);
   const [limitN, setLimitN] = useState(40);
@@ -311,16 +359,16 @@ export default function ChatScreen({ route, navigation }) {
       if (!id || id === themeId) return; // same theme again: no new notice
       setActiveThemeId(id);
       await applyTheme(chatId, id);
-      await setChatTheme(chatId, id, meId, getTheme(id).name).catch(() => {});
+      await setChatTheme(chatId, id, meId, getTheme(id).name, isGroup, me.name || '').catch(() => {});
     },
-    [chatId, meId, applyTheme, themeId]
+    [chatId, meId, applyTheme, themeId, isGroup]
   );
 
   const onResetTheme = useCallback(async () => {
     setActiveThemeId(DEFAULT_THEME_ID);
     await applyTheme(chatId, DEFAULT_THEME_ID);
-    await setChatTheme(chatId, DEFAULT_THEME_ID, meId, getTheme(DEFAULT_THEME_ID).name).catch(() => {});
-  }, [chatId, meId, applyTheme]);
+    await setChatTheme(chatId, DEFAULT_THEME_ID, meId, getTheme(DEFAULT_THEME_ID).name, isGroup, me.name || '').catch(() => {});
+  }, [chatId, meId, applyTheme, isGroup]);
 
   /* subtle, optional send-button glow (static unless a theme asks to pulse) */
   const glowEnabled = !!theme.glowColor && !!theme.specialEffect;
@@ -359,7 +407,7 @@ export default function ChatScreen({ route, navigation }) {
 
   const onChangeText = (value) => {
     setText(value);
-    if (!meId || !otherId) return;
+    if (!meId || !hasTarget) return;
     if (!value.trim()) return stopTyping();
     // refresh the timestamp every 3s so the other phone can tell "typing" from "stuck"
     if (!typingOn.current || Date.now() - typingWrite.current > 3000) {
@@ -382,19 +430,35 @@ export default function ChatScreen({ route, navigation }) {
   }, [chatId, meId]);
 
   useEffect(() => {
-    if (!chatId || !otherId) return undefined;
+    if (!chatId || !hasTarget) return undefined;
     return onSnapshot(
       doc(db, 'chats', chatId),
       (s) => {
-        setPeerTypingValue(s.data()?.typing?.[otherId] || 0);
-        setPeerRead(ms(s.data()?.lastRead?.[otherId]));
-        setMyUnread(Number(s.data()?.unread?.[meId]) || 0);
-        const remoteTheme = s.data()?.theme || null;
-        setActiveThemeId((current) => (current && !remoteTheme ? current : remoteTheme)); // shared theme for both people
+        const d = s.data() || {};
+        if (isGroup) {
+          setGroup(s.exists() ? { id: s.id, ...d } : null);
+          setKicked(s.exists() && !(d.members || []).includes(meId));
+          // the person who typed most recently (the usePeerTyping hook decides if it is still "now")
+          let best = 0, bestId = null;
+          Object.entries(d.typing || {}).forEach(([uid, v]) => {
+            if (uid !== meId && typeof v === 'number' && v > best) { best = v; bestId = uid; }
+          });
+          setPeerTypingValue(best);
+          setTyperId(bestId);
+          const lr = {};
+          Object.entries(d.lastRead || {}).forEach(([uid, v]) => { lr[uid] = ms(v); });
+          setLastReadMap(lr);
+        } else {
+          setPeerTypingValue(d.typing?.[otherId] || 0);
+          setPeerRead(ms(d.lastRead?.[otherId]));
+        }
+        setMyUnread(Number(d.unread?.[meId]) || 0);
+        const remoteTheme = d.theme || null;
+        setActiveThemeId((current) => (current && !remoteTheme ? current : remoteTheme)); // shared theme for everyone in the chat
       },
-      () => {}
+      (e) => { if (isGroup && e?.code === 'permission-denied') setKicked(true); }
     );
-  }, [chatId, otherId, meId]);
+  }, [chatId, otherId, meId, isGroup, hasTarget]);
 
   useEffect(() => {
     const sub = AppState.addEventListener('change', (s) => setAppActive(s === 'active'));
@@ -416,7 +480,7 @@ export default function ChatScreen({ route, navigation }) {
   const seenSent = useRef(new Set());
 
   useEffect(() => {
-    if (!meId || !otherId) { setLoading(false); return undefined; }
+    if (!meId || !hasTarget) { setLoading(false); return undefined; }
     sigCache.current = new Map();
     const q = query(collection(db, 'chats', chatId, 'messages'), orderBy('createdAt', 'desc'), limit(limitN));
     return onSnapshot(
@@ -451,7 +515,7 @@ export default function ChatScreen({ route, navigation }) {
       },
       (e) => { console.log('Messages:', e?.message || e); setLoading(false); }
     );
-  }, [chatId, meId, otherId, limitN]);
+  }, [chatId, meId, otherId, limitN, hasTarget]);
 
   // Messages count as read only while this chat is really on screen (focused + app open).
   // Before, a chat hidden under another screen kept marking new messages as read.
@@ -530,19 +594,29 @@ export default function ChatScreen({ route, navigation }) {
 
   // keep the friend's public key fresh (used when sending)
   useEffect(() => {
-    if (!otherId) return undefined;
+    if (!otherId || isGroup) return undefined; // group members' keys are kept fresh by useGroupMembers
     return onSnapshot(doc(db, 'users', otherId), (s) => setPeerKey(otherId, s.data()?.publicKey), () => {});
-  }, [otherId]);
+  }, [otherId, isGroup]);
 
   // no banner for this chat while it is open, and clear its old notifications
   useEffect(() => {
-    if (!otherId || !focused) return undefined;
-    setActiveChatUser(otherId);
+    if (!hasTarget || !focused) return undefined;
+    setActiveChatUser(isGroup ? `group:${groupId}` : otherId);
     Notifications.dismissAllNotificationsAsync().catch(() => {});
     return () => setActiveChatUser(null);
-  }, [otherId, focused]);
+  }, [otherId, focused, isGroup, groupId, hasTarget]);
 
-  const isSeen = (m) => m.senderId === meId && m.type !== 'system' && (!!m.seenBy?.[otherId] || (peerRead > 0 && ms(m.createdAt) > 0 && ms(m.createdAt) <= peerRead));
+  // group: who has seen a message (their read mark is newer than the message, or they marked it seen)
+  const readersOf = (m) => memberIds
+    .filter((id) => id !== meId && id !== m.senderId && (!!m.seenBy?.[id] || (lastReadMap[id] > 0 && ms(m.createdAt) > 0 && ms(m.createdAt) <= lastReadMap[id])))
+    .map((id) => personOf(id));
+  const groupSeenMsg = useMemo(
+    () => (isGroup ? messages.find((m) => m.senderId === meId && m.type !== 'system' && !m._pending && !m.unsent && readersOf(m).length > 0) || null : null),
+    [messages, lastReadMap, memberIds, memberProfiles, meId, isGroup]
+  );
+  const groupSeenReaders = groupSeenMsg ? readersOf(groupSeenMsg) : [];
+
+  const isSeen = (m) => !isGroup && m.senderId === meId && m.type !== 'system' && (!!m.seenBy?.[otherId] || (peerRead > 0 && ms(m.createdAt) > 0 && ms(m.createdAt) <= peerRead));
   const latestSeenMsg = useMemo(() => messages.find(isSeen) || null, [messages, peerRead, meId, otherId]);
   const seenText = latestSeenMsg ? seenTime(peerRead || latestSeenMsg.seenBy?.[otherId]) : '';
 
@@ -632,7 +706,9 @@ export default function ChatScreen({ route, navigation }) {
     id: replyingTo.id,
     text: rText(replyingTo),
     senderId: replyingTo.senderId,
-    senderName: replyingTo.senderId === meId ? 'You' : replyingTo.senderName || name,
+    senderName: isGroup
+      ? (replyingTo.senderId === meId ? String(me.name || 'Me').split(' ')[0] : firstNameOf(replyingTo.senderId, replyingTo))
+      : replyingTo.senderId === meId ? 'You' : replyingTo.senderName || name,
   };
 
   // pushed together with the message itself (see services/chat.js)
@@ -643,10 +719,18 @@ export default function ChatScreen({ route, navigation }) {
 
   const sendFailed = (title) => (e) => {
     if (e?.code === 'E2E_NO_KEY') {
-      Alert.alert('Not encrypted yet', `${name} has not opened the updated King X yet, so this cannot be end-to-end encrypted. Ask them to open the app once, then try again.`);
+      Alert.alert('Not encrypted yet', isGroup
+        ? 'Nobody else in this group has opened the updated King X yet, so this cannot be end-to-end encrypted. Ask them to open the app once, then try again.'
+        : `${name} has not opened the updated King X yet, so this cannot be end-to-end encrypted. Ask them to open the app once, then try again.`);
     } else {
       Alert.alert(title, `${e?.message || 'Something went wrong.'}${e?.code ? `\n\n(${e.code})` : ''}`);
     }
+  };
+
+  // everything a group message needs (members come from the live chat document)
+  const groupInfo = () => {
+    if (!group?.members?.length) throw new Error('This group is still loading. Try again in a moment.');
+    return { id: groupId, members: group.members, name: group.name, senderName: me.name || '', senderPhoto: me.photoURL || '' };
   };
 
   const send = async () => {
@@ -657,7 +741,7 @@ export default function ChatScreen({ route, navigation }) {
     try {
       // encrypts, shows the message instantly and notifies the friend at the same moment;
       // nothing here waits for the server
-      await sendMessage(meId, otherId, clean, reply, sendOpts());
+      await (isGroup ? sendGroupMessage(meId, groupInfo(), clean, reply, sendOpts()) : sendMessage(meId, otherId, clean, reply, sendOpts()));
       requestAnimationFrame(() => inputRef.current?.focus());
     } catch (e) {
       setText(clean);
@@ -668,7 +752,7 @@ export default function ChatScreen({ route, navigation }) {
   const sendVoice = async (uri, duration) => {
     try {
       const url = await uploadFile(uri, `voice/${chatId}/${Date.now()}.m4a`, 'audio/m4a');
-      await sendVoiceMessage(meId, otherId, url, duration, null, sendOpts());
+      await (isGroup ? sendGroupVoice(meId, groupInfo(), url, duration, null, sendOpts()) : sendVoiceMessage(meId, otherId, url, duration, null, sendOpts()));
     } catch (e) { fail('Voice message failed')(e); }
     setRecordingVoice(false);
   };
@@ -679,7 +763,7 @@ export default function ChatScreen({ route, navigation }) {
     const reply = replyData();
     setReplyingTo(null);
     try {
-      await sendGifMessage(meId, otherId, gif, reply, sendOpts());
+      await (isGroup ? sendGroupGif(meId, groupInfo(), gif, reply, sendOpts()) : sendGifMessage(meId, otherId, gif, reply, sendOpts()));
     } catch (e) { sendFailed('GIF failed')(e); }
   };
 
@@ -695,7 +779,7 @@ export default function ChatScreen({ route, navigation }) {
     setPending([]); setText(''); setReplyingTo(null); stopTyping(); setSendingPhotos(true);
     try {
       const urls = await Promise.all(files.map((f, i) => uploadFile(f.uri, `chat/${chatId}/${Date.now()}_${i}.jpg`, mimeOf(f))));
-      await sendImageMessage(meId, otherId, urls, caption, reply, sendOpts());
+      await (isGroup ? sendGroupImages(meId, groupInfo(), urls, caption, reply, sendOpts()) : sendImageMessage(meId, otherId, urls, caption, reply, sendOpts()));
     } catch (e) {
       setPending(files); setText(caption);
       sendFailed('Photo failed')(e);
@@ -723,13 +807,17 @@ export default function ChatScreen({ route, navigation }) {
           <TouchableOpacity
             activeOpacity={0.7}
             style={{ flex: 1, flexDirection: 'row', alignItems: 'center' }}
-            onPress={() => otherId && navigation?.navigate('UserProfile', { userId: otherId })}
+            onPress={() => (isGroup
+              ? navigation?.navigate('GroupInfo', { groupId })
+              : otherId && navigation?.navigate('UserProfile', { userId: otherId }))}
           >
-            <Avatar uri={photoOf(profile)} name={name} />
+            {isGroup ? <GroupAvatar uri={photoOf(profile)} size={40} /> : <Avatar uri={photoOf(profile)} name={name} />}
             <View style={{ flex: 1, marginLeft: 10 }}>
-              <Text style={[styles.headerName, { color: theme.headerTextColor }]}>{name}</Text>
-              <Text style={[styles.headerStatus, { color: theme.timestampColor }, otherTyping && { color: theme.statusColor }]}>
-                {otherTyping ? 'typing...' : profile?.online ? 'Online' : 'Messages'}
+              <Text style={[styles.headerName, { color: theme.headerTextColor }]} numberOfLines={1}>{name}</Text>
+              <Text style={[styles.headerStatus, { color: theme.timestampColor }, otherTyping && { color: theme.statusColor }]} numberOfLines={1}>
+                {otherTyping
+                  ? (isGroup && typerId ? `${firstNameOf(typerId)} is typing...` : 'typing...')
+                  : isGroup ? `${memberIds.length || ''} ${memberIds.length === 1 ? 'member' : 'members'} · tap for info` : profile?.online ? 'Online' : 'Messages'}
               </Text>
             </View>
           </TouchableOpacity>
@@ -747,7 +835,7 @@ export default function ChatScreen({ route, navigation }) {
             data={messages}
             keyExtractor={(m) => m.id}
             keyboardShouldPersistTaps="handled"
-            extraData={`${tick}-${peerRead}-${themeId}`}
+            extraData={`${tick}-${peerRead}-${themeId}-${groupSeenMsg?.id || ''}-${groupSeenReaders.length}-${memberIds.length}-${Object.keys(memberProfiles).length}`}
             onEndReached={loadOlder}
             onEndReachedThreshold={0.4}
             initialNumToRender={15}
@@ -755,10 +843,23 @@ export default function ChatScreen({ route, navigation }) {
             windowSize={9}
             removeClippedSubviews={false}
             contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 14 }}
-            renderItem={({ item }) => (item.type === 'system' ? <SystemNotice item={item} name={name} theme={theme} dateLabel={dateLabels.get(item.id)} /> : (
+            renderItem={({ item, index }) => (item.type === 'system' ? (
+              <SystemNotice
+                item={item}
+                theme={theme}
+                dateLabel={dateLabels.get(item.id)}
+                actor={isGroup ? firstNameOf(item.senderId, item) : String(name || 'Your friend').split(' ')[0]}
+              />
+            ) : (
               <MessageRow
                 item={item}
-                seenText={item.id === latestSeenMsg?.id ? seenText : ''}
+                isGroup={isGroup}
+                sender={isGroup && item.senderId !== meId ? personOf(item.senderId, item) : undefined}
+                showSender={isGroup && (SHOW_SENDER_ON_EVERY_MESSAGE || !messages[index - 1] || messages[index - 1].senderId !== item.senderId || messages[index - 1].type === 'system')}
+                readers={isGroup && item.id === groupSeenMsg?.id ? groupSeenReaders : undefined}
+                onSenderPress={(id) => navigation?.navigate('UserProfile', { userId: id })}
+                onSeenPress={setSeenFor}
+                seenText={!isGroup && item.id === latestSeenMsg?.id ? seenText : ''}
                 dateLabel={dateLabels.get(item.id)}
                 theme={theme}
                 onLongPress={openMenu}
@@ -770,13 +871,13 @@ export default function ChatScreen({ route, navigation }) {
             ListEmptyComponent={
               <View style={{ alignItems: 'center', paddingTop: 250 }}>
                 <Text style={{ color: theme.incomingTextColor, fontSize: 18, fontWeight: '700' }}>No messages yet</Text>
-                <Text style={{ color: theme.timestampColor, marginTop: 5 }}>Start the conversation 👋</Text>
+                <Text style={{ color: theme.timestampColor, marginTop: 5 }}>{isGroup ? 'Say hi to the group 👋' : 'Start the conversation 👋'}</Text>
               </View>
             }
           />
         )}
 
-        {otherTyping && !recordingVoice && <TypingDots name={name.split(' ')[0]} theme={theme} />}
+        {otherTyping && !recordingVoice && <TypingDots name={isGroup ? (typerId ? firstNameOf(typerId) : 'Someone') : name.split(' ')[0]} theme={theme} />}
 
         {/* reply banner */}
         {replyingTo && (
@@ -784,7 +885,7 @@ export default function ChatScreen({ route, navigation }) {
             <View style={{ width: 4, height: 44, backgroundColor: theme.accentColor }} />
             <View style={{ flex: 1, minWidth: 0, padding: 8 }}>
               <Text style={{ color: theme.accentColor, fontWeight: '800', fontSize: 12 }}>
-                Replying to {replyingTo.senderId === meId ? 'yourself' : replyingTo.senderName || name}
+                Replying to {replyingTo.senderId === meId ? 'yourself' : isGroup ? firstNameOf(replyingTo.senderId, replyingTo) : replyingTo.senderName || name}
               </Text>
               <Text style={{ color: theme.timestampColor, fontSize: 12 }} numberOfLines={2}>{rText(replyingTo) || 'Message'}</Text>
             </View>
@@ -795,7 +896,11 @@ export default function ChatScreen({ route, navigation }) {
         )}
 
         {/* message box: camera | text | GIF | mic/send */}
-        {recordingVoice ? (
+        {isGroup && kicked ? (
+          <View style={[styles.composer, { backgroundColor: theme.header, borderTopColor: theme.borderColor, justifyContent: 'center', alignItems: 'center' }]}>
+            <Text style={{ color: theme.timestampColor, fontSize: 13, textAlign: 'center', paddingVertical: 12 }}>You are no longer a member of this group.</Text>
+          </View>
+        ) : recordingVoice ? (
           <VoiceRecorderBar theme={theme} onCancel={() => setRecordingVoice(false)} onSend={sendVoice} />
         ) : (
           <View>
@@ -990,12 +1095,34 @@ export default function ChatScreen({ route, navigation }) {
           </View>
         </Modal>
 
+        {/* group: who has seen this message */}
+        <Modal visible={!!seenFor} transparent animationType="slide" onRequestClose={() => setSeenFor(null)}>
+          <View style={styles.backdrop}>
+            <Pressable style={StyleSheet.absoluteFill} onPress={() => setSeenFor(null)} />
+            <View style={[styles.sheet, { maxHeight: '70%', padding: 15, backgroundColor: theme.elevated }]}>
+              <View style={[styles.handle, { backgroundColor: theme.borderColor }]} />
+              <Text style={[styles.sheetTitle, { color: theme.incomingTextColor }]}>Seen by</Text>
+              <ScrollView>
+                {(seenFor ? readersOf(seenFor) : []).map((p) => (
+                  <View key={p.id} style={[styles.friendRow, { borderBottomColor: theme.borderColor, minHeight: 56 }]}>
+                    <Avatar uri={photoOf(p)} name={nameOf(p)} size={38} />
+                    <Text style={{ flex: 1, marginLeft: 11, color: theme.incomingTextColor, fontSize: 15, fontWeight: '700' }} numberOfLines={1}>{nameOf(p)}</Text>
+                    <Text style={{ color: theme.timestampColor, fontSize: 12 }}>
+                      {seenTime(seenFor?.seenBy?.[p.id] || lastReadMap[p.id]).replace('Seen ', '')}
+                    </Text>
+                  </View>
+                ))}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
+
         <ChatMenu
           visible={menuOpen}
           onClose={() => setMenuOpen(false)}
           themeId={themeId}
           theme={theme}
-          name={name.split(' ')[0]}
+          name={isGroup ? 'this group' : name.split(' ')[0]}
           onApplyTheme={onApplyTheme}
           onResetTheme={onResetTheme}
         />
@@ -1030,6 +1157,10 @@ const styles = StyleSheet.create({
   text: { color: '#fff', fontSize: 15, lineHeight: 21, flexShrink: 1, maxWidth: '100%' },
   unsentText: { color: '#D0D0D0', fontStyle: 'italic' },
   unsentLabel: { color: '#AAA', fontSize: 10, marginTop: 3, fontStyle: 'italic' },
+  senderRow: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-start', marginTop: 3, marginLeft: 4, maxWidth: '70%' },
+  senderName: { fontSize: 11, fontWeight: '600', marginLeft: 5 },
+  seenBy: { flexDirection: 'row', alignItems: 'center', alignSelf: 'flex-end', marginTop: 3, marginHorizontal: 4 },
+  seenByText: { fontSize: 10 },
   seen: { color: '#777', fontSize: 10, marginTop: 3, marginHorizontal: 4, alignSelf: 'flex-end' },
 
   quote: { width: '100%', minHeight: 42, maxHeight: 84, flexDirection: 'row', backgroundColor: '#350B10', borderRadius: 8, marginBottom: 8, borderWidth: 1, borderColor: '#61151C', overflow: 'hidden' },
