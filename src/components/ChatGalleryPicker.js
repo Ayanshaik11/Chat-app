@@ -20,7 +20,7 @@ export default function ChatGalleryPicker({ visible, max = 10, onClose, onDone, 
   const [picked, setPicked] = useState([]);
 
   const load = useCallback(async (after) => {
-    const page = await MediaLibrary.getAssetsAsync({ first: 60, after: after || undefined, mediaType: ['photo'], sortBy: [[MediaLibrary.SortBy.creationTime, false]] });
+    const page = await MediaLibrary.getAssetsAsync({ first: 60, after: after || undefined, mediaType: ['photo'], sortBy: [[MediaLibrary.SortBy.modificationTime, false]] }); // not creationTime: screenshots/downloads have no "date taken" and would sink to the bottom
     setAssets((p) => (after ? [...p, ...page.assets] : page.assets));
     setCursor(page.endCursor);
     setHasMore(page.hasNextPage);
