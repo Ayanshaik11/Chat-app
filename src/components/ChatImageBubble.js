@@ -1,13 +1,30 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { FlatList, Image, Modal, Pressable, Text, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
 const W = 220;
 
 // Photos inside a chat bubble (1 big, 2+ in a grid). Tap = full screen, swipe between photos.
-export default function ChatImageBubble({ images = [], theme }) {
+export default function ChatImageBubble({ images = [], theme, onLongPress, onDoubleTap }) {
   const { width, height } = useWindowDimensions();
   const [open, setOpen] = useState(-1);
+  const lastTap = useRef(0);
+  const timer = useRef(null);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  // single tap opens the viewer (after a short wait so a double tap can be told apart), double tap = heart
+  const tap = (openViewer) => {
+    if (!onDoubleTap) { openViewer(); return; }
+    const now = Date.now();
+    if (now - lastTap.current < 280) {
+      clearTimeout(timer.current);
+      lastTap.current = 0;
+      onDoubleTap();
+      return;
+    }
+    lastTap.current = now;
+    timer.current = setTimeout(() => { lastTap.current = 0; openViewer(); }, 260);
+  };
   const shown = images.slice(0, 4);
   const placeholder = theme?.inputBackgroundColor || '#222';
   const size = images.length === 1 ? { width: W, height: 260 } : { width: (W - 4) / 2, height: (W - 4) / 2 };
@@ -16,7 +33,7 @@ export default function ChatImageBubble({ images = [], theme }) {
     <View>
       <View style={{ width: W, flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}>
         {shown.map((uri, i) => (
-          <Pressable key={uri + i} onPress={() => setOpen(i)}>
+          <Pressable key={uri + i} onPress={() => tap(() => setOpen(i))} onLongPress={onLongPress} delayLongPress={300}>
             <Image source={{ uri }} style={{ ...size, borderRadius: 10, backgroundColor: placeholder }} />
             {i === 3 && images.length > 4 && (
               <View style={{ ...size, position: 'absolute', borderRadius: 10, backgroundColor: 'rgba(0,0,0,0.55)', alignItems: 'center', justifyContent: 'center' }}>
