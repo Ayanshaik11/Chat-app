@@ -9,7 +9,7 @@ import { useTheme } from '../context/SettingsContext';
 import useGroupMembers from '../hooks/useGroupMembers';
 import { mimeOf, pickMedia, uploadFile } from '../services/media';
 import {
-  MAX_GROUP_MEMBERS, MAX_GROUP_NAME, addMembers, dismissAdmin, leaveGroup, makeAdmin, removeMember, renameGroup, setGroupPhoto,
+  MAX_GROUP_MEMBERS, MAX_GROUP_NAME, addMembers, dismissAdmin, leaveGroup, makeAdmin, removeGroupPhoto, removeMember, renameGroup, setGroupPhoto,
 } from '../services/groups';
 import Screen from '../components/Screen';
 import ScreenHeader from '../components/ScreenHeader';
@@ -69,6 +69,16 @@ export default function GroupInfoScreen({ route, navigation }) {
     setBusy(true);
     try { await fn(); } catch (e) { Alert.alert('Something went wrong', e?.message || 'Please try again.'); }
     setBusy(false);
+  };
+
+  // tapping the camera: choose a new photo, or remove the current one
+  const photoMenu = () => {
+    if (!chat?.photoURL) { changePhoto(); return; }
+    Alert.alert('Group photo', undefined, [
+      { text: 'Change photo', onPress: changePhoto },
+      { text: 'Remove photo', style: 'destructive', onPress: () => guard(() => removeGroupPhoto(groupId, me)) },
+      { text: 'Cancel', style: 'cancel' },
+    ]);
   };
 
   const changePhoto = () =>
@@ -162,8 +172,8 @@ export default function GroupInfoScreen({ route, navigation }) {
       <ScreenHeader title="Group info" onBack={() => navigation.goBack()} right={busy ? <ActivityIndicator color={colors.primary} style={{ marginRight: 10 }} /> : null} />
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ paddingBottom: 40 }}>
         <View style={{ alignItems: 'center', paddingTop: 22, paddingBottom: 12, paddingHorizontal: 20 }}>
-          <Pressable onPress={changePhoto}>
-            <GroupAvatar uri={chat?.photoURL} size={96} />
+          <Pressable onPress={photoMenu}>
+            <GroupAvatar uri={chat?.photoURL} size={96} badge={false} />
             <View style={{ position: 'absolute', right: 0, bottom: 0, width: 30, height: 30, borderRadius: 15, backgroundColor: colors.primary, alignItems: 'center', justifyContent: 'center', borderWidth: 2, borderColor: colors.bg }}>
               <Ionicons name="camera" size={15} color="#fff" />
             </View>
