@@ -75,6 +75,12 @@ export async function setGroupPhoto(chatId, me, url) {
   await updateDoc(doc(db, 'chats', chatId), { photoURL: url });
 }
 
+export async function removeGroupPhoto(chatId, me) {
+  if (!chatId) return;
+  await notice(chatId, me.id, me.name, 'photo', 'removed').catch(() => {});
+  await updateDoc(doc(db, 'chats', chatId), { photoURL: '' });
+}
+
 /** Any member can add people. `people` = [{ id, name }] */
 export async function addMembers(chatId, me, currentMembers, people) {
   const fresh = (people || []).filter((p) => p?.id && !currentMembers.includes(p.id));
