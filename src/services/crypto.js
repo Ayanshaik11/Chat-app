@@ -208,6 +208,7 @@ export async function encryptFor(otherId, plain) {
 export function decryptFrom(enc, senderId) {
   try {
     if (!ready || !enc || !enc.c || !enc.n) return null;
+    if (enc.v === 2) return decryptGroup(enc);
     const fromMe = senderId === myId;
     const theirPub = fromMe ? enc.rpk : enc.spk;
     const mine = fromMe ? enc.spk : enc.rpk;
@@ -217,6 +218,45 @@ export function decryptFrom(enc, senderId) {
   } catch {
     return null;
   }
+}
+
+/* ---------------- group chats ----------------
+ * One random message key encrypts the text. That key is then sealed separately for every
+ * member (X25519 box with the sender's secret key + that member's public key), so only the
+ * members of the group can open it. Members added later cannot read older messages.
+ */
+
+/** Encrypts text for every member of a group. Throws NoKeyError if nobody else has a key yet. */
+export async function encryptForGroup(memberIds, plain) {
+  if (!ready) throw new Error('Encryption is still starting. Try again in a moment.');
+
+  const messageKey = nacl.randomBytes(32);
+  const nonce = nacl.randomBytes(24);
+  const cipher = nacl.secretbox(utf8Encode(plain), nonce, messageKey);
+
+  const keys = {};
+  let others = 0;
+  const ids = [...new Set([...(memberIds || []), myId])];
+
+  for (const id of ids) {
+    const pub = id === myId ? myPublic : await getPeerKey(id).catch(() => null);
+    if (!pub) continue; // this member has not opened the updated app yet
+    const kn = nacl.randomBytes(24);
+    keys[id] = { n: toB64(kn), k: toB64(nacl.box(messageKey, kn, fromB64(pub), mySecret)) };
+    if (id !== myId) others += 1;
+  }
+
+  if (!others) throw new NoKeyError();
+  return { v: 2, n: toB64(nonce), c: toB64(cipher), spk: myPublic, keys };
+}
+
+function decryptGroup(enc) {
+  const slot = enc.keys && enc.keys[myId];
+  if (!slot || !enc.spk) return null; // not a member when this was sent
+  const messageKey = nacl.box.open(fromB64(slot.k), fromB64(slot.n), fromB64(enc.spk), mySecret);
+  if (!messageKey) return null;
+  const opened = nacl.secretbox.open(fromB64(enc.c), fromB64(enc.n), messageKey);
+  return opened ? utf8Decode(opened) : null;
 }
 
 export const CANT_DECRYPT = '🔒 Message can’t be decrypted on this device';
