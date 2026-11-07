@@ -23,8 +23,10 @@ export function setActiveChatUser(userId) {
 Notifications.setNotificationHandler({
   handleNotification: async (notification) => {
     const data = notification?.request?.content?.data || {};
+    // 1:1 chats are matched by the sender; group chats by "group:<id>"
     const chatIsOpen =
-      data.type === 'message' && activeChatUser && data.fromId === activeChatUser;
+      data.type === 'message' && !!activeChatUser &&
+      (data.groupId ? activeChatUser === `group:${data.groupId}` : data.fromId === activeChatUser);
 
     return {
       shouldShowAlert: !chatIsOpen,
