@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Image, Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 
@@ -14,17 +14,34 @@ const fit = (w, h) => {
 };
 
 // A GIF sent inside a chat bubble. Tap = full screen (animated).
-export default function GifBubble({ url, w, h, theme }) {
+export default function GifBubble({ url, w, h, theme, onLongPress, onDoubleTap }) {
   const { width: sw, height: sh } = useWindowDimensions();
   const [open, setOpen] = useState(false);
   const [ready, setReady] = useState(false);
+  const lastTap = useRef(0);
+  const timer = useRef(null);
+  useEffect(() => () => clearTimeout(timer.current), []);
+
+  // single tap opens the viewer (after a short wait so a double tap can be told apart), double tap = heart
+  const tap = (openViewer) => {
+    if (!onDoubleTap) { openViewer(); return; }
+    const now = Date.now();
+    if (now - lastTap.current < 280) {
+      clearTimeout(timer.current);
+      lastTap.current = 0;
+      onDoubleTap();
+      return;
+    }
+    lastTap.current = now;
+    timer.current = setTimeout(() => { lastTap.current = 0; openViewer(); }, 260);
+  };
   const size = fit(w, h);
   const placeholder = theme?.inputBackgroundColor || '#222';
   const spinner = theme?.accentColor || '#E11D2A';
 
   return (
     <View>
-      <Pressable onPress={() => setOpen(true)} style={[size, styles.thumb, { backgroundColor: placeholder }]}>
+      <Pressable onPress={() => tap(() => setOpen(true))} onLongPress={onLongPress} delayLongPress={300} style={[size, styles.thumb, { backgroundColor: placeholder }]}>
         {!ready && (
           <View style={styles.spinner}>
             <ActivityIndicator color={spinner} />
