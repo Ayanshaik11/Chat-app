@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { arrayUnion, collection, deleteField, doc, getDoc, increment, serverTimestamp, setDoc, updateDoc, writeBatch } from 'firebase/firestore';
 import { db } from '../config/firebase';
-import { encryptFor } from './crypto';
+import { encryptFor, encryptForGroup } from './crypto';
 import { sendPushNotification } from './notifications';
 
 const tsMs = (v) =>
@@ -52,12 +52,16 @@ const outboxAdd = (entry) => withOutbox((l) => [...l.filter((e) => e.id !== entr
 const outboxRemove = (id) => withOutbox((l) => l.filter((e) => e.id !== id)).catch(() => {});
 
 // Saves one message and updates the chat summary (last message, unread count) together.
-function commitMessage({ id, chatId, me, other, payload, summary }) {
+// `others` (array) is set for group chats: every other member gets +1 unread and the member list is never rewritten.
+function commitMessage({ id, chatId, me, other, others, payload, summary }) {
   const batch = writeBatch(db);
+  const isGroup = Array.isArray(others);
+  const unread = {};
+  (isGroup ? others : [other]).forEach((u) => { unread[u] = increment(1); });
   batch.set(messageRef(chatId, id), { ...payload, createdAt: serverTimestamp() });
   batch.set(
     doc(db, 'chats', chatId),
-    { members: [me, other], ...summary, lastSender: me, lastMessageAt: serverTimestamp(), updatedAt: serverTimestamp(), unread: { [other]: increment(1) } },
+    { ...(isGroup ? {} : { members: [me, other] }), ...summary, lastSender: me, lastMessageAt: serverTimestamp(), updatedAt: serverTimestamp(), unread },
     { merge: true }
   );
   return batch.commit();
@@ -132,6 +136,91 @@ async function push(me, other, data, summary, replyTo, opts = {}) {
     .finally(() => inflight.delete(id));
 
   return { id };
+}
+
+/* ---------- core send for GROUP chats ----------
+   group = { id, members: [ids], name, senderName, senderPhoto }                                  */
+
+async function pushGroup(me, group, data, summary, replyTo, opts = {}) {
+  const members = (group?.members || []).filter(Boolean);
+  if (!me || !group?.id || !members.includes(me)) throw new Error('You are not a member of this group.');
+  const others = members.filter((m) => m !== me);
+  const chatId = group.id;
+  const id = doc(collection(db, 'chats', chatId, 'messages')).id;
+  const senderFirst = String(group.senderName || '').split(' ')[0];
+
+  const payload = {
+    senderId: me, senderName: group.senderName || '', senderPhoto: group.senderPhoto || '',
+    seenBy: {}, reactions: {}, unsent: false, ...data,
+  };
+
+  if (replyTo) {
+    payload.replyTo = { id: replyTo.id || null, senderId: replyTo.senderId || '', senderName: replyTo.senderName || 'Message' };
+    if (replyTo.text) payload.replyTo.enc = await encryptForGroup(members, String(replyTo.text));
+  }
+
+  const entry = { id, chatId, me, others, payload, summary: { ...summary, lastSenderName: senderFirst } };
+
+  inflight.add(id);
+  const commit = commitMessage(entry);
+  outboxAdd(entry);
+
+  if (opts.notify) {
+    others.forEach((uid) => {
+      sendPushNotification({
+        toUserId: uid,
+        title: group.name || 'Group',
+        body: `${senderFirst || 'Someone'}: ${opts.notify.body || 'New message'}`,
+        data: {
+          type: 'message', fromId: me, fromName: group.senderName || '', fromPhoto: group.senderPhoto || '',
+          groupId: chatId, groupName: group.name || '', messageId: id,
+        },
+      }).catch(() => {});
+    });
+  }
+
+  commit
+    .then(() => outboxRemove(id))
+    .catch((e) => {
+      if (e?.code === 'permission-denied' || e?.code === 'invalid-argument') {
+        outboxRemove(id);
+        opts.onError?.(e);
+      }
+    })
+    .finally(() => inflight.delete(id));
+
+  return { id };
+}
+
+export async function sendGroupMessage(me, group, text, replyTo = null, opts = {}) {
+  const clean = String(text || '').trim();
+  if (!clean) return;
+  const enc = await encryptForGroup(group.members, clean);
+  return pushGroup(me, group, { type: 'text', enc }, { lastMessage: 'Encrypted message', lastEnc: enc }, replyTo, {
+    ...opts, notify: opts.notify && { body: 'New message' },
+  });
+}
+
+export async function sendGroupVoice(me, group, audioUrl, duration = 0, replyTo = null, opts = {}) {
+  if (!audioUrl) throw new Error('Missing voice message file.');
+  return pushGroup(me, group, { type: 'audio', text: 'Voice message', audioUrl, duration: Math.round(Number(duration) || 0) }, { lastMessage: 'Voice message' }, replyTo, {
+    ...opts, notify: opts.notify && { body: 'Voice message' },
+  });
+}
+
+export async function sendGroupGif(me, group, gif, replyTo = null, opts = {}) {
+  if (!gif?.url) throw new Error('Missing GIF.');
+  const data = { type: 'gif', text: 'GIF', gifUrl: gif.url, gifW: Math.round(Number(gif.w) || 0), gifH: Math.round(Number(gif.h) || 0) };
+  return pushGroup(me, group, data, { lastMessage: 'GIF' }, replyTo, { ...opts, notify: opts.notify && { body: 'GIF' } });
+}
+
+export async function sendGroupImages(me, group, images, caption = '', replyTo = null, opts = {}) {
+  if (!images?.length) throw new Error('Nothing to send.');
+  const note = String(caption || '').trim();
+  const label = images.length > 1 ? `${images.length} photos` : 'Photo';
+  const data = { type: 'image', images, text: label };
+  if (note) data.enc = await encryptForGroup(group.members, note);
+  return pushGroup(me, group, data, { lastMessage: label }, replyTo, { ...opts, notify: opts.notify && { body: label } });
 }
 
 /* ---------- send ---------- */
@@ -230,16 +319,17 @@ export async function deleteMessageForMe(chatId, messageId, userId) {
 
 // Saves the theme on the chat (both people get it) and adds a small "X changed the theme" notice.
 // The notice is not an unread message and does not change the chat's last-message preview.
-export async function setChatTheme(chatId, themeId, userId, themeName = '') {
+export async function setChatTheme(chatId, themeId, userId, themeName = '', isGroup = false, byName = '') {
   if (!chatId || !themeId || !userId) return;
   const batch = writeBatch(db);
   batch.set(
     doc(db, 'chats', chatId),
-    { members: chatId.split('_'), theme: themeId, themeBy: userId, themeAt: serverTimestamp() },
+    // a group's member list must never be rewritten from the chat id
+    { ...(isGroup ? {} : { members: chatId.split('_') }), theme: themeId, themeBy: userId, themeAt: serverTimestamp() },
     { merge: true }
   );
   batch.set(doc(collection(db, 'chats', chatId, 'messages')), {
-    senderId: userId, type: 'system', event: 'theme', themeId, text: themeName || themeId,
+    senderId: userId, senderName: byName, type: 'system', event: 'theme', themeId, text: themeName || themeId,
     createdAt: serverTimestamp(), seenBy: {}, reactions: {}, unsent: false,
   });
   await batch.commit();
