@@ -1,7 +1,7 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator, Alert, Animated, AppState, FlatList, Image, KeyboardAvoidingView, Modal, PanResponder,
-  Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
+  ActivityIndicator, Alert, Animated, AppState, FlatList, Image, KeyboardAvoidingView, LayoutAnimation, Modal, PanResponder,
+  Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, UIManager, View,
 } from 'react-native';
 import { useIsFocused } from '@react-navigation/native';
 import { SafeAreaView } from 'react-native-safe-area-context'; // keeps the header (and the 3 dots) below the phone's status bar
@@ -44,6 +44,19 @@ import ChatWallpaper from '../components/ChatWallpaper';
 
 const RED = '#E11D2A', BG = '#080808', CARD = '#171717', BORDER = '#292929', MUTED = '#8F8F8F';
 const MAX_PHOTOS = 10;
+
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  try { UIManager.setLayoutAnimationEnabledExperimental(true); } catch {}
+}
+
+// makes the bubbles glide up when the "Seen just now" line (or the group's "Seen by" row) appears
+const glide = () =>
+  LayoutAnimation.configureNext({
+    duration: 260,
+    create: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+    update: { type: LayoutAnimation.Types.easeInEaseOut },
+    delete: { type: LayoutAnimation.Types.easeInEaseOut, property: LayoutAnimation.Properties.opacity },
+  });
 // In a group, the sender's small picture + name sits under their bubble.
 // false = only under the last bubble of a run from the same person, true = under every bubble.
 const SHOW_SENDER_ON_EVERY_MESSAGE = false;
@@ -118,7 +131,7 @@ function SystemNotice({ item, theme, dateLabel, actor }) {
   );
 }
 
-const MessageRow = React.memo(function MessageRow({ item, seenText, dateLabel, theme, onLongPress, onReply, onReactionPress, inputRef, isGroup, sender, showSender, readers, onSenderPress, onSeenPress }) {
+const MessageRow = React.memo(function MessageRow({ item, seenText, dateLabel, theme, onLongPress, onDoubleTap, onReply, onReactionPress, inputRef, isGroup, sender, showSender, readers, onSenderPress, onSeenPress }) {
   const mine = item.senderId === item._meId;
   const bubbleText = mine ? theme.outgoingTextColor : theme.incomingTextColor;
   const tc = { color: bubbleText }; // text colour that is readable on this bubble
@@ -159,6 +172,24 @@ const MessageRow = React.memo(function MessageRow({ item, seenText, dateLabel, t
     setTimeout(() => { longRef.current = false; }, 250);
   };
 
+  // double tap anywhere on a message = ❤️ (with a little pop)
+  const heart = useRef(new Animated.Value(0)).current;
+  const lastTap = useRef(0);
+  const doubleTap = () => {
+    if (item.unsent || item._pending) return;
+    heart.setValue(0);
+    Animated.sequence([
+      Animated.spring(heart, { toValue: 1, friction: 4, tension: 120, useNativeDriver: true }),
+      Animated.delay(350),
+      Animated.timing(heart, { toValue: 0, duration: 220, useNativeDriver: true }),
+    ]).start();
+    onDoubleTap?.(item);
+  };
+  const bubbleTap = () => {
+    const now = Date.now();
+    if (now - lastTap.current < 300) { lastTap.current = 0; doubleTap(); } else lastTap.current = now;
+  };
+
   const counts = {};
   Object.values(item.reactions || {}).forEach((e) => e && (counts[e] = (counts[e] || 0) + 1));
 
@@ -170,7 +201,7 @@ const MessageRow = React.memo(function MessageRow({ item, seenText, dateLabel, t
     if (item.type === 'gif' && item.gifUrl) {
       return (
         <View>
-          <GifBubble url={item.gifUrl} w={item.gifW} h={item.gifH} theme={theme} />
+          <GifBubble url={item.gifUrl} w={item.gifW} h={item.gifH} theme={theme} onLongPress={longPress} onDoubleTap={doubleTap} />
           {!!item.caption && <LinkText linkStyle={{ color: linkColor }} style={[styles.text, tc, { marginTop: 6 }]}>{item.caption}</LinkText>}
         </View>
       );
@@ -178,7 +209,7 @@ const MessageRow = React.memo(function MessageRow({ item, seenText, dateLabel, t
     if (item.type === 'image' && item.images?.length) {
       return (
         <View>
-          <ChatImageBubble images={item.images} theme={theme} />
+          <ChatImageBubble images={item.images} theme={theme} onLongPress={longPress} onDoubleTap={doubleTap} />
           {!!item.caption && <LinkText linkStyle={{ color: linkColor }} style={[styles.text, tc, { marginTop: 6 }]}>{item.caption}</LinkText>}
         </View>
       );
@@ -203,6 +234,7 @@ const MessageRow = React.memo(function MessageRow({ item, seenText, dateLabel, t
         style={{ maxWidth: '78%', flexShrink: 1, minWidth: 0, alignSelf: mine ? 'flex-end' : 'flex-start', transform: [{ translateX: x }] }}
       >
         <Pressable
+          onPress={bubbleTap}
           onLongPress={longPress}
           delayLongPress={300}
           style={[
@@ -226,6 +258,16 @@ const MessageRow = React.memo(function MessageRow({ item, seenText, dateLabel, t
           {body()}
           {item.unsent && <Text style={[styles.unsentLabel, { color: theme.timestampColor }]}>Unsent message</Text>}
         </Pressable>
+
+        <Animated.Text
+          pointerEvents="none"
+          style={{
+            position: 'absolute', alignSelf: 'center', top: '30%', fontSize: 44,
+            opacity: heart, transform: [{ scale: heart.interpolate({ inputRange: [0, 1], outputRange: [0.3, 1.1] }) }],
+          }}
+        >
+          ❤️
+        </Animated.Text>
 
         {Object.keys(counts).length > 0 && (
           <View style={[styles.reactions, { justifyContent: mine ? 'flex-end' : 'flex-start' }]}>
@@ -620,6 +662,14 @@ export default function ChatScreen({ route, navigation }) {
   const latestSeenMsg = useMemo(() => messages.find(isSeen) || null, [messages, peerRead, meId, otherId]);
   const seenText = latestSeenMsg ? seenTime(peerRead || latestSeenMsg.seenBy?.[otherId]) : '';
 
+  // smooth move when the seen line appears / jumps to a newer message (not on first load)
+  const seenKey = `${latestSeenMsg?.id || ''}|${groupSeenMsg?.id || ''}|${groupSeenReaders.length}`;
+  const seenKeyRef = useRef(null);
+  useLayoutEffect(() => {
+    if (seenKeyRef.current !== null && seenKeyRef.current !== seenKey) glide();
+    seenKeyRef.current = seenKey;
+  }, [seenKey]);
+
   /* ---------- action menu ---------- */
 
   const closeMenu = useCallback(() => {
@@ -646,6 +696,13 @@ export default function ChatScreen({ route, navigation }) {
     try { await reactToMessage(chatId, menuMessage.id, meId, emoji); setExtra(false); closeMenu(); }
     catch (e) { fail('Reaction failed')(e); }
   };
+
+  // double tap on a message adds ❤️ (it never removes one)
+  const heartMessage = useCallback(async (m) => {
+    if (!m?.id || m.unsent || m._pending || m.type === 'system' || m.reactions?.[meId] === '❤️') return;
+    try { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); } catch {}
+    try { await reactToMessage(chatId, m.id, meId, '❤️'); } catch {}
+  }, [chatId, meId]);
 
   // tapping your own reaction offers to remove it; any other reaction opens the menu
   const reactionPress = useCallback((m, emoji) => (m.reactions?.[meId] === emoji ? setReactionMessage(m) : openMenu(m)), [meId, openMenu]);
@@ -865,6 +922,7 @@ export default function ChatScreen({ route, navigation }) {
                 onLongPress={openMenu}
                 onReply={handleReply}
                 onReactionPress={reactionPress}
+                onDoubleTap={heartMessage}
                 inputRef={inputRef}
               />
             ))}
