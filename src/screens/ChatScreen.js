@@ -106,7 +106,7 @@ function SystemNotice({ item, theme, dateLabel, actor }) {
     case 'removed': line = <>{who} removed <Text style={bold}>{item.text}</Text></>; break;
     case 'left': line = <>{who} left the group</>; break;
     case 'renamed': line = <>{who} renamed the group to <Text style={bold}>{item.text}</Text></>; break;
-    case 'photo': line = <>{who} changed the group photo</>; break;
+    case 'photo': line = <>{who} {item.text === 'removed' ? 'removed' : 'changed'} the group photo</>; break;
     case 'admin': line = <>{who} made <Text style={bold}>{item.text}</Text> an admin</>; break;
     default: line = <>{who} changed the theme to <Text style={bold}>{item.text}</Text></>;
   }
