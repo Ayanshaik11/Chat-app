@@ -18,6 +18,7 @@ import ProfileScreen from '../screens/ProfileScreen';
 import UserProfileScreen from '../screens/UserProfileScreen';
 import FriendsListScreen from '../screens/FriendsListScreen';
 import ChatScreen from '../screens/ChatScreen';
+import GroupInfoScreen from '../screens/GroupInfoScreen';
 import KingXAIScreen from '../screens/KingXAIScreen';
 import PostDetailScreen from '../screens/PostDetailScreen';
 import EditProfileScreen from '../screens/EditProfileScreen';
@@ -102,6 +103,7 @@ export default function RootNavigator() {
           <>
             <Stack.Screen name="Main" component={Tabs} />
             <Stack.Screen name="Chat" component={ChatScreen} />
+            <Stack.Screen name="GroupInfo" component={GroupInfoScreen} />
             <Stack.Screen name="KingXAI" component={KingXAIScreen} />
             <Stack.Screen name="UserProfile" component={UserProfileScreen} />
             <Stack.Screen name="FriendsList" component={FriendsListScreen} />
