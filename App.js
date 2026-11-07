@@ -19,7 +19,7 @@ import { AuthProvider, useAuth } from './src/context/AuthContext';
 import { AppDataProvider } from './src/context/AppDataContext';
 import { ChatThemeProvider } from './src/context/ChatThemeContext';
 import RootNavigator from './src/navigation/RootNavigator';
-import { navigateToChat } from './src/navigation/navigationRef';
+import { navigateToChat, navigateToGroup } from './src/navigation/navigationRef';
 import { registerForPushNotifications } from './src/services/pushTokens';
 import useUpdateCheck from './src/hooks/useUpdateCheck';
 import UpdateCard from './src/components/UpdateCard';
@@ -202,7 +202,9 @@ function Root() {
               data
             );
 
-            if (
+            if (data?.type === 'message' && data?.groupId) {
+              navigateToGroup(data.groupId, data.groupName, me);
+            } else if (
               data?.type === 'message' &&
               data?.fromId
             ) {
