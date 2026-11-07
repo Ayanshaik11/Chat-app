@@ -28,7 +28,7 @@ export default function MediaGalleryPicker({ visible, allowVideo, onClose, onSel
         first: PAGE_SIZE,
         after: after || undefined,
         mediaType: allowVideo ? ['photo', 'video'] : ['photo'],
-        sortBy: [[MediaLibrary.SortBy.creationTime, false]],
+        sortBy: [[MediaLibrary.SortBy.modificationTime, false]], // not creationTime: screenshots/downloads have no "date taken"
       });
       setAssets((prev) => (after ? [...prev, ...page.assets] : page.assets));
       setCursor(page.endCursor);
